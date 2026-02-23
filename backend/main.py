@@ -15,11 +15,13 @@ Architecture Decision:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 
 app = FastAPI(
     title="Sports Analytics Intelligence Platform",
     description="ML-powered sports analytics with prediction, explainability, and risk optimization",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # CORS middleware — allows the HTML frontend to call the API
@@ -31,44 +33,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include API routes
+from src.api.routes import router
+app.include_router(router)
+
+# Serve static frontend files (Phase 4)
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
 
 @app.get("/")
 async def root():
     """Health check endpoint."""
     return {
         "name": "Sports Analytics Intelligence Platform",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "status": "operational",
-        "phase": "Phase 1 — Data Foundation",
+        "phase": "Phase 2 — Prediction Engine",
+        "endpoints": {
+            "teams": "/api/v1/teams",
+            "matches": "/api/v1/matches?season=2024-25",
+            "standings": "/api/v1/standings?season=2024-25",
+            "predict": "/api/v1/predictions/game/{game_id}",
+            "bet_sizing": "/api/v1/predictions/bet-sizing",
+            "docs": "/docs",
+        },
     }
-
-
-@app.get("/health")
-async def health():
-    """Detailed health check including database connectivity."""
-    return {
-        "api": "healthy",
-        "database": "pending",  # Will be updated when DB connection is implemented
-        "models": "not_loaded",  # Will be updated in Phase 2
-    }
-
-
-# ---- Phase 1 Routes (Data) ----
-# @app.get("/api/v1/teams")
-# @app.get("/api/v1/matches/today")
-# @app.get("/api/v1/features/{game_id}")
-
-# ---- Phase 2 Routes (Predictions) ----
-# @app.get("/api/v1/predictions/today")
-# @app.get("/api/v1/predictions/{game_id}")
-# @app.get("/api/v1/explain/{game_id}")
-# @app.get("/api/v1/sizing/{game_id}")
-
-# ---- Phase 3 Routes (Intelligence) ----
-# @app.post("/api/v1/research")
-# @app.get("/api/v1/news/{game_id}")
-
-# ---- Phase 4 Routes (Tracking) ----
-# @app.post("/api/v1/bets")
-# @app.get("/api/v1/bankroll")
-# @app.get("/api/v1/performance")
