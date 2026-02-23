@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+*.egg
+
+# Environment
+.env
+
+# Data (large files)
+data/*.db
+data/*.csv
+data/embeddings/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+postgres_data/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ML artifacts
+*.pkl
+*.joblib
+mlruns/
+
+# Node (if frontend uses any)
+node_modules/

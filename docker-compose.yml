@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: sports-analytics-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sports_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-analyst}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-analytics2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/data/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-analyst} -d ${POSTGRES_DB:-sports_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sports-analytics-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-analyst}:${POSTGRES_PASSWORD:-analytics2026}@postgres:5432/${POSTGRES_DB:-sports_analytics}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+
+  # ChromaDB Vector Store (for RAG agent — Phase 3)
+  # chromadb:
+  #   image: chromadb/chroma:latest
+  #   container_name: sports-analytics-vectordb
+  #   ports:
+  #     - "8001:8000"
+  #   volumes:
+  #     - chroma_data:/chroma/chroma
+
+volumes:
+  postgres_data:
+  # chroma_data:

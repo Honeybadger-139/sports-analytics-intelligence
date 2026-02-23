@@ -1,0 +1,70 @@
+# Application settings
+app:
+  name: "Sports Analytics Intelligence Platform"
+  version: "0.1.0"
+  debug: true
+
+# Database
+database:
+  url: "${DATABASE_URL}"
+
+# NBA Data
+nba:
+  # Seasons to pull historical data for
+  seasons:
+    - "2024-25"
+    - "2025-26"
+  # How many recent games to consider for rolling features
+  rolling_windows:
+    short: 5
+    long: 10
+  # Data refresh schedule (cron format)
+  refresh_cron: "0 8 * * *"  # Daily at 8 AM
+
+# Football (Phase 5 — future expansion)
+# football:
+#   api_key: "${API_FOOTBALL_KEY}"
+#   leagues:
+#     - id: 39    # Premier League
+#     - id: 61    # Ligue 1
+#     - id: 78    # Bundesliga
+#     - id: 2     # UEFA Champions League
+
+# ML Models
+models:
+  # Minimum samples required to train
+  min_training_samples: 200
+  # Train/test split ratio
+  test_size: 0.2
+  # Cross-validation folds
+  cv_folds: 5
+  # Ensemble weights (auto-calibrated after training)
+  ensemble:
+    logistic_regression: 0.15
+    xgboost: 0.45
+    lightgbm: 0.40
+
+# Risk Management
+risk:
+  # Kelly Criterion settings
+  kelly_fraction: 0.25           # Quarter Kelly (conservative)
+  max_stake_pct: 0.05            # Max 5% of bankroll per bet
+  min_edge_threshold: 0.03       # Minimum 3% edge to recommend a bet
+  daily_loss_limit_pct: 0.10     # Stop if daily loss exceeds 10% of bankroll
+
+# Intelligence (Phase 3)
+# intelligence:
+#   gemini_model: "gemini-2.0-flash"
+#   embedding_model: "all-MiniLM-L6-v2"
+#   news_sources:
+#     - "https://www.espn.com/nba/rss"
+#     - "https://www.nba.com/rss"
+
+# Monitoring
+monitoring:
+  # Alert if model accuracy drops below this
+  accuracy_threshold: 0.55
+  # Alert if calibration error exceeds this
+  max_calibration_error: 0.10
+  # Days of predictions to consider for drift detection
+  drift_window_days: 30
