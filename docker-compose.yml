@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -16,7 +14,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/src/data/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-analyst} -d ${POSTGRES_DB:-sports_analytics}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-analyst} -d ${POSTGRES_DB:-sports_analytics}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,7 +37,6 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
-
   # ChromaDB Vector Store (for RAG agent — Phase 3)
   # chromadb:
   #   image: chromadb/chroma:latest
@@ -50,5 +47,4 @@ services:
   #     - chroma_data:/chroma/chroma
 
 volumes:
-  postgres_data:
-  # chroma_data:
+  postgres_data: # chroma_data:
