@@ -57,7 +57,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Rate limiting: NBA.com throttles requests — be respectful
-REQUEST_DELAY = 1.0  # seconds between API calls
+REQUEST_DELAY = 2.0  # seconds between API calls
+MAX_RETRIES = 3      # retry failed API calls up to 3 times
+BASE_BACKOFF = 10    # base backoff in seconds (10, 20, 40)
 
 
 def get_engine():
@@ -76,11 +78,35 @@ def rate_limit():
     🎓 WHY:
         NBA.com rate-limits aggressive requests. If we fire 100 requests
         in 10 seconds, we'll get 429 (Too Many Requests) or worse, IP-banned.
-        
-        In production systems, you'd use exponential backoff with jitter.
-        For our daily batch job, a simple 1-second delay is sufficient.
     """
     time.sleep(REQUEST_DELAY)
+
+
+def retry_api_call(func, *args, **kwargs):
+    """
+    Retry an nba_api call with exponential backoff.
+    
+    🎓 EXPONENTIAL BACKOFF:
+        Attempt 1: fails → wait 10s
+        Attempt 2: fails → wait 20s  (10 * 2^1)
+        Attempt 3: fails → wait 40s  (10 * 2^2)
+        
+        This is the standard pattern for handling flaky APIs.
+        If an interviewer asks about resilient API integrations,
+        mention exponential backoff with jitter.
+    """
+    for attempt in range(MAX_RETRIES):
+        try:
+            rate_limit()
+            return func(*args, **kwargs)
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                wait_time = BASE_BACKOFF * (2 ** attempt)
+                logger.warning(f"    ⏳ Attempt {attempt+1} failed: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"    ❌ All {MAX_RETRIES} attempts failed: {e}")
+                raise
 
 
 # ==========================================
@@ -168,12 +194,14 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
         logger.info(f"  [{i+1}/30] Pulling games for {team_abbrev}...")
         
         try:
-            game_log = teamgamelog.TeamGameLog(
-                team_id=team_id,
-                season=season,
-                season_type_all_star="Regular Season",
+            game_log = retry_api_call(
+                lambda tid=team_id, s=season: teamgamelog.TeamGameLog(
+                    team_id=tid,
+                    season=s,
+                    season_type_all_star="Regular Season",
+                    timeout=60,
+                )
             )
-            rate_limit()
             
             df = game_log.get_data_frames()[0]
             
@@ -313,11 +341,13 @@ def ingest_players(engine, season: str = "2025-26") -> int:
         team_abbrev = team["abbreviation"]
         
         try:
-            roster = commonteamroster.CommonTeamRoster(
-                team_id=team_id,
-                season=season,
+            roster = retry_api_call(
+                lambda tid=team_id, s=season: commonteamroster.CommonTeamRoster(
+                    team_id=tid,
+                    season=s,
+                    timeout=60,
+                )
             )
-            rate_limit()
             
             df = roster.get_data_frames()[0]
             
@@ -375,7 +405,7 @@ def run_full_ingestion(seasons: Optional[list] = None):
         seasons: List of seasons to ingest. Default: ["2024-25", "2025-26"]
     """
     if seasons is None:
-        seasons = ["2024-25", "2025-26"]
+        seasons = ["2024-25"]
     
     engine = get_engine()
     

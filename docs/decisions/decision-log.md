@@ -35,6 +35,15 @@
 | 8 | **Kelly Criterion** over flat staking | Flat %, Proportional, Fixed amount | Mathematically optimal capital growth rate (Shannon, 1956), accounts for both edge AND odds | Can be aggressive — hence fractional Kelly | "I used the Kelly Criterion from information theory for capital allocation. It maximizes the geometric growth rate of capital. In practice, I use fractional Kelly (quarter/half) to reduce variance." |
 | 9 | **Ensemble** (weighted avg) | Single best model, Stacking, Blending | Reduces variance without adding complexity, robust to individual model failures | Slightly higher latency | "Ensembling reduces variance — if one model overfits to a pattern, the ensemble smooths it out. I use validation-set performance to weight the models." |
 
+## Data Pipeline Decisions
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------| 
+| 10 | **nba_api** (Python package) over web scraping | BeautifulSoup scraping, paid APIs (SportsRadar), manual CSV downloads | Official NBA.com endpoints → structured JSON, no HTML parsing fragility, free, actively maintained by community | No real-time streaming (batch only), rate-limited to ~1 req/sec | "I used the official NBA stats API wrapper because it provides structured, reliable data without the fragility of web scraping. In production, API > scraping for maintainability." |
+| 11 | **SQLAlchemy Core** over raw psycopg2 | Raw psycopg2, Django ORM, Peewee | Connection pooling out of the box, database-agnostic (can swap to MySQL/SQLite), Alembic integration for migrations, supports both raw SQL and ORM patterns | Slightly more abstraction than raw driver | "I used SQLAlchemy because it provides connection pooling — critical for handling concurrent FastAPI requests — and makes the data layer database-agnostic." |
+| 12 | **Config-driven** (settings.yaml) over hardcoded constants | Hardcoded, JSON config, Python config module, env-vars only | YAML is human-readable, supports comments, hierarchical structure for nested config, separates config from code | Requires a YAML parser (trivial) | "I externalized all tuning parameters to YAML — model hyperparameters, risk thresholds, data sources. This means A/B testing different configs requires zero code changes, just a config swap." |
+| 13 | **Separated raw data vs. computed features** (two tables) over single denormalized table | Single `enriched_games` table, feature columns alongside raw stats | Raw data is immutable — changing feature logic doesn't require re-ingesting from NBA API, clear lineage (raw → features → predictions), can recompute features without touching source data | More JOINs required | "I separated raw observations (`team_game_stats`) from computed features (`match_features`) following the immutable raw data principle. This means I can iterate on feature engineering without re-ingesting data — crucial for rapid experimentation." |
+
 ---
 
 *This log is updated as new decisions are made throughout the project.*
