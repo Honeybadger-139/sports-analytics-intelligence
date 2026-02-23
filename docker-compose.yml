@@ -37,6 +37,26 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
+
+  # pgAdmin — Web-based SQL Query UI (like SQL Lab)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sports-analytics-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@sportsanalytics.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin2026}
+      PGADMIN_LISTEN_PORT: 5050
+      # Auto-register our PostgreSQL server on first boot
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    ports:
+      - "5050:5050"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
   # ChromaDB Vector Store (for RAG agent — Phase 3)
   # chromadb:
   #   image: chromadb/chroma:latest
@@ -47,4 +67,5 @@ services:
   #     - chroma_data:/chroma/chroma
 
 volumes:
-  postgres_data: # chroma_data:
+  postgres_data:
+  pgadmin_data: # chroma_data:
