@@ -438,4 +438,4 @@ def run_full_ingestion(seasons: Optional[list] = None):
 
 
 if __name__ == "__main__":
-    run_full_ingestion()
+    run_full_ingestion(seasons=["2024-25", "2025-26"])

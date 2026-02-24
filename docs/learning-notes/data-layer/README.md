@@ -40,6 +40,7 @@ NBA Stats API  →  ingestion.py  →  PostgreSQL  →  feature_store.py  →  m
 | [database-design.md](database-design.md) | **Schema Design** — Why PostgreSQL, how tables are structured | Normalization, foreign keys, indexes, connection pooling, window functions |
 | [feature-engineering.md](feature-engineering.md) | **Feature Engineering** — Transforming raw data into ML features | Rolling windows, data leakage prevention, window functions, H2H features |
 | [query-tools.md](query-tools.md) | **Query Tools** — pgAdmin setup for SQL exploration and data validation | pgAdmin, Docker integration, useful queries, CLI alternatives |
+| [api-header-engineering.md](api-header-engineering.md) | **API Header Engineering** — Bypassing bot detection via metadata | User-Agent, Referer, Client Hints, STATS_HEADERS, security context |
 
 ---
 
