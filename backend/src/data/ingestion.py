@@ -221,7 +221,7 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
             df = game_log.get_data_frames()[0]
             
             if latest_date:
-                df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+                df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"], format="mixed").dt.date
                 df = df[df["GAME_DATE_DT"] >= latest_date]
             
             if df.empty:
@@ -250,8 +250,9 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                     opp_team_id = opp_team["id"] if opp_team else None
                     
                     # Parse game date
-                    game_date = row["GAME_DATE_DT"] if "GAME_DATE_DT" in row else pd.to_datetime(row["GAME_DATE"]).date()
+                    game_date = row["GAME_DATE_DT"] if "GAME_DATE_DT" in row else pd.to_datetime(row["GAME_DATE"], format="mixed").date()
                     
+
                     # Determine winner
                     wl = row["WL"]
                     winner_id = team_id if wl == "W" else opp_team_id
@@ -434,7 +435,7 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
         df = log.get_data_frames()[0]
         
         if max_date_in_db:
-            df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+            df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"], format="mixed").dt.date
             df = df[df["GAME_DATE_DT"] >= max_date_in_db]
             
         if df.empty:
