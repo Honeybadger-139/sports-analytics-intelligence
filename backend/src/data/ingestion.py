@@ -414,7 +414,12 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
     # 1. Incremental Sync Logic
     with engine.begin() as conn:
         result = conn.execute(
-            text("SELECT MAX(game_date) FROM matches WHERE season = :season"),
+            text("""
+                SELECT MAX(m.game_date) 
+                FROM player_game_stats pgs
+                JOIN matches m ON pgs.game_id = m.game_id
+                WHERE m.season = :season
+            """),
             {"season": season}
         ).fetchone()
         max_date_in_db = result[0] if result and result[0] else None
