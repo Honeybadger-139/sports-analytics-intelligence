@@ -1,0 +1,233 @@
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+2026-02-24 15:51:00 | INFO | ============================================================
+2026-02-24 15:51:00 | INFO | 🚀 STARTING FULL NBA DATA INGESTION
+2026-02-24 15:51:00 | INFO | ============================================================
+2026-02-24 15:51:00 | INFO | 🏀 Ingesting NBA teams...
+2026-02-24 15:51:00 | INFO | ✅ Ingested 30 teams
+2026-02-24 15:51:00 | INFO | 📊 Ingesting game logs for season 2024-25...
+2026-02-24 15:51:00 | INFO |   -> Incremental sync: fetching games on or after 2025-04-19
+2026-02-24 15:51:00 | INFO |   [1/30] Pulling games for ATL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:03 | INFO |     No new games found for ATL
+2026-02-24 15:51:03 | INFO |   [2/30] Pulling games for BOS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:05 | INFO |     No new games found for BOS
+2026-02-24 15:51:05 | INFO |   [3/30] Pulling games for CLE...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:14 | INFO |     No new games found for CLE
+2026-02-24 15:51:14 | INFO |   [4/30] Pulling games for NOP...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:22 | INFO |     No new games found for NOP
+2026-02-24 15:51:22 | INFO |   [5/30] Pulling games for CHI...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:31 | INFO |     No new games found for CHI
+2026-02-24 15:51:31 | INFO |   [6/30] Pulling games for DAL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:39 | INFO |     No new games found for DAL
+2026-02-24 15:51:39 | INFO |   [7/30] Pulling games for DEN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:51:52 | INFO |     No new games found for DEN
+2026-02-24 15:51:52 | INFO |   [8/30] Pulling games for GSW...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:02 | INFO |     No new games found for GSW
+2026-02-24 15:52:02 | INFO |   [9/30] Pulling games for HOU...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:12 | INFO |     No new games found for HOU
+2026-02-24 15:52:12 | INFO |   [10/30] Pulling games for LAC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:20 | INFO |     No new games found for LAC
+2026-02-24 15:52:20 | INFO |   [11/30] Pulling games for LAL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:25 | INFO |     No new games found for LAL
+2026-02-24 15:52:25 | INFO |   [12/30] Pulling games for MIA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:31 | INFO |     No new games found for MIA
+2026-02-24 15:52:31 | INFO |   [13/30] Pulling games for MIL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:41 | INFO |     No new games found for MIL
+2026-02-24 15:52:41 | INFO |   [14/30] Pulling games for MIN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:46 | INFO |     No new games found for MIN
+2026-02-24 15:52:46 | INFO |   [15/30] Pulling games for BKN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:52:56 | INFO |     No new games found for BKN
+2026-02-24 15:52:56 | INFO |   [16/30] Pulling games for NYK...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:07 | INFO |     No new games found for NYK
+2026-02-24 15:53:07 | INFO |   [17/30] Pulling games for ORL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:16 | INFO |     No new games found for ORL
+2026-02-24 15:53:16 | INFO |   [18/30] Pulling games for IND...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:22 | INFO |     No new games found for IND
+2026-02-24 15:53:22 | INFO |   [19/30] Pulling games for PHI...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:28 | INFO |     No new games found for PHI
+2026-02-24 15:53:28 | INFO |   [20/30] Pulling games for PHX...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:39 | INFO |     No new games found for PHX
+2026-02-24 15:53:39 | INFO |   [21/30] Pulling games for POR...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:49 | INFO |     No new games found for POR
+2026-02-24 15:53:49 | INFO |   [22/30] Pulling games for SAC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:53:57 | INFO |     No new games found for SAC
+2026-02-24 15:53:57 | INFO |   [23/30] Pulling games for SAS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:06 | INFO |     No new games found for SAS
+2026-02-24 15:54:06 | INFO |   [24/30] Pulling games for OKC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:19 | INFO |     No new games found for OKC
+2026-02-24 15:54:19 | INFO |   [25/30] Pulling games for TOR...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:28 | INFO |     No new games found for TOR
+2026-02-24 15:54:28 | INFO |   [26/30] Pulling games for UTA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:37 | INFO |     No new games found for UTA
+2026-02-24 15:54:37 | INFO |   [27/30] Pulling games for MEM...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:45 | INFO |     No new games found for MEM
+2026-02-24 15:54:45 | INFO |   [28/30] Pulling games for WAS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:54:59 | INFO |     No new games found for WAS
+2026-02-24 15:54:59 | INFO |   [29/30] Pulling games for DET...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:11 | INFO |     No new games found for DET
+2026-02-24 15:55:11 | INFO |   [30/30] Pulling games for CHA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:18 | INFO |     No new games found for CHA
+2026-02-24 15:55:18 | INFO | ✅ Ingested 0 unique games for season 2024-25
+2026-02-24 15:55:18 | INFO | 📊 Ingesting game logs for season 2025-26...
+2026-02-24 15:55:18 | INFO |   -> Incremental sync: fetching games on or after 2026-02-22
+2026-02-24 15:55:18 | INFO |   [1/30] Pulling games for ATL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:20 | INFO |   [2/30] Pulling games for BOS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:22 | INFO |   [3/30] Pulling games for CLE...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:25 | INFO |   [4/30] Pulling games for NOP...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:27 | INFO |     No new games found for NOP
+2026-02-24 15:55:27 | INFO |   [5/30] Pulling games for CHI...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:30 | INFO |   [6/30] Pulling games for DAL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:32 | INFO |   [7/30] Pulling games for DEN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:34 | INFO |   [8/30] Pulling games for GSW...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:37 | INFO |   [9/30] Pulling games for HOU...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:39 | INFO |   [10/30] Pulling games for LAC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:42 | INFO |   [11/30] Pulling games for LAL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:44 | INFO |   [12/30] Pulling games for MIA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:46 | INFO |     No new games found for MIA
+2026-02-24 15:55:46 | INFO |   [13/30] Pulling games for MIL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:49 | INFO |   [14/30] Pulling games for MIN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:51 | INFO |   [15/30] Pulling games for BKN...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:54 | INFO |   [16/30] Pulling games for NYK...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:56 | INFO |   [17/30] Pulling games for ORL...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:55:58 | INFO |   [18/30] Pulling games for IND...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:01 | INFO |   [19/30] Pulling games for PHI...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:04 | INFO |   [20/30] Pulling games for PHX...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:06 | INFO |   [21/30] Pulling games for POR...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:08 | INFO |   [22/30] Pulling games for SAC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:11 | INFO |   [23/30] Pulling games for SAS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:13 | INFO |   [24/30] Pulling games for OKC...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:15 | INFO |   [25/30] Pulling games for TOR...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:18 | INFO |   [26/30] Pulling games for UTA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:20 | INFO |   [27/30] Pulling games for MEM...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:23 | INFO |   [28/30] Pulling games for WAS...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:25 | INFO |   [29/30] Pulling games for DET...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:27 | INFO |   [30/30] Pulling games for CHA...
+/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/backend/src/data/ingestion.py:222: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+2026-02-24 15:56:30 | INFO | ✅ Ingested 14 unique games for season 2025-26
+2026-02-24 15:56:30 | INFO | 👤 Ingesting all players for season 2025-26...
+2026-02-24 15:56:32 | INFO | ✅ Ingested 559 players
+2026-02-24 15:56:32 | INFO | ============================================================
+2026-02-24 15:56:32 | INFO | ✅ INGESTION COMPLETE in 331.7s
+2026-02-24 15:56:32 | INFO |    Teams:   30
+2026-02-24 15:56:32 | INFO |    Games:   14
+2026-02-24 15:56:32 | INFO |    Players: 559
+2026-02-24 15:56:32 | INFO | ============================================================

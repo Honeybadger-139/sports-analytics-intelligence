@@ -68,6 +68,62 @@ CREATE TABLE IF NOT EXISTS team_game_stats (
     UNIQUE (game_id, team_id)
 );
 
+-- Player game stats: per-game player performance metrics
+CREATE TABLE IF NOT EXISTS player_game_stats (
+    id SERIAL PRIMARY KEY,
+    game_id VARCHAR(20) REFERENCES matches(game_id),
+    player_id INTEGER REFERENCES players(player_id),
+    team_id INTEGER REFERENCES teams(team_id),
+    minutes DECIMAL(5,2),
+    points INTEGER,
+    rebounds INTEGER,
+    assists INTEGER,
+    steals INTEGER,
+    blocks INTEGER,
+    turnovers INTEGER,
+    personal_fouls INTEGER,
+    field_goals_made INTEGER,
+    field_goals_attempted INTEGER,
+    field_goal_pct DECIMAL(5,3),
+    three_points_made INTEGER,
+    three_points_attempted INTEGER,
+    three_point_pct DECIMAL(5,3),
+    free_throws_made INTEGER,
+    free_throws_attempted INTEGER,
+    free_throw_pct DECIMAL(5,3),
+    plus_minus INTEGER,
+    fantasy_points DECIMAL(6,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (game_id, player_id)
+);
+
+-- Player season stats: overall aggregate performance up to the current day
+CREATE TABLE IF NOT EXISTS player_season_stats (
+    id SERIAL PRIMARY KEY,
+    player_id INTEGER REFERENCES players(player_id),
+    season VARCHAR(10) NOT NULL,
+    team_id INTEGER REFERENCES teams(team_id), -- Track which team they played for (last team if traded)
+    games_played INTEGER,
+    wins INTEGER,
+    losses INTEGER,
+    win_pct DECIMAL(5,3),
+    minutes DECIMAL(8,2), -- Average or total depending on NBA endpoint (Dashboard averages usually)
+    points DECIMAL(8,2),
+    rebounds DECIMAL(8,2),
+    assists DECIMAL(8,2),
+    steals DECIMAL(8,2),
+    blocks DECIMAL(8,2),
+    turnovers DECIMAL(8,2),
+    field_goal_pct DECIMAL(5,3),
+    three_point_pct DECIMAL(5,3),
+    free_throw_pct DECIMAL(5,3),
+    plus_minus DECIMAL(8,2),
+    fantasy_points DECIMAL(8,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (player_id, season)
+);
+
 -- Computed features: pre-calculated features for ML models
 CREATE TABLE IF NOT EXISTS match_features (
     id SERIAL PRIMARY KEY,
@@ -126,22 +182,12 @@ CREATE TABLE IF NOT EXISTS bets (
     settled_at TIMESTAMP
 );
 
--- Bankroll: daily bankroll snapshots
-CREATE TABLE IF NOT EXISTS bankroll (
-    id SERIAL PRIMARY KEY,
-    date DATE UNIQUE NOT NULL,
-    opening_balance DECIMAL(12,2),
-    closing_balance DECIMAL(12,2),
-    daily_pnl DECIMAL(10,2),
-    bets_placed INTEGER DEFAULT 0,
-    bets_won INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Create indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(game_date);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season);
 CREATE INDEX IF NOT EXISTS idx_team_stats_game ON team_game_stats(game_id);
+CREATE INDEX IF NOT EXISTS idx_player_stats_game ON player_game_stats(game_id);
+CREATE INDEX IF NOT EXISTS idx_player_season ON player_season_stats(season);
 CREATE INDEX IF NOT EXISTS idx_features_game ON match_features(game_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_game ON predictions(game_id);
 CREATE INDEX IF NOT EXISTS idx_bets_game ON bets(game_id);

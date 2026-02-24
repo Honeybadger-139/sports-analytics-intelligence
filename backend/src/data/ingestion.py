@@ -40,7 +40,9 @@ import pandas as pd
 from nba_api.stats.static import teams as nba_teams
 from nba_api.stats.endpoints import (
     teamgamelog,
-    commonteamroster,
+    commonallplayers,
+    leaguegamelog,
+    leaguedashplayerstats,
 )
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
@@ -184,6 +186,19 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
     """
     logger.info(f"📊 Ingesting game logs for season {season}...")
     
+    # Check latest date for incremental sync
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("SELECT MAX(game_date) FROM matches WHERE season = :season"),
+            {"season": season}
+        ).scalar()
+    latest_date = pd.to_datetime(result).date() if result else None
+    
+    if latest_date:
+        logger.info(f"  -> Incremental sync: fetching games on or after {latest_date}")
+    else:
+        logger.info("  -> Full sync: no existing games found for season")
+    
     all_teams = nba_teams.get_teams()
     games_seen = set()
     game_count = 0
@@ -205,8 +220,12 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
             
             df = game_log.get_data_frames()[0]
             
+            if latest_date:
+                df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+                df = df[df["GAME_DATE_DT"] >= latest_date]
+            
             if df.empty:
-                logger.info(f"    No games found for {team_abbrev}")
+                logger.info(f"    No new games found for {team_abbrev}")
                 continue
             
             with engine.begin() as conn:
@@ -231,7 +250,7 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                     opp_team_id = opp_team["id"] if opp_team else None
                     
                     # Parse game date
-                    game_date = pd.to_datetime(row["GAME_DATE"]).date()
+                    game_date = row["GAME_DATE_DT"] if "GAME_DATE_DT" in row else pd.to_datetime(row["GAME_DATE"]).date()
                     
                     # Determine winner
                     wl = row["WL"]
@@ -319,7 +338,7 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
 
 def ingest_players(engine, season: str = "2025-26") -> int:
     """
-    Pull current rosters for all teams and upsert into players table.
+    Pull all players for the given season and upsert into players table.
     
     🎓 WHY PLAYER DATA MATTERS:
         Even though our v1 model uses team-level features, knowing which
@@ -327,60 +346,266 @@ def ingest_players(engine, season: str = "2025-26") -> int:
         1. Detect roster changes (trades, injuries)
         2. Build player-impact features later (star player availability)
         3. Support player-prop bet predictions in future versions
+        
+    Note: We use CommonAllPlayers to get EVERY player who played in the season,
+    not just the current active rosters.
     
     Returns:
         Number of players ingested.
     """
-    logger.info("👤 Ingesting player rosters...")
+    logger.info(f"👤 Ingesting all players for season {season}...")
     
-    all_teams = nba_teams.get_teams()
     player_count = 0
-    
-    for i, team in enumerate(all_teams):
-        team_id = team["id"]
-        team_abbrev = team["abbreviation"]
-        
-        try:
-            roster = retry_api_call(
-                lambda tid=team_id, s=season: commonteamroster.CommonTeamRoster(
-                    team_id=tid,
-                    season=s,
-                    timeout=60,
-                )
+    try:
+        roster = retry_api_call(
+            lambda s=season: commonallplayers.CommonAllPlayers(
+                is_only_current_season=1,
+                season=s,
+                timeout=60,
             )
-            
-            df = roster.get_data_frames()[0]
-            
-            with engine.begin() as conn:
-                for _, player in df.iterrows():
-                    conn.execute(
-                        text("""
-                            INSERT INTO players (player_id, full_name, team_id, position, is_active, updated_at)
-                            VALUES (:player_id, :full_name, :team_id, :position, TRUE, :now)
-                            ON CONFLICT (player_id) DO UPDATE SET
-                                full_name = EXCLUDED.full_name,
-                                team_id = EXCLUDED.team_id,
-                                position = EXCLUDED.position,
-                                is_active = TRUE,
-                                updated_at = EXCLUDED.updated_at
-                        """),
-                        {
-                            "player_id": int(player["PLAYER_ID"]),
-                            "full_name": player["PLAYER"],
-                            "team_id": team_id,
-                            "position": player.get("POSITION", None),
-                            "now": datetime.now(),
-                        },
-                    )
-                    player_count += 1
-            
-            logger.info(f"  [{i+1}/30] {team_abbrev}: {len(df)} players")
-            
-        except Exception as e:
-            logger.error(f"  ❌ Error pulling roster for {team_abbrev}: {e}")
-            continue
+        )
+        
+        df = roster.get_data_frames()[0]
+        
+        with engine.begin() as conn:
+            for _, player in df.iterrows():
+                # TEAM_ID can be 0 or NaN for free agents/waived players
+                team_id = int(player["TEAM_ID"]) if pd.notna(player.get("TEAM_ID")) and player.get("TEAM_ID") != 0 and player.get("TEAM_ID") != "0" else None
+                
+                conn.execute(
+                    text("""
+                        INSERT INTO players (player_id, full_name, team_id, position, is_active, updated_at)
+                        VALUES (:player_id, :full_name, :team_id, :position, TRUE, :now)
+                        ON CONFLICT (player_id) DO UPDATE SET
+                            full_name = EXCLUDED.full_name,
+                            team_id = EXCLUDED.team_id,
+                            position = EXCLUDED.position,
+                            is_active = TRUE,
+                            updated_at = EXCLUDED.updated_at
+                    """),
+                    {
+                        "player_id": int(player["PERSON_ID"]),
+                        "full_name": player["DISPLAY_FIRST_LAST"],
+                        "team_id": team_id,
+                        "position": None,  # CommonAllPlayers doesn't provide position easily, dropping for now
+                        "now": datetime.now(),
+                    },
+                )
+                player_count += 1
+                
+        logger.info(f"✅ Ingested {player_count} players")
+        
+    except Exception as e:
+        logger.error(f"❌ Error pulling players: {e}")
+        
+    return player_count
+
+# ==========================================
+# 4. PLAYER GAME LOGS (Per Game Stats)
+# ==========================================
+
+def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
+    """
+    Fetch all player game logs across the league incrementally.
+    """
+    logger.info(f"🏀 Ingesting player game logs for season {season}...")
     
-    logger.info(f"✅ Ingested {player_count} players")
+    # 1. Incremental Sync Logic
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("SELECT MAX(game_date) FROM matches WHERE season = :season"),
+            {"season": season}
+        ).fetchone()
+        max_date_in_db = result[0] if result and result[0] else None
+
+    logger.info(f"   -> Incremental sync: fetching player games on or after {max_date_in_db if max_date_in_db else 'the beginning of the season'}")
+
+    game_count = 0
+    try:
+        # LeagueGameLog with player abbreviation 'P' gets all player performances
+        log = retry_api_call(
+            lambda s=season: leaguegamelog.LeagueGameLog(
+                season=s,
+                player_or_team_abbreviation="P",
+                timeout=60
+            )
+        )
+        
+        df = log.get_data_frames()[0]
+        
+        if max_date_in_db:
+            df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"]).dt.date
+            df = df[df["GAME_DATE_DT"] >= max_date_in_db]
+            
+        if df.empty:
+            logger.info("    No new player game logs found")
+            return 0
+            
+        with engine.begin() as conn:
+            for _, row in df.iterrows():
+                game_id = str(row["GAME_ID"])
+                player_id = int(row["PLAYER_ID"])
+                team_id = int(row["TEAM_ID"])
+                
+                conn.execute(
+                    text("""
+                        INSERT INTO player_game_stats (
+                            game_id, player_id, team_id, minutes, points, rebounds, assists,
+                            steals, blocks, turnovers, personal_fouls, field_goals_made,
+                            field_goals_attempted, field_goal_pct, three_points_made,
+                            three_points_attempted, three_point_pct, free_throws_made,
+                            free_throws_attempted, free_throw_pct, plus_minus, fantasy_points
+                        )
+                        VALUES (
+                            :game_id, :player_id, :team_id, :min, :pts, :reb, :ast,
+                            :stl, :blk, :tov, :pf, :fgm, :fga, :fg_pct, :fg3m, :fg3a,
+                            :fg3_pct, :ftm, :fta, :ft_pct, :plus_minus, :fantasy_pts
+                        )
+                        ON CONFLICT (game_id, player_id) DO UPDATE SET
+                            team_id = EXCLUDED.team_id,
+                            minutes = EXCLUDED.minutes,
+                            points = EXCLUDED.points,
+                            rebounds = EXCLUDED.rebounds,
+                            assists = EXCLUDED.assists,
+                            steals = EXCLUDED.steals,
+                            blocks = EXCLUDED.blocks,
+                            turnovers = EXCLUDED.turnovers,
+                            personal_fouls = EXCLUDED.personal_fouls,
+                            field_goals_made = EXCLUDED.field_goals_made,
+                            field_goals_attempted = EXCLUDED.field_goals_attempted,
+                            field_goal_pct = EXCLUDED.field_goal_pct,
+                            three_points_made = EXCLUDED.three_points_made,
+                            three_points_attempted = EXCLUDED.three_points_attempted,
+                            three_point_pct = EXCLUDED.three_point_pct,
+                            free_throws_made = EXCLUDED.free_throws_made,
+                            free_throws_attempted = EXCLUDED.free_throws_attempted,
+                            free_throw_pct = EXCLUDED.free_throw_pct,
+                            plus_minus = EXCLUDED.plus_minus,
+                            fantasy_points = EXCLUDED.fantasy_points
+                    """),
+                    {
+                        "game_id": game_id,
+                        "player_id": player_id,
+                        "team_id": team_id,
+                        "min": float(row["MIN"]) if pd.notna(row.get("MIN")) else None,
+                        "pts": int(row["PTS"]) if pd.notna(row.get("PTS")) else None,
+                        "reb": int(row["REB"]) if pd.notna(row.get("REB")) else None,
+                        "ast": int(row["AST"]) if pd.notna(row.get("AST")) else None,
+                        "stl": int(row["STL"]) if pd.notna(row.get("STL")) else None,
+                        "blk": int(row["BLK"]) if pd.notna(row.get("BLK")) else None,
+                        "tov": int(row["TOV"]) if pd.notna(row.get("TOV")) else None,
+                        "pf": int(row["PF"]) if pd.notna(row.get("PF")) else None,
+                        "fgm": int(row["FGM"]) if pd.notna(row.get("FGM")) else None,
+                        "fga": int(row["FGA"]) if pd.notna(row.get("FGA")) else None,
+                        "fg_pct": float(row["FG_PCT"]) if pd.notna(row.get("FG_PCT")) else None,
+                        "fg3m": int(row["FG3M"]) if pd.notna(row.get("FG3M")) else None,
+                        "fg3a": int(row["FG3A"]) if pd.notna(row.get("FG3A")) else None,
+                        "fg3_pct": float(row["FG3_PCT"]) if pd.notna(row.get("FG3_PCT")) else None,
+                        "ftm": int(row["FTM"]) if pd.notna(row.get("FTM")) else None,
+                        "fta": int(row["FTA"]) if pd.notna(row.get("FTA")) else None,
+                        "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT")) else None,
+                        "plus_minus": int(row["PLUS_MINUS"]) if pd.notna(row.get("PLUS_MINUS")) else None,
+                        "fantasy_pts": float(row["FANTASY_PTS"]) if pd.notna(row.get("FANTASY_PTS")) else None,
+                    },
+                )
+                game_count += 1
+                
+    except Exception as e:
+        logger.error(f"    ❌ Error pulling player game logs: {e}")
+        
+    logger.info(f"✅ Ingested {game_count} player game logs for season {season}")
+    return game_count
+
+
+# ==========================================
+# 5. PLAYER SEASON STATS (Dashboard Aggregates)
+# ==========================================
+
+def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
+    """
+    Fetch season-to-date aggregates for all players.
+    Uses UPSERT to overwrite yesterday's totals with today's totals.
+    """
+    logger.info(f"📊 Ingesting player season stats for season {season}...")
+    
+    player_count = 0
+    try:
+        dash = retry_api_call(
+            lambda s=season: leaguedashplayerstats.LeagueDashPlayerStats(
+                season=s,
+                timeout=60
+            )
+        )
+        
+        df = dash.get_data_frames()[0]
+        
+        with engine.begin() as conn:
+            for _, row in df.iterrows():
+                player_id = int(row["PLAYER_ID"])
+                team_id = int(row["TEAM_ID"]) if pd.notna(row.get("TEAM_ID")) and row["TEAM_ID"] != 0 and str(row["TEAM_ID"]) != "0" else None
+                
+                conn.execute(
+                    text("""
+                        INSERT INTO player_season_stats (
+                            player_id, season, team_id, games_played, wins, losses, win_pct,
+                            minutes, points, rebounds, assists, steals, blocks, turnovers,
+                            field_goal_pct, three_point_pct, free_throw_pct, plus_minus,
+                            fantasy_points, updated_at
+                        )
+                        VALUES (
+                            :player_id, :season, :team_id, :gp, :w, :l, :w_pct, :min, :pts,
+                            :reb, :ast, :stl, :blk, :tov, :fg_pct, :fg3_pct, :ft_pct,
+                            :plus_minus, :fantasy_pts, :now
+                        )
+                        ON CONFLICT (player_id, season) DO UPDATE SET
+                            team_id = EXCLUDED.team_id,
+                            games_played = EXCLUDED.games_played,
+                            wins = EXCLUDED.wins,
+                            losses = EXCLUDED.losses,
+                            win_pct = EXCLUDED.win_pct,
+                            minutes = EXCLUDED.minutes,
+                            points = EXCLUDED.points,
+                            rebounds = EXCLUDED.rebounds,
+                            assists = EXCLUDED.assists,
+                            steals = EXCLUDED.steals,
+                            blocks = EXCLUDED.blocks,
+                            turnovers = EXCLUDED.turnovers,
+                            field_goal_pct = EXCLUDED.field_goal_pct,
+                            three_point_pct = EXCLUDED.three_point_pct,
+                            free_throw_pct = EXCLUDED.free_throw_pct,
+                            plus_minus = EXCLUDED.plus_minus,
+                            fantasy_points = EXCLUDED.fantasy_points,
+                            updated_at = EXCLUDED.updated_at
+                    """),
+                    {
+                        "player_id": player_id,
+                        "season": season,
+                        "team_id": team_id,
+                        "gp": int(row["GP"]) if pd.notna(row.get("GP")) else 0,
+                        "w": int(row["W"]) if pd.notna(row.get("W")) else 0,
+                        "l": int(row["L"]) if pd.notna(row.get("L")) else 0,
+                        "w_pct": float(row["W_PCT"]) if pd.notna(row.get("W_PCT")) else 0.0,
+                        "min": float(row["MIN"]) if pd.notna(row.get("MIN")) else 0.0,
+                        "pts": float(row["PTS"]) if pd.notna(row.get("PTS")) else 0.0,
+                        "reb": float(row["REB"]) if pd.notna(row.get("REB")) else 0.0,
+                        "ast": float(row["AST"]) if pd.notna(row.get("AST")) else 0.0,
+                        "stl": float(row["STL"]) if pd.notna(row.get("STL")) else 0.0,
+                        "blk": float(row["BLK"]) if pd.notna(row.get("BLK")) else 0.0,
+                        "tov": float(row["TOV"]) if pd.notna(row.get("TOV")) else 0.0,
+                        "fg_pct": float(row["FG_PCT"]) if pd.notna(row.get("FG_PCT")) else 0.0,
+                        "fg3_pct": float(row["FG3_PCT"]) if pd.notna(row.get("FG3_PCT")) else 0.0,
+                        "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT")) else 0.0,
+                        "plus_minus": float(row["PLUS_MINUS"]) if pd.notna(row.get("PLUS_MINUS")) else 0.0,
+                        "fantasy_pts": float(row["NBA_FANTASY_PTS"]) if pd.notna(row.get("NBA_FANTASY_PTS")) else 0.0,
+                        "now": datetime.now()
+                    }
+                )
+                player_count += 1
+                
+    except Exception as e:
+        logger.error(f"    ❌ Error pulling player season stats: {e}")
+        
+    logger.info(f"✅ Ingested {player_count} player season records for {season}")
     return player_count
 
 
@@ -427,6 +652,15 @@ def run_full_ingestion(seasons: Optional[list] = None):
     # Step 3: Player rosters (dimension table)
     player_count = ingest_players(engine, season=seasons[-1])
     
+    # Step 4: Player Game Logs & Season Stats
+    total_player_games = 0
+    total_season_stats = 0
+    for season in seasons:
+        pg_count = ingest_player_game_logs(engine, season=season)
+        ps_count = ingest_player_season_stats(engine, season=season)
+        total_player_games += pg_count
+        total_season_stats += ps_count
+    
     elapsed = time.time() - start_time
     
     logger.info("=" * 60)
@@ -434,6 +668,8 @@ def run_full_ingestion(seasons: Optional[list] = None):
     logger.info(f"   Teams:   {team_count}")
     logger.info(f"   Games:   {total_games}")
     logger.info(f"   Players: {player_count}")
+    logger.info(f"   Player Game Logs: {total_player_games}")
+    logger.info(f"   Player Season Stats: {total_season_stats}")
     logger.info("=" * 60)
 
 
