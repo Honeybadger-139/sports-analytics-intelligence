@@ -48,7 +48,7 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
+from src import config
 
 # Configure logging
 logging.basicConfig(
@@ -58,19 +58,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Rate limiting: NBA.com throttles requests — be respectful
-REQUEST_DELAY = 2.0  # seconds between API calls
-MAX_RETRIES = 3      # retry failed API calls up to 3 times
-BASE_BACKOFF = 10    # base backoff in seconds (10, 20, 40)
-
 
 def get_engine():
-    """Create SQLAlchemy engine from environment variable."""
-    database_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://analyst:analytics2026@localhost:5432/sports_analytics",
-    )
-    return create_engine(database_url)
+    """Create SQLAlchemy engine from centralized config."""
+    return create_engine(config.DATABASE_URL)
 
 
 def rate_limit():
@@ -81,7 +72,7 @@ def rate_limit():
         NBA.com rate-limits aggressive requests. If we fire 100 requests
         in 10 seconds, we'll get 429 (Too Many Requests) or worse, IP-banned.
     """
-    time.sleep(REQUEST_DELAY)
+    time.sleep(config.REQUEST_DELAY)
 
 
 def retry_api_call(func, *args, **kwargs):
@@ -97,7 +88,7 @@ def retry_api_call(func, *args, **kwargs):
         If an interviewer asks about resilient API integrations,
         mention exponential backoff with jitter.
     """
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(config.MAX_RETRIES):
         try:
             rate_limit()
             return func(*args, **kwargs)
@@ -186,10 +177,10 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
     """
     logger.info(f"📊 Ingesting game logs for season {season}...")
     
-    # Check latest date for incremental sync
+    # Check latest date for incremental sync (only trust completed games)
     with engine.begin() as conn:
         result = conn.execute(
-            text("SELECT MAX(game_date) FROM matches WHERE season = :season"),
+            text("SELECT MAX(game_date) FROM matches WHERE season = :season AND is_completed = TRUE"),
             {"season": season}
         ).scalar()
     latest_date = pd.to_datetime(result).date() if result else None
@@ -257,32 +248,44 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                     wl = row["WL"]
                     winner_id = team_id if wl == "W" else opp_team_id
                     
-                    # Insert match (only if not seen yet — dedup)
+                    # Upsert match data
+                    home_team_id = team_id if is_home else opp_team_id
+                    away_team_id = opp_team_id if is_home else team_id
+                    home_score = int(row["PTS"]) if is_home else None
+                    away_score = int(row["PTS"]) if not is_home else None
+                    is_completed = pd.notna(row.get("WL"))
+                    
+                    conn.execute(
+                        text("""
+                            INSERT INTO matches (
+                                game_id, game_date, season, home_team_id, 
+                                away_team_id, winner_team_id, is_completed, 
+                                home_score, away_score
+                            )
+                            VALUES (
+                                :game_id, :game_date, :season, :home_team_id, 
+                                :away_team_id, :winner_id, :is_completed,
+                                :home_score, :away_score
+                            )
+                            ON CONFLICT (game_id) DO UPDATE SET
+                                winner_team_id = COALESCE(EXCLUDED.winner_team_id, matches.winner_team_id),
+                                is_completed = EXCLUDED.is_completed,
+                                home_score = CASE WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score ELSE matches.home_score END,
+                                away_score = CASE WHEN EXCLUDED.away_score IS NOT NULL THEN EXCLUDED.away_score ELSE matches.away_score END
+                        """),
+                        {
+                            "game_id": game_id,
+                            "game_date": game_date,
+                            "season": season,
+                            "home_team_id": home_team_id,
+                            "away_team_id": away_team_id,
+                            "winner_id": winner_id,
+                            "is_completed": is_completed,
+                            "home_score": home_score,
+                            "away_score": away_score
+                        },
+                    )
                     if game_id not in games_seen:
-                        home_team = team_id if is_home else opp_team_id
-                        away_team = opp_team_id if is_home else team_id
-                        home_score = int(row["PTS"]) if is_home else None
-                        away_score = int(row["PTS"]) if not is_home else None
-                        
-                        conn.execute(
-                            text("""
-                                INSERT INTO matches (game_id, game_date, season, home_team_id, 
-                                    away_team_id, winner_team_id, is_completed)
-                                VALUES (:game_id, :game_date, :season, :home_team, 
-                                    :away_team, :winner_id, TRUE)
-                                ON CONFLICT (game_id) DO UPDATE SET
-                                    winner_team_id = EXCLUDED.winner_team_id,
-                                    is_completed = TRUE
-                            """),
-                            {
-                                "game_id": game_id,
-                                "game_date": game_date,
-                                "season": season,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "winner_id": winner_id,
-                            },
-                        )
                         games_seen.add(game_id)
                         game_count += 1
                     
@@ -616,27 +619,74 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
 
 
 # ==========================================
+# DATA INTEGRITY AUDIT
+# ==========================================
+
+def audit_data(engine):
+    """
+    Perform a consistency check on the ingested data.
+    
+    🎓 WHY:
+        In professional ML engineering, model accuracy is only as good 
+        as your data. This function flags suspicious "gaps" in the dataset.
+    """
+    logger.info("🔍 STARTING DATA INTEGRITY AUDIT...")
+    with engine.connect() as conn:
+        # 1. Check for Matches without Team Stats (should be exactly 2 stats records per match)
+        stats_check = conn.execute(text("""
+            SELECT m.game_id, COUNT(tgs.id) as stats_count
+            FROM matches m
+            LEFT JOIN team_game_stats tgs ON m.game_id = tgs.game_id
+            WHERE m.is_completed = TRUE
+            GROUP BY m.game_id
+            HAVING COUNT(tgs.id) != 2;
+        """)).fetchall()
+        
+        if stats_check:
+            logger.warning(f"  ⚠️ ALERT: Found {len(stats_check)} completed games with missing team stats!")
+        else:
+            logger.info("  ✅ Team Stats: Every match has exactly 2 team records.")
+
+        # 2. Check for Matches without Player Stats
+        player_check = conn.execute(text("""
+            SELECT m.game_id
+            FROM matches m
+            LEFT JOIN player_game_stats pgs ON m.game_id = pgs.game_id
+            WHERE m.is_completed = TRUE
+            GROUP BY m.game_id
+            HAVING COUNT(pgs.id) = 0;
+        """)).fetchall()
+        
+        if player_check:
+            logger.warning(f"  ⚠️ ALERT: Found {len(player_check)} games with ZERO player stats!")
+        else:
+            logger.info("  ✅ Player Stats: No completed games are missing player box scores.")
+
+        # 3. Check for NULL values in critical columns (Only for completed games)
+        null_check = conn.execute(text("""
+            SELECT COUNT(*) 
+            FROM matches 
+            WHERE is_completed = TRUE AND (home_score IS NULL OR away_score IS NULL);
+        """)).scalar()
+        
+        if null_check > 0:
+            logger.warning(f"  ⚠️ ALERT: Found {null_check} matches with NULL scores!")
+        else:
+            logger.info("  ✅ Data Quality: No NULL scores detected in matches table.")
+    
+    logger.info("🏁 AUDIT COMPLETE.")
+
+
+# ==========================================
 # MAIN INGESTION PIPELINE
 # ==========================================
 
 def run_full_ingestion(seasons: Optional[list] = None):
     """
     Run the complete data ingestion pipeline.
-    
-    🎓 PIPELINE DESIGN:
-        1. Teams first (other tables reference team_id via foreign key)
-        2. Games next (matches + team_game_stats)
-        3. Players last (references team_id)
-        
-        Order matters because of foreign key constraints!
-        This is a common pattern in ETL pipelines — load dimension tables
-        before fact tables.
-    
-    Args:
-        seasons: List of seasons to ingest. Default: ["2024-25", "2025-26"]
     """
     if seasons is None:
-        seasons = ["2024-25"]
+        seasons = [config.CURRENT_SEASON]
     
     engine = get_engine()
     
@@ -646,38 +696,38 @@ def run_full_ingestion(seasons: Optional[list] = None):
     
     start_time = time.time()
     
-    # Step 1: Teams (dimension table — load first)
+    # Step 1: Teams (dimension table)
     team_count = ingest_teams(engine)
     
-    # Step 2: Game logs for each season (fact table)
+    # Step 2: Game logs (fact table)
     total_games = 0
     for season in seasons:
-        game_count = ingest_season_games(engine, season=season)
-        total_games += game_count
+        total_games += ingest_season_games(engine, season=season)
     
-    # Step 3: Player rosters (dimension table)
+    # Step 3: Player rosters
     player_count = ingest_players(engine, season=seasons[-1])
     
     # Step 4: Player Game Logs & Season Stats
     total_player_games = 0
     total_season_stats = 0
     for season in seasons:
-        pg_count = ingest_player_game_logs(engine, season=season)
-        ps_count = ingest_player_season_stats(engine, season=season)
-        total_player_games += pg_count
-        total_season_stats += ps_count
+        total_player_games += ingest_player_game_logs(engine, season=season)
+        total_season_stats += ingest_player_season_stats(engine, season=season)
+    
+    # Step 5: Data Integrity Audit
+    audit_data(engine)
     
     elapsed = time.time() - start_time
     
     logger.info("=" * 60)
-    logger.info(f"✅ INGESTION COMPLETE in {elapsed:.1f}s")
+    logger.info(f"✅ INGESTED in {elapsed:.1f}s")
     logger.info(f"   Teams:   {team_count}")
     logger.info(f"   Games:   {total_games}")
     logger.info(f"   Players: {player_count}")
-    logger.info(f"   Player Game Logs: {total_player_games}")
-    logger.info(f"   Player Season Stats: {total_season_stats}")
+    logger.info(f"   Player Logs: {total_player_games}")
+    logger.info(f"   Season Aggs: {total_season_stats}")
     logger.info("=" * 60)
 
 
 if __name__ == "__main__":
-    run_full_ingestion(seasons=["2024-25", "2025-26"])
+    run_full_ingestion()

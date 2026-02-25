@@ -12,51 +12,47 @@ flowchart TD
         API["🏀 NBA Stats API<br/>(nba_api package)"]
     end
 
-    subgraph "Ingestion Layer [ingestion.py]"
+    subgraph "Resilient Ingestion Layer [ingestion.py]"
         direction TB
-        T["1️⃣ Ingest Teams<br/>(30 teams, static)"]
-        G["2️⃣ Ingest Game Logs<br/>(~1200 games/season)"]
-        P["3️⃣ Ingest Players<br/>(~450 players)"]
-        T --> G --> P
+        L["1️⃣ Rate Limiter<br/>(2s Delay)"]
+        R["2️⃣ Retry Engine<br/>(Exp. Backoff)"]
+        T["3️⃣ Ingest Teams"]
+        G["4️⃣ Ingest Games<br/>(Incremental Sync)"]
+        P["5️⃣ Ingest Players"]
+        L --> R --> T --> G --> P
     end
 
     subgraph "Storage Layer [PostgreSQL]"
         direction TB
-        DT["teams<br/>(dimension)"]
-        DM["matches<br/>(fact)"]
-        DS["team_game_stats<br/>(fact)"]
-        DP["players<br/>(dimension)"]
-        MF["match_features<br/>(derived)"]
+        DT["teams"]
+        DM["matches"]
+        DS["team_game_stats"]
+        DP["players"]
+        MF["match_features"]
     end
 
-    subgraph "Feature Layer [feature_store.py]"
+    subgraph "Feature Engine [feature_store.py]"
         direction TB
-        R["Rolling Features<br/>(win%, point diff,<br/>off/def ratings)"]
-        H["H2H Features<br/>(matchup-specific<br/>win%, margin)"]
-        R --> H
+        WF["SQL Window Functions<br/>(Rolling Stats)"]
+        H2H["Self-Joins<br/>(H2H History)"]
+        WF --> H2H
     end
 
     subgraph "Consumption Layer"
-        ML["ML Training<br/>(trainer.py)"]
-        PRED["Live Predictions<br/>(predictor.py)"]
+        ML["ML Training"]
+        PRED["Live Predictions"]
     end
 
-    API --> T
-    API --> G
-    API --> P
-
+    API --> L
     T --> DT
-    G --> DM
-    G --> DS
+    G --> DM & DS
     P --> DP
 
-    DM --> R
-    DS --> R
-    R --> MF
-    H --> MF
+    DM & DS --> WF
+    WF --> MF
+    H2H --> MF
 
-    MF --> ML
-    MF --> PRED
+    MF --> ML & PRED
 
     style API fill:#f59e0b,color:#000
     style MF fill:#10b981,color:#000
@@ -75,44 +71,56 @@ flowchart TD
 │  Step 1: INGESTION (ingestion.py)                      │
 │  ├── 1a. ingest_teams()          →  teams table        │
 │  ├── 1b. ingest_season_games()   →  matches +          │
-│  │                                  team_game_stats    │
-│  └── 1c. ingest_players()        →  players table      │
+│  │    (Incremental via MAX date)    team_game_stats    │
+│  ├── 1c. ingest_players()        →  players table      │
+│  └── 1d. audit_data()            →  Quality Report     │
 │                                                        │
 │  Step 2: FEATURE ENGINEERING (feature_store.py)        │
 │  ├── 2a. compute_features()      →  match_features     │
-│  │    (rolling win%, point diff,     (rolling stats)   │
-│  │     off/def ratings, rest days)                     │
+│  │    (In-DB Rolling Stats)                            │
 │  └── 2b. compute_h2h_features()  →  match_features     │
-│       (head-to-head win%, margin)    (h2h columns)     │
+│       (Matchup-specific edge)                          │
 │                                                        │
-│  Step 3: MODEL UPDATE (Phase 2 — not yet implemented) │
-│  └── 3a. retrain if drift detected                     │
+│  Step 3: CONSUMPTION                                   │
+│  └── 3a. API serves fresh features for tonight's games │
 │                                                        │
 └────────────────────────────────────────────────────────┘
 ```
 
-## Data Volume Estimates
+## Resilience Strategy
 
-| Table | Rows per Season | Growth Rate | Storage |
-|-------|----------------|-------------|---------|
-| `teams` | 30 | Static (≈0/day) | < 1 KB |
-| `matches` | ~1,230 | ~5 games/day | ~100 KB |
-| `team_game_stats` | ~2,460 (2 per game) | ~10 rows/day | ~250 KB |
-| `players` | ~450 | Static per season | ~50 KB |
-| `match_features` | ~2,460 | ~10 rows/day | ~300 KB |
+### 1. Robust API Interactions
+The NBA stats API is notoriously flaky and sensitive to scraping. We implement three layers of defense:
+- **Centralized Config**: All timeouts and delays are managed in `config.py`.
+- **Global Rate Limiting**: Every call is followed by a `REQUEST_DELAY` sleep.
+- **Exponential Backoff**: Implementation of a `retry_api_call` decorator that handles transient errors (502, 504, 429) by waiting progressively longer durations before giving up.
 
-**Total**: < 1 MB per season. PostgreSQL handles this trivially.
+### 2. Idempotency (Atomic Upserts)
+The pipeline is designed to be **safe to fail**. If the ingestion crashes halfway through, rerunning it will not create duplicate data. We achieve this using PostgreSQL's `INSERT ... ON CONFLICT (id) DO UPDATE` pattern.
 
-## Pipeline Properties
+### 3. Incremental Watermarking
+To minimize the load on the NBA API and our database, we use a **Watermarking Strategy**:
+- We query the database for the `MAX(game_date)` of existing records.
+- We only request and process games from the API that occurred on or after this date.
+- This reduces a full season poll (~1230 games) to a tiny delta (~5-10 games) in daily runs.
 
-| Property | How We Achieve It |
-|----------|-------------------|
-| **Idempotent** | `ON CONFLICT ... DO UPDATE` — re-running produces same state |
-| **Ordered** | Teams → Games → Players (FK dependency order) |
-| **Rate-limited** | 1-second delay between NBA API calls |
-| **Error-isolated** | Try/except per team — one failure doesn't crash the pipeline |
-| **Observable** | Structured logging with timestamps, row counts, elapsed time |
-| **Resumable** | Idempotency means you can restart from any point |
+## Feature Store Strategy: "Push Compute to Data"
+
+Instead of pulling raw data into Python (Pandas) for feature engineering, we use **PostgreSQL Window Functions**. This follows the "Senior Manager" philosophy of **Pushing Computation to the Data Layer**:
+
+1. **Scalability**: DBs are optimized for relational operations (joins, aggregates).
+2. **Efficiency**: Zero data movement overhead.
+3. **Consistency**: The same SQL logic produces features for both training and real-time prediction service.
+
+### Anti-Leakage Guardrails
+We strictly use `ROWS BETWEEN ... PRECEDING AND 1 PRECEDING` in all window functions. This ensures that a feature record for "Game X" only knows about performance in "Games X-1, X-2...", never "Game X" itself.
+
+## Data Quality & Observability
+
+We implement an `audit_data()` function that runs post-ingestion to check for:
+- **Consistency**: Does every completed match have exactly 2 team_game_stats records?
+- **Completeness**: Are there any NULL scores in completed games?
+- **Health**: Total row count changes compared to historical averages.
 
 ## Data Lineage
 

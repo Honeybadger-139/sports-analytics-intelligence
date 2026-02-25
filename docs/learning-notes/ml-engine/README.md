@@ -1,20 +1,15 @@
-# ML Engine — Learning Notes
+# ML Engine — Learning Notes (Phase 1)
 
-> 📌 **Status**: This folder has initial content. Full README will be expanded as we work on Phase 2 enhancements.
+## Overview
+The ML Engine represents **Phase 1** of the platform transition. While Phase 0 focused on the raw data ingestion (Data Layer), Phase 1 introduces the feature store and the foundational logic for generating predictions.
 
-## What Is the ML Engine?
-
-The ML Engine is the **prediction brain** of the platform — it takes the features computed by the Data Layer and trains models to predict game outcomes, explain predictions with SHAP, and size bets using the Kelly Criterion.
-
-## Files in This Folder
+## Files in This Folder (Phase 1)
 
 | File | Topic | Key Concepts |
 |------|-------|-------------|
-| [model-selection.md](model-selection.md) | **Model Selection** — Why XGBoost + LightGBM ensemble | Baseline vs advanced models, ensemble methods, cross-validation |
+| [rolling-features.md](rolling-features.md) | **Rolling Features** | Team momentum, point differentials, leakage prevention |
+| [head-to-head-metrics.md](head-to-head-metrics.md) | **H2H Analysis** | Matchup-specific edge, historical dominance, self-joins |
+| [etl-idempotency.md](etl-idempotency.md) | **Resilient Pipelines** | Idempotency, watermarking, exponential backoff (Advanced Ingestion) |
+| [model-selection.md](model-selection.md) | **Model Selection** | XGBoost vs LightGBM, ensemble strategy |
 
-## Modules (Covered in Detail Later)
-
-- `trainer.py` — Model training pipeline (Logistic Regression → XGBoost → LightGBM → Ensemble)
-- `predictor.py` — Model serving for live predictions
-- `explainability.py` — SHAP values for per-prediction feature attribution
-- `bet_sizing.py` — Kelly Criterion for optimal stake sizing
+*Note: Phase 2 (Infrastructure/Intelligence Layer) nodes will be documented in their respective higher-level folders.*
