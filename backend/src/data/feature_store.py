@@ -43,27 +43,64 @@ FEATURES WE COMPUTE:
 """
 
 import logging
+import os
+import json
+import time
+from datetime import datetime
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
-import os
+
+from src import config
 
 load_dotenv()
 
+# Ensure logs directory exists
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+PIPE_LOG_FILE = os.path.join(LOG_DIR, "pipeline.log")
+
+# Configure logging (Dual Handler: Console + File)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(PIPE_LOG_FILE)
+    ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"📝 Logging to console and {PIPE_LOG_FILE}")
+
+
+def record_audit(engine, module: str, status: str, processed: int = 0, inserted: int = 0, errors: str = None, details: dict = None):
+    """
+    Record pipeline results into the pipeline_audit table.
+    """
+    logger.info(f"📊 Recording audit log for {module} (status: {status})...")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
+                    VALUES (:module, :status, :processed, :inserted, :errors, :details)
+                """),
+                {
+                    "module": module,
+                    "status": status,
+                    "processed": processed,
+                    "inserted": inserted,
+                    "errors": errors,
+                    "details": json.dumps(details) if details else None
+                }
+            )
+    except Exception as e:
+        logger.error(f"  ❌ Failed to record audit log: {e}")
 
 
 def get_engine():
-    """Create SQLAlchemy engine from environment variable."""
-    database_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://analyst:analytics2026@localhost:5432/sports_analytics",
-    )
-    return create_engine(database_url)
+    """Create SQLAlchemy engine from centralized config."""
+    return create_engine(config.DATABASE_URL)
 
 
 def compute_features(engine, season: str = "2025-26"):
@@ -343,17 +380,48 @@ def run_feature_engineering(seasons: list = None):
     
     logger.info("=" * 60)
     logger.info("⚙️ STARTING FEATURE ENGINEERING PIPELINE")
-    logger.info("=" * 60)
-    
-    for season in seasons:
-        count = compute_features(engine, season)
-        compute_h2h_features(engine, season)
-        logger.info(f"  Season {season}: {count} feature rows")
+    start_time = time.time()
     
     logger.info("=" * 60)
-    logger.info("✅ FEATURE ENGINEERING COMPLETE")
+    logger.info("🚀 STARTING FEATURE ENGINEERING PIPELINE")
     logger.info("=" * 60)
+    
+    try:
+        # Default to current season if not specified
+        season = config.CURRENT_SEASON
+        record_count = compute_features(engine, season=season)
+        
+        elapsed = time.time() - start_time
+        
+        # Record success
+        record_audit(
+            engine,
+            module="feature_store",
+            status="success",
+            processed=record_count,
+            inserted=record_count,
+            details={
+                "season": season,
+                "elapsed_seconds": round(elapsed, 2)
+            }
+        )
+        
+        logger.info("=" * 60)
+        logger.info(f"✅ COMPLETED in {elapsed:.1f}s")
+        logger.info(f"   Features Computed: {record_count}")
+        logger.info("=" * 60)
+        
+    except Exception as e:
+        logger.error(f"💥 CRITICAL FEATURE ERROR: {e}")
+        record_audit(
+            engine,
+            module="feature_store",
+            status="failed",
+            errors=str(e),
+            details={"step": "main_loop"}
+        )
+        raise e
 
 
 if __name__ == "__main__":
-    run_feature_engineering()
+    run_feature_pipeline()

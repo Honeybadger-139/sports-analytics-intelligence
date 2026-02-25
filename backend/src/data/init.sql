@@ -182,6 +182,19 @@ CREATE TABLE IF NOT EXISTS bets (
     settled_at TIMESTAMP
 );
 
+-- Pipeline Audit: logs results of each ingestion/feature sync
+CREATE TABLE IF NOT EXISTS pipeline_audit (
+    id SERIAL PRIMARY KEY,
+    sync_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    module VARCHAR(50) NOT NULL,              -- 'ingestion', 'feature_store'
+    status VARCHAR(20) NOT NULL,               -- 'success', 'failed'
+    records_processed INTEGER DEFAULT 0,
+    records_inserted INTEGER DEFAULT 0,
+    errors TEXT,
+    details JSONB,                             -- store breakdown of sync (e.g., table stats)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(game_date);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season);
@@ -192,3 +205,5 @@ CREATE INDEX IF NOT EXISTS idx_features_game ON match_features(game_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_game ON predictions(game_id);
 CREATE INDEX IF NOT EXISTS idx_bets_game ON bets(game_id);
 CREATE INDEX IF NOT EXISTS idx_bets_result ON bets(result);
+CREATE INDEX IF NOT EXISTS idx_pipeline_audit_module ON pipeline_audit(module);
+CREATE INDEX IF NOT EXISTS idx_pipeline_audit_status ON pipeline_audit(status);

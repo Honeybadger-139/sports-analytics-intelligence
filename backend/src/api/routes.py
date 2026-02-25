@@ -211,3 +211,74 @@ async def get_features(game_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Features not found for game {game_id}")
     
     return {"game_id": game_id, "features": features}
+# ==========================================
+# SYSTEM STATUS & AUDIT ROUTES
+# ==========================================
+
+@router.get("/system/status")
+def get_system_status(db: Session = Depends(get_db)):
+    """
+    Get the health and history of the data pipeline.
+    
+    🎓 WHY THIS MATTERS:
+        Observability is a key difference between a "script" and a "product."
+        This endpoint gives the frontend a way to show users if the data
+        is fresh or if a sync failed.
+    """
+    try:
+        # 1. Get database connectivity
+        db_status = "online"
+        try:
+            db.execute(text("SELECT 1"))
+        except Exception:
+            db_status = "offline"
+
+        # 2. Get recent audit logs
+        audit_logs = db.execute(text("""
+            SELECT id, sync_time, module, status, records_processed, records_inserted, errors, details
+            FROM pipeline_audit
+            ORDER BY sync_time DESC
+            LIMIT 10
+        """)).fetchall()
+        
+        # Format logs as dictionaries
+        logs = []
+        for log in audit_logs:
+            logs.append({
+                "id": log.id,
+                "sync_time": log.sync_time.isoformat(),
+                "module": log.module,
+                "status": log.status,
+                "processed": log.records_processed,
+                "inserted": log.records_inserted,
+                "errors": log.errors,
+                "details": log.details
+            })
+
+        # 3. Get record counts for current season
+        # Using CURRENT_SEASON from config
+        from src import config
+        season = config.CURRENT_SEASON
+        
+        matches_count = db.execute(text("SELECT COUNT(*) FROM matches WHERE season = :s"), {"s": season}).scalar()
+        features_count = db.execute(text("SELECT COUNT(*) FROM match_features WHERE game_id IN (SELECT game_id FROM matches WHERE season = :s)"), {"s": season}).scalar()
+        players_count = db.execute(text("SELECT COUNT(*) FROM players WHERE is_active = TRUE")).scalar()
+
+        return {
+            "status": "healthy" if db_status == "online" else "degraded",
+            "database": db_status,
+            "pipeline": {
+                "last_sync": logs[0]["sync_time"] if logs else None,
+                "last_status": logs[0]["status"] if logs else "unknown"
+            },
+            "stats": {
+                "season": season,
+                "matches": matches_count,
+                "features": features_count,
+                "active_players": players_count
+            },
+            "audit_history": logs
+        }
+    except Exception as e:
+        logger.error(f"Error fetching system status: {e}")
+        return {"status": "error", "message": str(e)}

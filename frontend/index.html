@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Health | Sports Analytics Intelligence</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="icon">🚀</span>
+                <h1>Sports Analytics Intelligence</h1>
+            </div>
+            <div id="overall-status" class="status-badge status-loading">Checking System...</div>
+        </header>
+
+        <main>
+            <!-- System Health Overview -->
+            <section class="grid-stats">
+                <div class="card stat-card">
+                    <h3>Database</h3>
+                    <div id="db-status" class="status-indicator">--</div>
+                    <p class="stat-meta">PostgreSQL Connection</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>Pipeline</h3>
+                    <div id="pipeline-status" class="status-indicator">--</div>
+                    <p id="last-sync" class="stat-meta">Last Sync: --</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>Matches</h3>
+                    <div id="match-count" class="stat-value">0</div>
+                    <p class="stat-meta">Total season games</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>Features</h3>
+                    <div id="feature-count" class="stat-value">0</div>
+                    <p class="stat-meta">Computed features</p>
+                </div>
+            </section>
+
+            <!-- Audit History -->
+            <section class="audit-section">
+                <div class="section-header">
+                    <h2>Pipeline Audit History</h2>
+                    <button id="refresh-btn" class="btn secondary">Refresh</button>
+                </div>
+                <div class="card table-container">
+                    <table id="audit-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Module</th>
+                                <th>Status</th>
+                                <th>Processed</th>
+                                <th>Elapsed</th>
+                                <th>Errors</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-body">
+                            <!-- Rows injected by JS -->
+                            <tr><td colspan="6" class="loading">Loading audit logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Sports Analytics Intelligence Platform | Phase 1 Resilience</p>
+        </footer>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

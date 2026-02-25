@@ -44,10 +44,28 @@ Every ingestion run ends with an automated "sanity check."
 
 ---
 
-## Interview Angle: Resilience Patterns
-> **"How do you handle flaky external APIs?"**
+## Phase 1 Resilience & Auditing (Current)
+
+We've added a robust resilience and observability layer to ensure production-grade reliability.
+
+### 1. Jittered Rate Limiting
+Instead of a fixed delay, we've added random jitter ($\pm 0.2s$) to our requests.
+- **Why**: "Robotic" fixed-interval scraping is easily detected by modern API firewalls. Jitter mimics human-like variance.
+
+### 2. Dual-Handler Logging
+The system now logs to both `STDOUT` (console) and `logs/pipeline.log`.
+- **Why**: Console logs are great for dev, but file logs are critical for post-mortem debugging of failed midnight syncs.
+
+### 3. Pre-flight Health Checks
+Before any data movement starts, the pipeline verifies:
+- **DB Connection**: Simple `SELECT 1` heartbeat.
+- **API Heartbeat**: Fetches a tiny resource from `nba_api` to ensure no IP blocks are in place.
+
+### 4. Structured Auditing Layer
+We now record every pipeline event in the `pipeline_audit` table.
+- **Observability**: The `/api/v1/system/status` endpoint reads from this table to show the frontend the "Pulse" of the system.
+
+## Interview Angle: The "Flight Recorder" Pattern
+> **"How do you handle pipeline observability?"**
 > 
-> "I implemented a multi-layered resilience strategy:
-> 1. **Exponential Backoff**: If the API fails, we retry at 10s, 20s, and 40s intervals.
-> 2. **Rate Limiting**: A strict delay between calls to stay within the service's SLA.
-> 3. **Error Isolation**: Each team's loop is wrapped in a `try-except`, so a failure in one team doesn't crash the entire ingestion run."
+> "I implemented what I call the 'Flight Recorder' pattern. Every ingestion and feature engineering run records its start time, status, record counts, and any stack traces into an audit table. This allowed me to build a real-time health dashboard, moving us away from 'guessing' if the data is fresh to 'knowing' the system's state at a glance."

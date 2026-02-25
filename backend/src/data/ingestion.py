@@ -33,8 +33,10 @@ Architecture Decision (see docs/decisions/decision-log.md):
 
 import time
 import logging
-from datetime import datetime
-from typing import Optional
+import random
+from datetime import datetime, date
+from typing import Optional, Dict, Any
+import json
 
 import pandas as pd
 from nba_api.stats.static import teams as nba_teams
@@ -50,13 +52,23 @@ import os
 
 from src import config
 
-# Configure logging
+# Ensure logs directory exists
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+PIPE_LOG_FILE = os.path.join(LOG_DIR, "pipeline.log")
+
+# Configure logging (Dual Handler: Console + File)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(PIPE_LOG_FILE)
+    ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"📝 Logging to console and {PIPE_LOG_FILE}")
 
 
 def get_engine():
@@ -66,13 +78,68 @@ def get_engine():
 
 def rate_limit():
     """
-    Sleep between API calls to avoid being throttled.
+    Sleep between API calls to avoid being throttled with added jitter.
     
-    🎓 WHY:
-        NBA.com rate-limits aggressive requests. If we fire 100 requests
-        in 10 seconds, we'll get 429 (Too Many Requests) or worse, IP-banned.
+    🎓 WHY JITTER?
+        If we call the API at EXACTLY 2.0s intervals, anti-scraping
+        filters might flag the "robotic" pattern. Jitter adds 
+        organic randomness.
     """
-    time.sleep(config.REQUEST_DELAY)
+    jitter = random.uniform(-0.2, 0.2)
+    sleep_time = max(0.5, config.REQUEST_DELAY + jitter)
+    time.sleep(sleep_time)
+
+
+def check_health(engine) -> bool:
+    """
+    Pre-flight check: Verify DB and API connectivity.
+    """
+    logger.info("🩺 Performing pre-flight health checks...")
+    
+    # 1. DB Connectivity
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("  ✅ Database connectivity: OK")
+    except Exception as e:
+        logger.error(f"  ❌ Database connectivity FAILED: {e}")
+        return False
+        
+    # 2. NBA API Connectivity (Simple Heartbeat)
+    try:
+        from nba_api.stats.endpoints import commonallplayers
+        commonallplayers.CommonAllPlayers(is_only_current_season=1, timeout=10)
+        logger.info("  ✅ NBA API connectivity: OK")
+    except Exception as e:
+        logger.error(f"  ❌ NBA API connectivity FAILED: {e}")
+        return False
+        
+    return True
+
+
+def record_audit(engine, module: str, status: str, processed: int = 0, inserted: int = 0, errors: str = None, details: dict = None):
+    """
+    Record pipeline results into the pipeline_audit table.
+    """
+    logger.info(f"📊 Recording audit log for {module} (status: {status})...")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
+                    VALUES (:module, :status, :processed, :inserted, :errors, :details)
+                """),
+                {
+                    "module": module,
+                    "status": status,
+                    "processed": processed,
+                    "inserted": inserted,
+                    "errors": errors,
+                    "details": json.dumps(details) if details else None
+                }
+            )
+    except Exception as e:
+        logger.error(f"  ❌ Failed to record audit log: {e}")
 
 
 def retry_api_call(func, *args, **kwargs):
@@ -690,37 +757,87 @@ def run_full_ingestion(seasons: Optional[list] = None):
     
     engine = get_engine()
     
+    # Pre-flight Check
+    if not check_health(engine):
+        logger.error("🚫 HEALTH CHECK FAILED. Aborting ingestion.")
+        return
+
     logger.info("=" * 60)
     logger.info("🚀 STARTING FULL NBA DATA INGESTION")
     logger.info("=" * 60)
     
     start_time = time.time()
+    errors = []
     
-    # Step 1: Teams (dimension table)
-    team_count = ingest_teams(engine)
+    audit_details = {}
     
-    # Step 2: Game logs (fact table)
-    total_games = 0
-    for season in seasons:
-        total_games += ingest_season_games(engine, season=season)
-    
-    # Step 3: Player rosters
-    player_count = ingest_players(engine, season=seasons[-1])
-    
-    # Step 4: Player Game Logs & Season Stats
-    total_player_games = 0
-    total_season_stats = 0
-    for season in seasons:
-        total_player_games += ingest_player_game_logs(engine, season=season)
-        total_season_stats += ingest_player_season_stats(engine, season=season)
-    
-    # Step 5: Data Integrity Audit
-    audit_data(engine)
-    
-    elapsed = time.time() - start_time
-    
-    logger.info("=" * 60)
-    logger.info(f"✅ INGESTED in {elapsed:.1f}s")
+    try:
+        # Step 1: Teams (dimension table)
+        team_count = ingest_teams(engine)
+        
+        # Step 2: Game logs
+        total_games = 0
+        for season in seasons:
+            total_games += ingest_season_games(engine, season=season)
+        
+        # Step 3: Player rosters
+        player_count = ingest_players(engine, season=seasons[-1])
+        
+        # Step 4: Player Game Logs & Season Stats
+        total_player_games = 0
+        total_season_stats = 0
+        for season in seasons:
+            total_player_games += ingest_player_game_logs(engine, season=season)
+            total_season_stats += ingest_player_season_stats(engine, season=season)
+        
+        # Step 5: Data Integrity Audit
+        audit_data(engine)
+        
+        elapsed = time.time() - start_time
+        total_processed = team_count + total_games + player_count + total_player_games + total_season_stats
+        
+        audit_details = {
+            "teams": team_count,
+            "games": total_games,
+            "players": player_count,
+            "player_logs": total_player_games,
+            "season_aggs": total_season_stats,
+            "elapsed_seconds": round(elapsed, 2)
+        }
+
+        # Record final success
+        record_audit(
+            engine, 
+            module="ingestion", 
+            status="success", 
+            processed=total_processed, 
+            inserted=total_processed, 
+            details=audit_details
+        )
+        
+        logger.info("=" * 60)
+        logger.info(f"✅ INGESTED in {elapsed:.1f}s")
+        logger.info(f"   Teams:   {team_count}")
+        logger.info(f"   Games:   {total_games}")
+        logger.info(f"   Players: {player_count}")
+        logger.info(f"   Player Logs: {total_player_games}")
+        logger.info(f"   Season Aggs: {total_season_stats}")
+        logger.info("=" * 60)
+
+    except Exception as e:
+        logger.error(f"💥 CRITICAL INGESTION ERROR: {e}")
+        record_audit(
+            engine,
+            module="ingestion",
+            status="failed",
+            errors=str(e),
+            details={"step": "main_loop"}
+        )
+        raise e
+
+
+if __name__ == "__main__":
+    run_full_ingestion()
     logger.info(f"   Teams:   {team_count}")
     logger.info(f"   Games:   {total_games}")
     logger.info(f"   Players: {player_count}")
