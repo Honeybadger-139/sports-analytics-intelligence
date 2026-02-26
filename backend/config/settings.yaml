@@ -1,8 +1,8 @@
 # Application settings
 app:
   name: "Sports Analytics Intelligence Platform"
-  version: "0.1.0"
-  debug: true
+  version: "1.0.0"
+  debug: false
 
 # Database
 database:

@@ -36,3 +36,9 @@ mlruns/
 
 # Node (if frontend uses any)
 node_modules/
+
+# Pipeline logs & runtime artifacts
+logs/
+*.log
+ingestion.pid
+ingestion_output.log

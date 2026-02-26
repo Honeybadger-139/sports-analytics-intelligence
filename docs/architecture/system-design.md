@@ -58,6 +58,14 @@ graph TB
         X["monitoring.py"] -->|"Track accuracy,<br/>detect drift"| C
         X -->|"Trigger retrain"| E
     end
+
+    subgraph "Observability"
+        Y["pipeline_audit<br/>(PostgreSQL table)"] ---|"Records every sync"| C
+        B -.->|"Logs to"| Z["Dual Logger<br/>(Console + File)"]
+        D -.->|"Logs to"| Z
+        AA["/api/v1/system/status"] -->|"Reads audit + stats"| C
+        AA --> P
+    end
 ```
 
 ## Data Flow

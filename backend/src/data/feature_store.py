@@ -424,4 +424,4 @@ def run_feature_engineering(seasons: list = None):
 
 
 if __name__ == "__main__":
-    run_feature_pipeline()
+    run_feature_engineering()

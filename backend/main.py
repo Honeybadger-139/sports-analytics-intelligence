@@ -21,7 +21,7 @@ import os
 app = FastAPI(
     title="Sports Analytics Intelligence Platform",
     description="ML-powered sports analytics with prediction, explainability, and risk optimization",
-    version="0.2.0",
+    version="1.0.0",
 )
 
 # CORS middleware — allows the HTML frontend to call the API
@@ -48,15 +48,16 @@ async def root():
     """Health check endpoint."""
     return {
         "name": "Sports Analytics Intelligence Platform",
-        "version": "0.2.0",
+        "version": "1.0.0",
         "status": "operational",
-        "phase": "Phase 2 — Prediction Engine",
+        "phase": "Phase 2 Complete — Prediction Engine + Resilience",
         "endpoints": {
             "teams": "/api/v1/teams",
-            "matches": "/api/v1/matches?season=2024-25",
-            "standings": "/api/v1/standings?season=2024-25",
+            "matches": "/api/v1/matches?season=2025-26",
+            "standings": "/api/v1/standings?season=2025-26",
             "predict": "/api/v1/predictions/game/{game_id}",
             "bet_sizing": "/api/v1/predictions/bet-sizing",
+            "system_status": "/api/v1/system/status",
             "docs": "/docs",
         },
     }

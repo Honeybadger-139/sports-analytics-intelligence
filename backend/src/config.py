@@ -25,6 +25,15 @@ BASE_BACKOFF = 10
 # Change this to pull different seasons (e.g., "2023-24")
 CURRENT_SEASON = "2025-26"
 
+# Directory Paths
+import pathlib
+_BACKEND_ROOT = pathlib.Path(__file__).resolve().parent.parent
+LOG_DIR = _BACKEND_ROOT / "logs"
+MODEL_DIR = _BACKEND_ROOT / "models"
+
+# Ensure log directory exists
+LOG_DIR.mkdir(exist_ok=True)
+
 # ==========================================
 # 💡 INTERVIEW ANGLE:
 # "I centralized configuration into a single source of truth. 

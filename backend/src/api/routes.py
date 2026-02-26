@@ -46,7 +46,7 @@ async def get_teams(db: Session = Depends(get_db)):
 
 @router.get("/matches")
 async def get_matches(
-    season: str = Query(default="2024-25"),
+    season: str = Query(default="2025-26"),
     team: Optional[str] = Query(default=None, description="Team abbreviation"),
     limit: int = Query(default=20, le=100),
     db: Session = Depends(get_db),
@@ -162,7 +162,7 @@ async def get_bet_sizing(
 
 @router.get("/standings")
 async def get_standings(
-    season: str = Query(default="2024-25"),
+    season: str = Query(default="2025-26"),
     db: Session = Depends(get_db),
 ):
     """Get team standings based on win-loss record."""

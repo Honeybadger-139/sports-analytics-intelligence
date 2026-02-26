@@ -37,6 +37,7 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
+      - ./logs:/app/logs
 
   # pgAdmin — Web-based SQL Query UI (like SQL Lab)
   pgadmin:
