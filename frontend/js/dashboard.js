@@ -1,10 +1,12 @@
 document.addEventListener("DOMContentLoaded", () => {
     const API_BASE = "/api/v1";
     const CURRENT_SEASON = "2025-26";
+    const THEME_KEY = "sai_theme";
 
     const dom = {
         overallStatus: document.getElementById("overall-status"),
         refreshAllBtn: document.getElementById("refresh-all-btn"),
+        themeToggleBtn: document.getElementById("theme-toggle-btn"),
         refreshTodayBtn: document.getElementById("refresh-today-btn"),
         refreshAuditBtn: document.getElementById("refresh-audit-btn"),
         refreshBankrollBtn: document.getElementById("refresh-bankroll-btn"),
@@ -40,6 +42,30 @@ document.addEventListener("DOMContentLoaded", () => {
         summaryBankroll: document.getElementById("summary-bankroll"),
         summaryRoi: document.getElementById("summary-roi"),
     };
+
+    function applyTheme(theme) {
+        const isDark = theme === "dark";
+        document.body.classList.toggle("theme-dark", isDark);
+        dom.themeToggleBtn.textContent = isDark ? "Light Mode" : "Dark Mode";
+        dom.themeToggleBtn.setAttribute("aria-pressed", isDark ? "true" : "false");
+    }
+
+    function initTheme() {
+        const stored = localStorage.getItem(THEME_KEY);
+        if (stored === "dark" || stored === "light") {
+            applyTheme(stored);
+            return;
+        }
+        const prefersDark = window.matchMedia
+            && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        applyTheme(prefersDark ? "dark" : "light");
+    }
+
+    function toggleTheme() {
+        const next = document.body.classList.contains("theme-dark") ? "light" : "dark";
+        localStorage.setItem(THEME_KEY, next);
+        applyTheme(next);
+    }
 
     function fmtNum(value) {
         return Number(value || 0).toLocaleString();
@@ -353,9 +379,11 @@ document.addEventListener("DOMContentLoaded", () => {
     dom.refreshTodayBtn.addEventListener("click", loadTodayPredictions);
     dom.refreshAuditBtn.addEventListener("click", loadSystemStatus);
     dom.refreshBankrollBtn.addEventListener("click", loadBankroll);
+    dom.themeToggleBtn.addEventListener("click", toggleTheme);
     dom.deepDiveLoadBtn.addEventListener("click", () => loadDeepDiveForGame(dom.deepDiveSelect.value));
     dom.deepDiveSelect.addEventListener("change", () => loadDeepDiveForGame(dom.deepDiveSelect.value));
 
+    initTheme();
     refreshAll();
     setInterval(() => {
         loadSystemStatus();

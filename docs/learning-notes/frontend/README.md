@@ -38,12 +38,18 @@ The frontend is the product surface for this ML system. It turns backend APIs in
   - `GET /api/v1/bets`
 - Shows bankroll KPIs and recent settled/pending bets
 
+### 6) Theme Toggle (Light/Dark)
+- Header button toggles between light and dark UI modes.
+- Theme preference is persisted in browser `localStorage` using key `sai_theme`.
+- CSS token overrides (`body.theme-dark`) update font and surface colors consistently across modules.
+
 ## Design Decisions
 
 1. **No frontend framework (yet)**: Vanilla HTML/CSS/JS keeps deployment simple and demonstrates API-first architecture.
 2. **Module-first page structure**: Every dashboard section maps to one backend capability for easier debugging and interview storytelling.
 3. **Resilient states**: Every module handles loading, empty, and error states explicitly.
 4. **Responsive by default**: The same page works across desktop/mobile breakpoints with no separate build.
+5. **Theme via design tokens**: Light/dark switch is implemented with CSS variables rather than duplicated styles.
 
 ## Senior Manager Perspective
 

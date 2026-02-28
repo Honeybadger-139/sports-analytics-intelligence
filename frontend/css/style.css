@@ -14,6 +14,20 @@
     --sans: "Space Grotesk", sans-serif;
     --radius: 14px;
     --shadow: 0 10px 30px rgba(24, 35, 56, 0.08);
+    --bg-grad-1: rgba(31, 142, 241, 0.12);
+    --bg-grad-2: rgba(15, 91, 214, 0.15);
+    --topbar-bg-start: #ffffff;
+    --topbar-bg-end: #f8fbff;
+    --summary-bg: #fbfcff;
+    --table-row-border: #edf1f8;
+    --table-row-hover: #f7faff;
+    --callout-bg: #f4f8ff;
+    --callout-border: #bfd0f4;
+    --chip-bg: #eef3ff;
+    --chip-ink: #4f5f7b;
+    --pill-loading-bg: #e8eefb;
+    --pill-loading-ink: #4f5f7b;
+    --ghost-bg: #ffffff;
 }
 
 * {
@@ -26,10 +40,39 @@ body {
     font-family: var(--sans);
     color: var(--ink);
     background:
-        radial-gradient(circle at 10% 5%, rgba(31, 142, 241, 0.12), transparent 26%),
-        radial-gradient(circle at 85% 0%, rgba(15, 91, 214, 0.15), transparent 26%),
+        radial-gradient(circle at 10% 5%, var(--bg-grad-1), transparent 26%),
+        radial-gradient(circle at 85% 0%, var(--bg-grad-2), transparent 26%),
         var(--bg);
     min-height: 100vh;
+}
+
+body.theme-dark {
+    --bg: #0f1423;
+    --ink: #e8efff;
+    --ink-soft: #bdcae8;
+    --ink-muted: #8c9dbe;
+    --panel: #151d31;
+    --line: #2b3858;
+    --brand: #79aaff;
+    --brand-2: #4ea1ff;
+    --success: #56d39a;
+    --error: #ff8f9a;
+    --warn: #f1c36a;
+    --shadow: 0 14px 32px rgba(5, 8, 16, 0.45);
+    --bg-grad-1: rgba(121, 170, 255, 0.16);
+    --bg-grad-2: rgba(78, 161, 255, 0.14);
+    --topbar-bg-start: #161f35;
+    --topbar-bg-end: #1a2440;
+    --summary-bg: #111a2c;
+    --table-row-border: #243252;
+    --table-row-hover: #1a2642;
+    --callout-bg: #17233b;
+    --callout-border: #3d5584;
+    --chip-bg: #1c2a49;
+    --chip-ink: #c8d7f4;
+    --pill-loading-bg: #202c49;
+    --pill-loading-ink: #c0d0ef;
+    --ghost-bg: #1b2946;
 }
 
 .shell {
@@ -47,7 +90,7 @@ body {
     padding: 18px 20px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: linear-gradient(120deg, #fff, #f8fbff);
+    background: linear-gradient(120deg, var(--topbar-bg-start), var(--topbar-bg-end));
     box-shadow: var(--shadow);
 }
 
@@ -176,12 +219,12 @@ select {
 }
 
 .callout {
-    border: 1px solid #bfd0f4;
+    border: 1px solid var(--callout-border);
     border-left: 4px solid var(--brand);
     border-radius: 10px;
     padding: 10px 12px;
     margin-bottom: 10px;
-    background: #f4f8ff;
+    background: var(--callout-bg);
     color: var(--ink-soft);
     font-size: 0.86rem;
 }
@@ -204,7 +247,7 @@ h4 {
     border: 1px solid var(--line);
     border-radius: 10px;
     padding: 8px 10px;
-    background: #fbfcff;
+    background: var(--summary-bg);
 }
 
 .summary-grid span {
@@ -246,12 +289,12 @@ thead th {
 }
 
 tbody td {
-    border-bottom: 1px solid #edf1f8;
+    border-bottom: 1px solid var(--table-row-border);
     padding: 10px 9px;
 }
 
 tbody tr:hover td {
-    background: #f7faff;
+    background: var(--table-row-hover);
 }
 
 .empty {
@@ -269,8 +312,8 @@ tbody tr:hover td {
 }
 
 .pill-loading {
-    background: #e8eefb;
-    color: var(--ink-soft);
+    background: var(--pill-loading-bg);
+    color: var(--pill-loading-ink);
 }
 
 .pill-healthy {
@@ -289,8 +332,8 @@ tbody tr:hover td {
 }
 
 .chip {
-    background: #eef3ff;
-    color: var(--ink-soft);
+    background: var(--chip-bg);
+    color: var(--chip-ink);
 }
 
 .tag {
@@ -333,7 +376,7 @@ tbody tr:hover td {
 }
 
 .btn-ghost {
-    background: #fff;
+    background: var(--ghost-bg);
     color: var(--brand);
 }
 
