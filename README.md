@@ -78,7 +78,7 @@ sports-analytics-intelligence/
 | 0.5 Resilience/Observability | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
 | 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
 | 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
-| 3. Frontend Integration | ✅ Complete (Core) | Operations console for predictions, deep-dive, performance, and bankroll modules |
+| 3. Frontend Integration | ✅ Complete | Tab-based NBA console: Home, Raw Data Explorer, Data Quality, Analysis |
 | 4. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
 | 5. Dashboard Enhancements & MLOps | ⬜ Planned | Rule manager, research agent, monitoring, deployment |
 
@@ -103,6 +103,9 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/predictions/today` | GET | Predictions for today with optional persistence |
 | `/api/v1/predictions/performance` | GET | Historical model performance metrics |
 | `/api/v1/predictions/bet-sizing` | GET | Kelly Criterion stake sizing |
+| `/api/v1/raw/tables` | GET | Raw-table catalog for explorer tab |
+| `/api/v1/raw/{table_name}` | GET | Paginated raw table rows |
+| `/api/v1/quality/overview` | GET | Data quality + timing + team metrics snapshot |
 | `/api/v1/bets` | POST | Create bet ledger entry |
 | `/api/v1/bets` | GET | List bet ledger entries |
 | `/api/v1/bets/{id}/settle` | POST | Settle bet and compute PnL |

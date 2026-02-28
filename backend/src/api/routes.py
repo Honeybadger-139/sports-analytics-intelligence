@@ -9,7 +9,7 @@ and historical data access.
 import logging
 import json
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -33,6 +33,36 @@ router = APIRouter(prefix="/api/v1", tags=["predictions"])
 
 # Lazy-load predictor (loaded once at first request)
 _predictor = None
+
+
+RAW_TABLES: Dict[str, Dict[str, str]] = {
+    "matches": {
+        "label": "Matches",
+        "description": "Raw schedule and game result rows.",
+    },
+    "teams": {
+        "label": "Teams",
+        "description": "NBA team dimension rows.",
+    },
+    "players": {
+        "label": "Players",
+        "description": "Player master rows and roster mapping.",
+    },
+    "team_game_stats": {
+        "label": "Team Game Stats",
+        "description": "Raw per-game team stat rows.",
+    },
+    "player_game_stats": {
+        "label": "Player Game Stats",
+        "description": "Raw per-game player stat rows.",
+    },
+    "player_season_stats": {
+        "label": "Player Season Stats",
+        "description": "Raw player season aggregate rows.",
+    },
+}
+
+SEASON_FILTER_TABLES = {"matches", "team_game_stats", "player_game_stats", "player_season_stats"}
 
 def get_predictor():
     global _predictor
@@ -70,6 +100,403 @@ class BetCreateRequest(BaseModel):
 class BetSettleRequest(BaseModel):
     result: Literal["win", "loss", "push"]
     settled_at: Optional[datetime] = None
+
+
+def _normalize_json_field(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value
+
+
+def _as_dict_rows(rows):
+    return [dict(row._mapping) for row in rows]
+
+
+@router.get("/raw/tables")
+async def get_raw_tables(
+    season: str = Query(default=config.CURRENT_SEASON),
+    db: Session = Depends(get_db),
+):
+    """
+    List raw Postgres tables available for exploration (excludes feature tables).
+    """
+    items = []
+    for table_name, meta in RAW_TABLES.items():
+        if table_name == "matches":
+            count = db.execute(
+                text("SELECT COUNT(*) FROM matches WHERE season = :season"),
+                {"season": season},
+            ).scalar()
+        elif table_name in {"team_game_stats", "player_game_stats"}:
+            count = db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM {table_name} t
+                    JOIN matches m ON t.game_id = m.game_id
+                    WHERE m.season = :season
+                    """
+                ),
+                {"season": season},
+            ).scalar()
+        elif table_name == "player_season_stats":
+            count = db.execute(
+                text("SELECT COUNT(*) FROM player_season_stats WHERE season = :season"),
+                {"season": season},
+            ).scalar()
+        else:
+            count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+
+        items.append(
+            {
+                "table": table_name,
+                "label": meta["label"],
+                "description": meta["description"],
+                "season_filter_supported": table_name in SEASON_FILTER_TABLES,
+                "row_count": int(count or 0),
+            }
+        )
+
+    return {"season": season, "tables": items}
+
+
+@router.get("/raw/{table_name}")
+async def get_raw_table_rows(
+    table_name: str,
+    season: Optional[str] = Query(default=config.CURRENT_SEASON),
+    limit: int = Query(default=50, ge=1, le=300),
+    offset: int = Query(default=0, ge=0, le=50000),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch paginated rows from whitelisted raw tables (feature table intentionally excluded).
+    """
+    if table_name not in RAW_TABLES:
+        raise HTTPException(status_code=404, detail=f"Unsupported raw table: {table_name}")
+
+    if table_name == "matches":
+        rows = db.execute(
+            text(
+                """
+                SELECT
+                    m.*,
+                    ht.abbreviation AS home_team,
+                    at.abbreviation AS away_team
+                FROM matches m
+                JOIN teams ht ON m.home_team_id = ht.team_id
+                JOIN teams at ON m.away_team_id = at.team_id
+                WHERE (:season IS NULL OR m.season = :season)
+                ORDER BY m.game_date DESC, m.game_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"season": season, "limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(
+            text("SELECT COUNT(*) FROM matches WHERE (:season IS NULL OR season = :season)"),
+            {"season": season},
+        ).scalar()
+    elif table_name == "teams":
+        rows = db.execute(
+            text(
+                """
+                SELECT *
+                FROM teams
+                ORDER BY abbreviation
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(text("SELECT COUNT(*) FROM teams")).scalar()
+    elif table_name == "players":
+        rows = db.execute(
+            text(
+                """
+                SELECT p.*, t.abbreviation AS team_abbreviation
+                FROM players p
+                LEFT JOIN teams t ON p.team_id = t.team_id
+                ORDER BY p.player_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(text("SELECT COUNT(*) FROM players")).scalar()
+    elif table_name == "team_game_stats":
+        rows = db.execute(
+            text(
+                """
+                SELECT
+                    tgs.*,
+                    m.game_date,
+                    m.season,
+                    tm.abbreviation AS team_abbreviation
+                FROM team_game_stats tgs
+                JOIN matches m ON tgs.game_id = m.game_id
+                JOIN teams tm ON tgs.team_id = tm.team_id
+                WHERE (:season IS NULL OR m.season = :season)
+                ORDER BY m.game_date DESC, tgs.game_id DESC, tgs.team_id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"season": season, "limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM team_game_stats tgs
+                JOIN matches m ON tgs.game_id = m.game_id
+                WHERE (:season IS NULL OR m.season = :season)
+                """
+            ),
+            {"season": season},
+        ).scalar()
+    elif table_name == "player_game_stats":
+        rows = db.execute(
+            text(
+                """
+                SELECT
+                    pgs.*,
+                    m.game_date,
+                    m.season,
+                    pl.full_name AS player_name,
+                    tm.abbreviation AS team_abbreviation
+                FROM player_game_stats pgs
+                JOIN matches m ON pgs.game_id = m.game_id
+                LEFT JOIN players pl ON pgs.player_id = pl.player_id
+                LEFT JOIN teams tm ON pgs.team_id = tm.team_id
+                WHERE (:season IS NULL OR m.season = :season)
+                ORDER BY m.game_date DESC, pgs.game_id DESC, pgs.player_id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"season": season, "limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM player_game_stats pgs
+                JOIN matches m ON pgs.game_id = m.game_id
+                WHERE (:season IS NULL OR m.season = :season)
+                """
+            ),
+            {"season": season},
+        ).scalar()
+    else:  # player_season_stats
+        rows = db.execute(
+            text(
+                """
+                SELECT
+                    pss.*,
+                    pl.full_name AS player_name,
+                    tm.abbreviation AS team_abbreviation
+                FROM player_season_stats pss
+                LEFT JOIN players pl ON pss.player_id = pl.player_id
+                LEFT JOIN teams tm ON pss.team_id = tm.team_id
+                WHERE (:season IS NULL OR pss.season = :season)
+                ORDER BY pss.season DESC, pss.player_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"season": season, "limit": limit, "offset": offset},
+        ).fetchall()
+        total = db.execute(
+            text("SELECT COUNT(*) FROM player_season_stats WHERE (:season IS NULL OR season = :season)"),
+            {"season": season},
+        ).scalar()
+
+    return {
+        "table": table_name,
+        "season": season,
+        "limit": limit,
+        "offset": offset,
+        "total": int(total or 0),
+        "rows": _as_dict_rows(rows),
+    }
+
+
+@router.get("/quality/overview")
+async def get_quality_overview(
+    season: str = Query(default=config.CURRENT_SEASON),
+    recent_limit: int = Query(default=20, ge=5, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    Return operational quality and pipeline metrics for monitoring tab.
+    """
+    row_counts = {
+        "matches": int(
+            db.execute(text("SELECT COUNT(*) FROM matches WHERE season = :season"), {"season": season}).scalar() or 0
+        ),
+        "teams": int(db.execute(text("SELECT COUNT(*) FROM teams")).scalar() or 0),
+        "players": int(db.execute(text("SELECT COUNT(*) FROM players WHERE is_active = TRUE")).scalar() or 0),
+        "team_game_stats": int(
+            db.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM team_game_stats tgs
+                    JOIN matches m ON tgs.game_id = m.game_id
+                    WHERE m.season = :season
+                    """
+                ),
+                {"season": season},
+            ).scalar()
+            or 0
+        ),
+        "player_game_stats": int(
+            db.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM player_game_stats pgs
+                    JOIN matches m ON pgs.game_id = m.game_id
+                    WHERE m.season = :season
+                    """
+                ),
+                {"season": season},
+            ).scalar()
+            or 0
+        ),
+    }
+
+    quality_row = db.execute(
+        text(
+            """
+            SELECT details, sync_time
+            FROM pipeline_audit
+            WHERE module = 'ingestion'
+            ORDER BY sync_time DESC
+            LIMIT 1
+            """
+        )
+    ).fetchone()
+
+    quality_checks = {}
+    if quality_row:
+        details = _normalize_json_field(quality_row.details)
+        if isinstance(details, dict):
+            quality_checks = details.get("audit_violations") or {}
+
+    timing_row = db.execute(
+        text(
+            """
+            SELECT
+                ROUND(AVG((details->>'elapsed_seconds')::numeric) FILTER (
+                    WHERE module = 'ingestion' AND status = 'success' AND details ? 'elapsed_seconds'
+                ), 2) AS avg_ingestion_seconds,
+                ROUND(AVG((details->>'elapsed_seconds')::numeric) FILTER (
+                    WHERE module = 'feature_store' AND status = 'success' AND details ? 'elapsed_seconds'
+                ), 2) AS avg_feature_seconds
+            FROM pipeline_audit
+            """
+        )
+    ).fetchone()
+
+    latest_ingestion_elapsed = db.execute(
+        text(
+            """
+            SELECT (details->>'elapsed_seconds')::numeric
+            FROM pipeline_audit
+            WHERE module = 'ingestion' AND details ? 'elapsed_seconds'
+            ORDER BY sync_time DESC
+            LIMIT 1
+            """
+        )
+    ).scalar()
+    latest_feature_elapsed = db.execute(
+        text(
+            """
+            SELECT (details->>'elapsed_seconds')::numeric
+            FROM pipeline_audit
+            WHERE module = 'feature_store' AND details ? 'elapsed_seconds'
+            ORDER BY sync_time DESC
+            LIMIT 1
+            """
+        )
+    ).scalar()
+
+    top_teams = _as_dict_rows(
+        db.execute(
+            text(
+                """
+                WITH team_records AS (
+                    SELECT
+                        t.team_id,
+                        t.abbreviation,
+                        COUNT(*) AS games_played,
+                        SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,
+                        SUM(CASE WHEN m.winner_team_id != t.team_id THEN 1 ELSE 0 END) AS losses
+                    FROM teams t
+                    JOIN (
+                        SELECT home_team_id AS team_id, winner_team_id, season FROM matches
+                        UNION ALL
+                        SELECT away_team_id AS team_id, winner_team_id, season FROM matches
+                    ) m ON m.team_id = t.team_id
+                    WHERE m.season = :season
+                    GROUP BY t.team_id, t.abbreviation
+                )
+                SELECT
+                    abbreviation,
+                    games_played,
+                    wins,
+                    losses,
+                    ROUND(wins::numeric / NULLIF(games_played, 0), 3) AS win_pct
+                FROM team_records
+                ORDER BY win_pct DESC, wins DESC
+                LIMIT 10
+                """
+            ),
+            {"season": season},
+        ).fetchall()
+    )
+
+    recent_rows = db.execute(
+        text(
+            """
+            SELECT sync_time, module, status, records_processed, records_inserted, errors, details
+            FROM pipeline_audit
+            ORDER BY sync_time DESC
+            LIMIT :recent_limit
+            """
+        ),
+        {"recent_limit": recent_limit},
+    ).fetchall()
+
+    recent_runs = []
+    for row in recent_rows:
+        details = _normalize_json_field(row.details)
+        recent_runs.append(
+            {
+                "sync_time": row.sync_time.isoformat(),
+                "module": row.module,
+                "status": row.status,
+                "records_processed": row.records_processed,
+                "records_inserted": row.records_inserted,
+                "errors": row.errors,
+                "elapsed_seconds": details.get("elapsed_seconds") if isinstance(details, dict) else None,
+            }
+        )
+
+    return {
+        "season": season,
+        "row_counts": row_counts,
+        "quality_checks": quality_checks,
+        "pipeline_timing": {
+            "avg_ingestion_seconds": float(timing_row.avg_ingestion_seconds) if timing_row and timing_row.avg_ingestion_seconds is not None else None,
+            "avg_feature_seconds": float(timing_row.avg_feature_seconds) if timing_row and timing_row.avg_feature_seconds is not None else None,
+            "latest_ingestion_seconds": float(latest_ingestion_elapsed) if latest_ingestion_elapsed is not None else None,
+            "latest_feature_seconds": float(latest_feature_elapsed) if latest_feature_elapsed is not None else None,
+        },
+        "top_teams": top_teams,
+        "recent_runs": recent_runs,
+    }
 
 
 @router.get("/health")

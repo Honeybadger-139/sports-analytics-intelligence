@@ -35,6 +35,7 @@ Recently completed and documented:
 3. Observability hardening: self-healing `pipeline_audit` bootstrap.
 4. Phase 2 backend operations: prediction persistence/performance APIs + bankroll ledger endpoints.
 5. Phase 3A frontend integration: operations console modules wired to live APIs.
+6. Phase 3C redesign: tab-based UX for home, raw data, quality monitoring, and analysis.
 
 ## Suggested Progression
 

@@ -129,6 +129,24 @@ Implement dashboard modules shown in architecture (not just system health).
 3. Added explicit loading, empty, and error states in each module.
 4. Updated responsive layout and visual hierarchy for desktop/mobile usage.
 
+### Implemented Scope (Phase 3C Redesign)
+1. Converted frontend into tab-based information architecture:
+   - `Home`
+   - `Raw Data Explorer`
+   - `Data Quality`
+   - `Analysis`
+2. Added raw-table APIs for Postgres exploration (excluding feature table):
+   - `GET /api/v1/raw/tables`
+   - `GET /api/v1/raw/{table_name}`
+3. Added quality-monitoring API:
+   - `GET /api/v1/quality/overview`
+4. Wired tab-specific frontend interactions:
+   - raw table selector + pagination
+   - quality metrics + recent run history
+   - analysis workspace retained for predictions/deep-dive/performance/bankroll
+5. Preserved light/dark theme toggle with persisted preference.
+6. Added tabbed frontend flow diagram: `docs/images/phase-3c-tabbed-dashboard.mmd`.
+
 ### Verification Commands
 ```bash
 cd backend
@@ -141,6 +159,9 @@ curl -sS http://127.0.0.1:8001/api/v1/predictions/game/0022500859
 curl -sS http://127.0.0.1:8001/api/v1/features/0022500859
 curl -sS http://127.0.0.1:8001/api/v1/bets/summary
 curl -sS 'http://127.0.0.1:8001/api/v1/bets?season=2025-26&limit=3'
+curl -sS 'http://127.0.0.1:8001/api/v1/raw/tables?season=2025-26'
+curl -sS 'http://127.0.0.1:8001/api/v1/raw/matches?season=2025-26&limit=2&offset=0'
+curl -sS 'http://127.0.0.1:8001/api/v1/quality/overview?season=2025-26'
 ```
 
 ### Definition of Done

@@ -293,6 +293,191 @@ class TestBetLedgerEndpoints:
         assert payload["summary"]["roi"] == 0.1207
 
 
+class TestDataOpsEndpoints:
+    """Tests for raw data explorer and quality overview endpoints."""
+
+    def test_raw_tables_returns_whitelisted_tables(self):
+        class _Result:
+            def __init__(self, *, scalar_value=None):
+                self._scalar_value = scalar_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT COUNT(*) FROM matches WHERE season" in q:
+                    return _Result(scalar_value=120)
+                if "FROM team_game_stats t" in q:
+                    return _Result(scalar_value=240)
+                if "FROM player_game_stats t" in q:
+                    return _Result(scalar_value=3000)
+                if "SELECT COUNT(*) FROM player_season_stats WHERE season" in q:
+                    return _Result(scalar_value=500)
+                if "SELECT COUNT(*) FROM teams" in q:
+                    return _Result(scalar_value=30)
+                if "SELECT COUNT(*) FROM players" in q:
+                    return _Result(scalar_value=540)
+                return _Result(scalar_value=0)
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/raw/tables?season=2025-26")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        names = {item["table"] for item in payload["tables"]}
+        assert "matches" in names
+        assert "players" in names
+        assert "match_features" not in names
+
+    def test_raw_table_players_returns_rows(self):
+        class _Result:
+            def __init__(self, *, fetchall_value=None, scalar_value=None):
+                self._fetchall_value = fetchall_value
+                self._scalar_value = scalar_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _Row:
+            def __init__(self, mapping):
+                self._mapping = mapping
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "FROM players p" in q:
+                    return _Result(
+                        fetchall_value=[
+                            _Row(
+                                {
+                                    "player_id": 10,
+                                    "full_name": "Sample Player",
+                                    "team_abbreviation": "BOS",
+                                }
+                            )
+                        ]
+                    )
+                if "SELECT COUNT(*) FROM players" in q:
+                    return _Result(scalar_value=1)
+                return _Result(fetchall_value=[])
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/raw/players?limit=10&offset=0")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["table"] == "players"
+        assert payload["total"] == 1
+        assert payload["rows"][0]["full_name"] == "Sample Player"
+
+    def test_quality_overview_returns_expected_sections(self):
+        class _Result:
+            def __init__(self, *, fetchone_value=None, fetchall_value=None, scalar_value=None):
+                self._fetchone_value = fetchone_value
+                self._fetchall_value = fetchall_value
+                self._scalar_value = scalar_value
+
+            def fetchone(self):
+                return self._fetchone_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _TimingRow:
+            def __init__(self):
+                self.avg_ingestion_seconds = 12.4
+                self.avg_feature_seconds = 3.1
+
+        class _QualityRow:
+            def __init__(self):
+                self.details = {"audit_violations": {"passed": True, "team_stats_violations": 0}}
+                self.sync_time = __import__("datetime").datetime(2026, 2, 28, 12, 0, 0)
+
+        class _RecentRow:
+            def __init__(self):
+                self.sync_time = __import__("datetime").datetime(2026, 2, 28, 12, 0, 0)
+                self.module = "ingestion"
+                self.status = "success"
+                self.records_processed = 100
+                self.records_inserted = 80
+                self.errors = None
+                self.details = {"elapsed_seconds": 10.2}
+
+        class _TopTeamRow:
+            def __init__(self):
+                self._mapping = {
+                    "abbreviation": "BOS",
+                    "games_played": 60,
+                    "wins": 45,
+                    "losses": 15,
+                    "win_pct": 0.75,
+                }
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT COUNT(*) FROM matches WHERE season" in q:
+                    return _Result(scalar_value=100)
+                if "SELECT COUNT(*) FROM teams" in q:
+                    return _Result(scalar_value=30)
+                if "SELECT COUNT(*) FROM players WHERE is_active = TRUE" in q:
+                    return _Result(scalar_value=300)
+                if "FROM team_game_stats tgs" in q and "SELECT COUNT(*)" in q:
+                    return _Result(scalar_value=200)
+                if "FROM player_game_stats pgs" in q and "SELECT COUNT(*)" in q:
+                    return _Result(scalar_value=2500)
+                if "SELECT details, sync_time" in q:
+                    return _Result(fetchone_value=_QualityRow())
+                if "avg_ingestion_seconds" in q:
+                    return _Result(fetchone_value=_TimingRow())
+                if "WHERE module = 'ingestion' AND details ? 'elapsed_seconds'" in q:
+                    return _Result(scalar_value=11.2)
+                if "WHERE module = 'feature_store' AND details ? 'elapsed_seconds'" in q:
+                    return _Result(scalar_value=2.9)
+                if "WITH team_records AS" in q:
+                    return _Result(fetchall_value=[_TopTeamRow()])
+                if "SELECT sync_time, module, status, records_processed" in q:
+                    return _Result(fetchall_value=[_RecentRow()])
+                return _Result(scalar_value=0, fetchall_value=[])
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/quality/overview?season=2025-26")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["row_counts"]["matches"] == 100
+        assert payload["quality_checks"]["passed"] is True
+        assert payload["pipeline_timing"]["avg_ingestion_seconds"] == 12.4
+        assert payload["top_teams"][0]["abbreviation"] == "BOS"
+        assert len(payload["recent_runs"]) == 1
+
+
 class TestDocumentation:
     """Tests that API documentation endpoints exist."""
 

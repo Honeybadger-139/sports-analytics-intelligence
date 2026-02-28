@@ -1,0 +1,17 @@
+flowchart LR
+    A["Home Tab (NBA Scope)"] --> B["Raw Data Explorer Tab"]
+    A --> C["Data Quality Tab"]
+    A --> D["Analysis Tab"]
+
+    B --> B1["GET /api/v1/raw/tables"]
+    B --> B2["GET /api/v1/raw/{table_name}"]
+
+    C --> C1["GET /api/v1/quality/overview"]
+
+    D --> D1["GET /api/v1/system/status"]
+    D --> D2["GET /api/v1/predictions/today"]
+    D --> D3["GET /api/v1/predictions/game/{id}"]
+    D --> D4["GET /api/v1/features/{id}"]
+    D --> D5["GET /api/v1/predictions/performance"]
+    D --> D6["GET /api/v1/bets/summary"]
+    D --> D7["GET /api/v1/bets"]
