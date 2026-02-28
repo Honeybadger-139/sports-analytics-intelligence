@@ -28,7 +28,7 @@ The Data Layer is the **foundation** of the entire Sports Analytics Intelligence
 
 ## Detailed Learning Notes
 
-Deep dives into every design decision, implementation pattern, and tool used in Phase 0.
+Deep dives into every design decision, implementation pattern, and tool used in Phase 0 (Data Foundation).
 
 | File | Topic | Key Concepts |
 |------|-------|-------------|

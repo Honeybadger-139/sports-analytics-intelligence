@@ -44,7 +44,7 @@ Every ingestion run ends with an automated "sanity check."
 
 ---
 
-## Phase 1 Resilience & Auditing (Current)
+## Phase 0.5 Resilience & Auditing (Current)
 
 We've added a robust resilience and observability layer to ensure production-grade reliability.
 

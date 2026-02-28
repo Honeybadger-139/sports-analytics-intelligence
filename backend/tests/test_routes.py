@@ -8,6 +8,7 @@ testing, so some tests are marked to skip when DB is unavailable.
 import pytest
 from fastapi.testclient import TestClient
 from main import app
+from src.data.db import get_db
 
 
 client = TestClient(app)
@@ -21,24 +22,18 @@ class TestHealthEndpoints:
         response = client.get("/")
         assert response.status_code == 200
 
-    def test_root_contains_version(self):
-        """Root should expose the app version."""
+    def test_root_serves_frontend_html(self):
+        """Root should serve dashboard HTML when static frontend is mounted."""
         response = client.get("/")
-        data = response.json()
-        assert "version" in data
-        assert data["version"] == "1.0.0"
-
-    def test_root_contains_status(self):
-        """Root should report operational status."""
-        response = client.get("/")
-        data = response.json()
-        assert data["status"] == "operational"
+        content_type = response.headers.get("content-type", "")
+        assert "text/html" in content_type
+        assert "<html" in response.text.lower()
 
     def test_health_endpoint(self):
-        """/api/v1/health should return OK."""
+        """/api/v1/health should return healthy."""
         response = client.get("/api/v1/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+        assert response.json()["status"] == "healthy"
 
 
 class TestPredictionEndpoints:
@@ -84,3 +79,68 @@ class TestDocumentation:
         data = response.json()
         assert "paths" in data
         assert "info" in data
+
+
+class TestSystemStatus:
+    """Tests for /api/v1/system/status."""
+
+    def test_system_status_exposes_audit_violations(self):
+        class _Result:
+            def __init__(self, *, fetchall_value=None, scalar_value=None):
+                self._fetchall_value = fetchall_value
+                self._scalar_value = scalar_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT 1" in q:
+                    return _Result()
+                if "FROM pipeline_audit" in q:
+                    row = type(
+                        "AuditRow",
+                        (),
+                        {
+                            "id": 1,
+                            "sync_time": __import__("datetime").datetime(2026, 2, 28, 9, 0, 0),
+                            "module": "ingestion",
+                            "status": "success",
+                            "records_processed": 100,
+                            "records_inserted": 100,
+                            "errors": None,
+                            "details": {
+                                "audit_violations": {
+                                    "team_stats_violations": 0,
+                                    "player_stats_missing_games": 0,
+                                    "null_score_matches": 0,
+                                    "passed": True,
+                                }
+                            },
+                        },
+                    )
+                    return _Result(fetchall_value=[row])
+                if "SELECT COUNT(*) FROM matches" in q:
+                    return _Result(scalar_value=10)
+                if "SELECT COUNT(*) FROM match_features" in q:
+                    return _Result(scalar_value=8)
+                if "SELECT COUNT(*) FROM players" in q:
+                    return _Result(scalar_value=300)
+                return _Result(scalar_value=0)
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/system/status")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["pipeline"]["audit_violations"]["passed"] is True

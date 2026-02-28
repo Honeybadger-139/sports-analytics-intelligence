@@ -6,6 +6,8 @@ All API endpoints for predictions, explanations, bet sizing,
 and historical data access.
 """
 
+import logging
+import json
 from datetime import date, datetime
 from typing import Optional
 
@@ -15,6 +17,8 @@ from sqlalchemy import text
 import pandas as pd
 
 from src.data.db import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["predictions"])
 
@@ -255,6 +259,18 @@ def get_system_status(db: Session = Depends(get_db)):
                 "details": log.details
             })
 
+        audit_violations = None
+        latest_ingestion = next((entry for entry in logs if entry.get("module") == "ingestion"), None)
+        if latest_ingestion:
+            details = latest_ingestion.get("details")
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except json.JSONDecodeError:
+                    details = None
+            if isinstance(details, dict):
+                audit_violations = details.get("audit_violations")
+
         # 3. Get record counts for current season
         # Using CURRENT_SEASON from config
         from src import config
@@ -269,7 +285,8 @@ def get_system_status(db: Session = Depends(get_db)):
             "database": db_status,
             "pipeline": {
                 "last_sync": logs[0]["sync_time"] if logs else None,
-                "last_status": logs[0]["status"] if logs else "unknown"
+                "last_status": logs[0]["status"] if logs else "unknown",
+                "audit_violations": audit_violations,
             },
             "stats": {
                 "season": season,

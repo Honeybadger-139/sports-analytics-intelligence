@@ -74,11 +74,20 @@ sports-analytics-intelligence/
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1. Data Foundation | ✅ Complete | NBA ingestion, feature engineering, PostgreSQL schema |
-| 1.5 Resilience | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
-| 2. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
+| 0. Data Foundation | ✅ Complete | NBA ingestion, schema design, incremental sync, feature store groundwork |
+| 0.5 Resilience/Observability | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
+| 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
 | 3. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
 | 4. Dashboard & MLOps | ⬜ Planned | Full analytics frontend, model monitoring, deployment |
+
+## Phase 0 Definition Of Done
+
+Phase 0 is considered production-ready only when all checks below pass:
+
+1. Ingestion completes successfully (`make ingest`) with no runtime errors.
+2. Data integrity audit passes (`team_stats_violations=0`, `player_stats_missing_games=0`, `null_score_matches=0`).
+3. Test suite includes and passes Phase 0 reliability + integrity tests (`pytest backend/tests` or targeted subset).
+4. `/api/v1/system/status` exposes latest pipeline health and audit-violation summary.
 
 ## API Endpoints
 

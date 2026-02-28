@@ -34,6 +34,7 @@ Architecture Decision (see docs/decisions/decision-log.md):
 import time
 import logging
 import random
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 import json
@@ -56,6 +57,8 @@ from src import config
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 PIPE_LOG_FILE = os.path.join(LOG_DIR, "pipeline.log")
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
 
 # Configure logging (Dual Handler: Console + File)
 logging.basicConfig(
@@ -64,7 +67,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(PIPE_LOG_FILE)
+        RotatingFileHandler(
+            PIPE_LOG_FILE,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+        ),
     ]
 )
 logger = logging.getLogger(__name__)
@@ -160,12 +167,12 @@ def retry_api_call(func, *args, **kwargs):
             rate_limit()
             return func(*args, **kwargs)
         except Exception as e:
-            if attempt < MAX_RETRIES - 1:
-                wait_time = BASE_BACKOFF * (2 ** attempt)
+            if attempt < config.MAX_RETRIES - 1:
+                wait_time = config.BASE_BACKOFF * (2 ** attempt)
                 logger.warning(f"    ⏳ Attempt {attempt+1} failed: {e}. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"    ❌ All {MAX_RETRIES} attempts failed: {e}")
+                logger.error(f"    ❌ All {config.MAX_RETRIES} attempts failed: {e}")
                 raise
 
 
@@ -742,6 +749,17 @@ def audit_data(engine):
             logger.info("  ✅ Data Quality: No NULL scores detected in matches table.")
     
     logger.info("🏁 AUDIT COMPLETE.")
+    summary = {
+        "team_stats_violations": len(stats_check),
+        "player_stats_missing_games": len(player_check),
+        "null_score_matches": int(null_check or 0),
+    }
+    summary["passed"] = (
+        summary["team_stats_violations"] == 0
+        and summary["player_stats_missing_games"] == 0
+        and summary["null_score_matches"] == 0
+    )
+    return summary
 
 
 # ==========================================
@@ -767,7 +785,6 @@ def run_full_ingestion(seasons: Optional[list] = None):
     logger.info("=" * 60)
     
     start_time = time.time()
-    errors = []
     
     audit_details = {}
     
@@ -791,7 +808,7 @@ def run_full_ingestion(seasons: Optional[list] = None):
             total_season_stats += ingest_player_season_stats(engine, season=season)
         
         # Step 5: Data Integrity Audit
-        audit_data(engine)
+        audit_summary = audit_data(engine)
         
         elapsed = time.time() - start_time
         total_processed = team_count + total_games + player_count + total_player_games + total_season_stats
@@ -802,7 +819,8 @@ def run_full_ingestion(seasons: Optional[list] = None):
             "players": player_count,
             "player_logs": total_player_games,
             "season_aggs": total_season_stats,
-            "elapsed_seconds": round(elapsed, 2)
+            "elapsed_seconds": round(elapsed, 2),
+            "audit_violations": audit_summary,
         }
 
         # Record final success
@@ -834,16 +852,6 @@ def run_full_ingestion(seasons: Optional[list] = None):
             details={"step": "main_loop"}
         )
         raise e
-
-
-if __name__ == "__main__":
-    run_full_ingestion()
-    logger.info(f"   Teams:   {team_count}")
-    logger.info(f"   Games:   {total_games}")
-    logger.info(f"   Players: {player_count}")
-    logger.info(f"   Player Logs: {total_player_games}")
-    logger.info(f"   Season Aggs: {total_season_stats}")
-    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

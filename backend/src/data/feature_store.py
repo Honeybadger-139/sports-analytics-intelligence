@@ -43,6 +43,7 @@ FEATURES WE COMPUTE:
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import json
 import time
@@ -58,6 +59,8 @@ load_dotenv()
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 PIPE_LOG_FILE = os.path.join(LOG_DIR, "pipeline.log")
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
 
 # Configure logging (Dual Handler: Console + File)
 logging.basicConfig(
@@ -66,7 +69,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(PIPE_LOG_FILE)
+        RotatingFileHandler(
+            PIPE_LOG_FILE,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+        ),
     ]
 )
 logger = logging.getLogger(__name__)
@@ -362,6 +369,107 @@ def compute_h2h_features(engine, season: str = "2025-26"):
     logger.info(f"✅ H2H features computed for season {season}")
 
 
+def compute_streak_features(engine, season: str = "2025-26"):
+    """
+    Compute non-leaky pregame streak values for each team-game row.
+
+    A positive value means entering this game on a win streak, negative means
+    entering on a loss streak, and 0 means no prior streak context.
+    """
+    logger.info(f"🔥 Computing streak features for season {season}...")
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            WITH ordered_games AS (
+                SELECT
+                    mf.game_id,
+                    mf.team_id,
+                    m.game_date,
+                    CASE WHEN m.winner_team_id = mf.team_id THEN 1 ELSE 0 END AS won
+                FROM match_features mf
+                JOIN matches m ON mf.game_id = m.game_id
+                WHERE m.season = :season
+                    AND m.is_completed = TRUE
+            ),
+            with_prev AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    game_date,
+                    won,
+                    LAG(won) OVER (
+                        PARTITION BY team_id
+                        ORDER BY game_date, game_id
+                    ) AS prev_won
+                FROM ordered_games
+            ),
+            grouped AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    game_date,
+                    won,
+                    CASE
+                        WHEN prev_won IS NULL OR won != prev_won THEN 1
+                        ELSE 0
+                    END AS change_flag
+                FROM with_prev
+            ),
+            segmented AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    game_date,
+                    won,
+                    SUM(change_flag) OVER (
+                        PARTITION BY team_id
+                        ORDER BY game_date, game_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS streak_group
+                FROM grouped
+            ),
+            signed_streaks AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    game_date,
+                    CASE
+                        WHEN won = 1 THEN
+                            ROW_NUMBER() OVER (
+                                PARTITION BY team_id, streak_group
+                                ORDER BY game_date, game_id
+                            )
+                        ELSE
+                            -ROW_NUMBER() OVER (
+                                PARTITION BY team_id, streak_group
+                                ORDER BY game_date, game_id
+                            )
+                    END AS signed_streak_including_current
+                FROM segmented
+            ),
+            pregame_streaks AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    COALESCE(
+                        LAG(signed_streak_including_current) OVER (
+                            PARTITION BY team_id
+                            ORDER BY game_date, game_id
+                        ),
+                        0
+                    )::INTEGER AS pregame_streak
+                FROM signed_streaks
+            )
+            UPDATE match_features mf
+            SET current_streak = ps.pregame_streak
+            FROM pregame_streaks ps
+            WHERE mf.game_id = ps.game_id
+                AND mf.team_id = ps.team_id
+        """), {"season": season})
+
+    logger.info(f"✅ Streak features computed for season {season}")
+
+
 def run_feature_engineering(seasons: list = None):
     """
     Run the complete feature engineering pipeline.
@@ -390,6 +498,8 @@ def run_feature_engineering(seasons: list = None):
         # Default to current season if not specified
         season = config.CURRENT_SEASON
         record_count = compute_features(engine, season=season)
+        compute_h2h_features(engine, season=season)
+        compute_streak_features(engine, season=season)
         
         elapsed = time.time() - start_time
         
@@ -402,7 +512,9 @@ def run_feature_engineering(seasons: list = None):
             inserted=record_count,
             details={
                 "season": season,
-                "elapsed_seconds": round(elapsed, 2)
+                "elapsed_seconds": round(elapsed, 2),
+                "h2h_features_updated": True,
+                "streak_features_updated": True,
             }
         )
         

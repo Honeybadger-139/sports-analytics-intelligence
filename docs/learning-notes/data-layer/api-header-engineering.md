@@ -1,12 +1,12 @@
-# API Header Engineering & Bot Detection Evasion
+# API Header Engineering & NBA API Resilience
 
-> **Concept**: Modern web APIs (like NBA.com) often implement security measures to block automated scrapers. "Header Engineering" is the process of crafting HTTP requests that are indistinguishable from legitimate browser sessions.
+> **Concept**: Modern web APIs (like NBA.com) often implement security measures to block automated traffic. Header engineering is an operational fallback strategy for cases where the upstream client library needs patching.
 
 ## What is it?
-Header Engineering involves configuring the metadata of an HTTP request (the "headers") to match the specific patterns a website expects from a human user using a real browser (Chrome, Firefox, etc.).
+Header engineering involves configuring request metadata to match patterns expected from real browser sessions when default client behavior is blocked.
 
 ## Why does it matter?
-Websites use Bot Detection (like Akamai, Cloudflare, or custom NBA security) to protect their data. If your headers look like a script (e.g., using `python-requests` default User-Agent), you get blocked with `403 Forbidden`, `429 Too Many Requests`, or connection timeouts.
+If requests are fingerprinted as bots, calls may fail with `403`, `429`, or timeouts. This is why the pipeline prioritizes resilience controls (rate limiting, retry/backoff, health checks) and keeps header patching as a documented contingency.
 
 ## How it works (The Intuition)
 
@@ -17,10 +17,11 @@ When you visit a site, your browser sends a complex set of "handshake" informati
 3.  **Client Hints (`Sec-Ch-Ua`)**: Modern Chrome headers that provide detailed browser metadata.
 4.  **Security Tokens**: Custom headers (like `x-nba-stats-token`) that the site's own JavaScript uses.
 
-### The "Awe Moment" for Interviews
-> "I don't just 'scrape' data; I engineer my ingestion pipeline to respect the site's security context by backporting modern browser headers into our requests. This reduced our API failure rate from 80% to 0%."
+### Current Repo Status
+- The ingestion module currently calls `nba_api` endpoints directly and does not contain explicit in-repo custom header injection.
+- This note documents the fallback strategy used when upstream API behavior changes.
 
-## Implementation: Before vs. After
+## Reference Pattern: Before vs. After
 
 ### Junior Approach (The "Default" way)
 ```python
@@ -29,7 +30,7 @@ import requests
 response = requests.get("https://stats.nba.com/stats/teamgamelog") 
 ```
 
-### Senior Approach (Header Engineering)
+### Fallback Approach (Header Engineering)
 ```python
 headers = {
     "Host": "stats.nba.com",
@@ -45,11 +46,11 @@ response = requests.get(url, headers=headers)
 
 ## Common Interview Questions
 
-1.  **"What do you do when an API starts blocking your scraper?"**
-    - *Answer*: First, check if the library you're using is outdated. Often, site security changes and libraries need updates. If to update isn't possible (e.g., version mismatch), I perform a header analysis using browser DevTools (Network tab) to see what headers a real browser sends, and then I manually engineer those into my code.
+1.  **"What do you do when an API starts blocking your ingestion jobs?"**
+    - *Answer*: First, verify and update the client library. If blocked behavior persists, inspect browser requests and apply a targeted patch strategy with explicit headers as a temporary mitigation.
 
 2.  **"Why use manual patches instead of a proxy?"**
     - *Answer*: Proxies solve IP-based blocking but don't solve header-based fingerprinting. If your headers identify you as a bot, it doesn't matter what IP you use — you'll still be blocked. Solving headers is the "root" fix; proxies are for distributed rate limiting.
 
 ## Senior Manager / Architect Perspective
-"An architect cares about the **fragility** of data sources. When a dependency like `nba_api` breaks, a junior developer might wait for a library fix. A senior engineer understands the underlying HTTP protocol well enough to patch the library themselves and keep the business logic running. This is about **Operational Resilience**."
+"An architect cares about data-source fragility. The production baseline is resilient retries, rate limiting, and auditing. Header patching is documented as a controlled fallback, not assumed as always-active code."
