@@ -33,6 +33,7 @@ Recently completed and documented:
 1. Phase 1A: H2H + non-leaky pregame streak reliability.
 2. Phase 1B: Advanced metric completeness and targeted backfill strategy.
 3. Observability hardening: self-healing `pipeline_audit` bootstrap.
+4. Phase 2 backend operations: prediction persistence/performance APIs + bankroll ledger endpoints.
 
 ## Suggested Progression
 

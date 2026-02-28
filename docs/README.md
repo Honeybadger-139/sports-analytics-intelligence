@@ -24,6 +24,7 @@ This folder is the long-term source of truth for architecture, decisions, change
 
 - `changelogs/2026-02-28-phase-0-hardening.md`
 - `changelogs/2026-02-28-phase-1-reliability.md`
+- `changelogs/2026-02-28-phase-2-operations.md`
 
 ## Recommended Start Order
 

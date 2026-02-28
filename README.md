@@ -77,6 +77,7 @@ sports-analytics-intelligence/
 | 0. Data Foundation | ✅ Complete | NBA ingestion, schema design, incremental sync, feature store groundwork |
 | 0.5 Resilience/Observability | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
 | 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
+| 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
 | 3. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
 | 4. Dashboard & MLOps | ⬜ Planned | Full analytics frontend, model monitoring, deployment |
 
@@ -98,7 +99,13 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/matches` | GET | Recent matches with filters |
 | `/api/v1/standings` | GET | Team standings by season |
 | `/api/v1/predictions/game/{id}` | GET | ML prediction + SHAP explanation |
+| `/api/v1/predictions/today` | GET | Predictions for today with optional persistence |
+| `/api/v1/predictions/performance` | GET | Historical model performance metrics |
 | `/api/v1/predictions/bet-sizing` | GET | Kelly Criterion stake sizing |
+| `/api/v1/bets` | POST | Create bet ledger entry |
+| `/api/v1/bets` | GET | List bet ledger entries |
+| `/api/v1/bets/{id}/settle` | POST | Settle bet and compute PnL |
+| `/api/v1/bets/summary` | GET | Bankroll KPI summary |
 | `/api/v1/features/{game_id}` | GET | Computed features for a game |
 | `/api/v1/system/status` | GET | Pipeline health + audit history |
 
@@ -107,7 +114,7 @@ Phase 0 is considered production-ready only when all checks below pass:
 - [System Architecture](docs/architecture/system-design.md)
 - [Database Schema](docs/architecture/database-schema.md)
 - [Phase Execution Runbook](docs/architecture/phase-execution-runbook.md) — Step-by-step phase delivery plan with validation gates
-- [Decision Log](docs/decisions/decision-log.md) — 23+ documented architectural decisions
+- [Decision Log](docs/decisions/decision-log.md) — documented architectural decisions with interview framing
 - [Learning Notes](docs/learning-notes/) — Interview-ready concept deep dives
 
 ## License

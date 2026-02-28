@@ -79,10 +79,32 @@ Move from "single game prediction endpoint" to operational prediction services.
 3. Add model performance endpoint (accuracy/calibration over time).
 4. Add basic bankroll ledger APIs for `bets`.
 
+### Implemented Scope
+1. `GET /api/v1/predictions/today` with optional persistence toggle (`persist=true` default).
+2. Prediction upsert service with legacy-table bootstrap fallback.
+3. `GET /api/v1/predictions/performance` with accuracy/confidence/Brier aggregation.
+4. Bankroll ledger API set:
+   - `POST /api/v1/bets`
+   - `GET /api/v1/bets`
+   - `POST /api/v1/bets/{bet_id}/settle`
+   - `GET /api/v1/bets/summary`
+5. Route + store regression tests covering persistence, settlement, and summaries.
+6. Phase 2 operations flow diagram saved at `docs/images/phase-2-ops-flow.mmd`.
+
+### Verification Commands
+```bash
+cd backend
+PYTHONPATH=. venv/bin/pytest tests -q
+curl -sS http://127.0.0.1:8001/api/v1/predictions/today
+curl -sS http://127.0.0.1:8001/api/v1/predictions/performance?season=2025-26
+curl -sS http://127.0.0.1:8001/api/v1/bets/summary
+```
+
 ### Definition of Done
 1. New endpoints have tests.
 2. Predictions are auditable in DB.
 3. Performance endpoint returns reproducible metrics from persisted outcomes.
+4. Bets ledger supports create/list/settle/summary with deterministic PnL.
 
 ---
 

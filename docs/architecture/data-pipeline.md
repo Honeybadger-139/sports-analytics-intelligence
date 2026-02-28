@@ -185,6 +185,17 @@ flowchart LR
     M2 --> M3
 ```
 
+## Phase 2 Operational Loop
+
+After feature generation, the serving layer now closes the loop:
+
+1. `/api/v1/predictions/today` produces and optionally persists model outputs per game/model.
+2. `sync_prediction_outcomes` marks `predictions.was_correct` for completed games.
+3. `/api/v1/predictions/performance` aggregates accuracy and Brier score from persisted outcomes.
+4. `/api/v1/bets` ledger endpoints track stake decisions and settled PnL for bankroll analytics.
+
+This creates a full audit trail from model inference to financial outcome.
+
 ## Interview Angle
 
 > **If asked "Walk me through your data pipeline":**

@@ -1,0 +1,7 @@
+flowchart LR
+    A["/predictions/today"] --> B["predictions table upsert"]
+    B --> C["/predictions/performance"]
+    D["POST /bets"] --> E["bets table (pending)"]
+    E --> F["POST /bets/{id}/settle"]
+    F --> G["bets.pnl + bankroll metrics"]
+    G --> H["GET /bets/summary"]

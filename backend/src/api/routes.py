@@ -9,15 +9,22 @@ and historical data access.
 import logging
 import json
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import pandas as pd
 
 from src.data.db import get_db
 from src.data.audit_store import is_missing_pipeline_audit_error
+from src.data.bet_store import create_bet, get_bets_summary, list_bets, settle_bet
+from src.data.prediction_store import (
+    persist_game_predictions,
+    sync_prediction_outcomes,
+)
+from src import config
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +40,36 @@ def get_predictor():
         from src.models.predictor import Predictor
         _predictor = Predictor()
     return _predictor
+
+
+def _persist_predictions_for_games(db: Session, games: list) -> int:
+    """
+    Persist predictions for a list of game payloads and return rows written.
+    """
+    persisted = 0
+    for game in games:
+        persisted += persist_game_predictions(
+            db,
+            game_id=str(game["game_id"]),
+            predictions=game.get("predictions", {}),
+        )
+    return persisted
+
+
+class BetCreateRequest(BaseModel):
+    game_id: str = Field(min_length=1, max_length=20)
+    bet_type: str = Field(default="match_winner", min_length=1, max_length=50)
+    selection: str = Field(min_length=1, max_length=100)
+    odds: float = Field(gt=1.0, description="Decimal odds (e.g., 1.91, 2.25)")
+    stake: float = Field(gt=0)
+    kelly_fraction: Optional[float] = Field(default=None, ge=0, le=1)
+    model_probability: Optional[float] = Field(default=None, ge=0, le=1)
+    placed_at: Optional[datetime] = None
+
+
+class BetSettleRequest(BaseModel):
+    result: Literal["win", "loss", "push"]
+    settled_at: Optional[datetime] = None
 
 
 @router.get("/health")
@@ -150,6 +187,98 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/predictions/today")
+async def predict_today(
+    persist: bool = Query(default=True, description="Persist predictions to DB"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get predictions for all games scheduled today.
+    """
+    predictor = get_predictor()
+    engine = db.get_bind()
+    games = predictor.predict_today(engine)
+
+    persisted_rows = 0
+    if persist and games:
+        persisted_rows = _persist_predictions_for_games(db, games)
+
+    return {
+        "date": date.today().isoformat(),
+        "count": len(games),
+        "persisted_rows": persisted_rows,
+        "games": games,
+    }
+
+
+@router.get("/predictions/performance")
+async def get_prediction_performance(
+    season: str = Query(default=config.CURRENT_SEASON),
+    model_name: Optional[str] = Query(default=None, description="Specific model name"),
+    min_games: int = Query(default=1, ge=1, le=5000),
+    db: Session = Depends(get_db),
+):
+    """
+    Return historical prediction performance metrics from persisted predictions.
+    """
+    sync_prediction_outcomes(db, season=season)
+
+    summary_query = text("""
+        SELECT
+            p.model_name,
+            COUNT(*) AS evaluated_games,
+            SUM(CASE WHEN p.was_correct THEN 1 ELSE 0 END) AS correct_games,
+            ROUND(AVG(CASE WHEN p.was_correct THEN 1.0 ELSE 0.0 END)::numeric, 4) AS accuracy,
+            ROUND(AVG(p.confidence)::numeric, 4) AS avg_confidence,
+            ROUND(AVG(POWER(
+                p.home_win_prob::numeric - (CASE WHEN m.winner_team_id = m.home_team_id THEN 1 ELSE 0 END), 2
+            ))::numeric, 4) AS brier_score,
+            MIN(p.predicted_at) AS first_prediction_at,
+            MAX(p.predicted_at) AS last_prediction_at
+        FROM predictions p
+        JOIN matches m ON p.game_id = m.game_id
+        WHERE m.season = :season
+          AND m.is_completed = TRUE
+          AND p.was_correct IS NOT NULL
+          AND (:model_name IS NULL OR p.model_name = :model_name)
+        GROUP BY p.model_name
+        HAVING COUNT(*) >= :min_games
+        ORDER BY accuracy DESC, evaluated_games DESC
+    """)
+
+    pending_query = text("""
+        SELECT COUNT(*)
+        FROM predictions p
+        JOIN matches m ON p.game_id = m.game_id
+        WHERE m.season = :season
+          AND m.is_completed = FALSE
+          AND (:model_name IS NULL OR p.model_name = :model_name)
+    """)
+
+    params = {"season": season, "model_name": model_name, "min_games": min_games}
+    rows = db.execute(summary_query, params).fetchall()
+    pending_count = db.execute(
+        pending_query, {"season": season, "model_name": model_name}
+    ).scalar()
+
+    performance = []
+    for row in rows:
+        item = dict(row._mapping)
+        if item.get("first_prediction_at") is not None:
+            item["first_prediction_at"] = item["first_prediction_at"].isoformat()
+        if item.get("last_prediction_at") is not None:
+            item["last_prediction_at"] = item["last_prediction_at"].isoformat()
+        performance.append(item)
+
+    return {
+        "season": season,
+        "model_filter": model_name,
+        "pending_games": int(pending_count or 0),
+        "evaluated_models": len(performance),
+        "performance": performance,
+    }
+
+
 @router.get("/predictions/bet-sizing")
 async def get_bet_sizing(
     model_prob: float = Query(..., ge=0, le=1, description="Model probability"),
@@ -163,6 +292,73 @@ async def get_bet_sizing(
     decimal_odds = american_to_decimal(odds)
     result = calculate_bet_amount(bankroll, model_prob, decimal_odds, kelly_fraction)
     return result
+
+
+@router.post("/bets")
+async def add_bet(payload: BetCreateRequest, db: Session = Depends(get_db)):
+    """Create a new pending bet ledger entry."""
+    try:
+        created = create_bet(
+            db,
+            game_id=payload.game_id,
+            bet_type=payload.bet_type,
+            selection=payload.selection,
+            odds=payload.odds,
+            stake=payload.stake,
+            kelly_fraction=payload.kelly_fraction,
+            model_probability=payload.model_probability,
+            placed_at=payload.placed_at,
+        )
+        return {"bet": created}
+    except Exception as exc:
+        logger.error("Failed to create bet: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create bet") from exc
+
+
+@router.get("/bets")
+async def get_bets(
+    season: Optional[str] = Query(default=None),
+    result: Optional[str] = Query(default=None, description="open|settled|pending|win|loss|push"),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Get bet ledger history with optional filters."""
+    bets = list_bets(db, season=season, result=result, limit=limit)
+    return {"count": len(bets), "bets": bets}
+
+
+@router.post("/bets/{bet_id}/settle")
+async def settle_bet_by_id(
+    bet_id: int,
+    payload: BetSettleRequest,
+    db: Session = Depends(get_db),
+):
+    """Settle a pending bet and compute PnL."""
+    try:
+        updated = settle_bet(
+            db, bet_id=bet_id, result=payload.result, settled_at=payload.settled_at
+        )
+        return {"bet": updated}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Failed to settle bet %s: %s", bet_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to settle bet") from exc
+
+
+@router.get("/bets/summary")
+async def get_bankroll_summary(
+    season: Optional[str] = Query(default=None),
+    initial_bankroll: float = Query(default=1000.0, gt=0),
+    db: Session = Depends(get_db),
+):
+    """Get aggregate bankroll KPIs from bet ledger."""
+    summary = get_bets_summary(db, season=season, initial_bankroll=initial_bankroll)
+    return {"summary": summary}
 
 
 @router.get("/standings")

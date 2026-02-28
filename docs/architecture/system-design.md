@@ -78,7 +78,8 @@ graph TB
 5. predictor.py loads model → runs inference → returns predictions
 6. explainability.py computes SHAP values → returns feature importance
 7. bet_sizing.py applies Kelly Criterion → returns recommended stakes
-8. Frontend renders everything with premium visualizations
+8. routes.py persists predictions + bet ledger actions for historical audit
+9. Frontend renders everything with premium visualizations
 ```
 
 ## Key Design Principles
