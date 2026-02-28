@@ -1,0 +1,15 @@
+flowchart TD
+    A["Dashboard (index.html)"] --> B["System Health Module"]
+    A --> C["Today's Predictions Module"]
+    A --> D["Match Deep Dive Module"]
+    A --> E["Model Performance Module"]
+    A --> F["Bankroll Tracker Module"]
+
+    B --> B1["GET /api/v1/system/status"]
+    C --> C1["GET /api/v1/predictions/today?persist=false"]
+    D --> D1["GET /api/v1/matches"]
+    D --> D2["GET /api/v1/predictions/game/{id}"]
+    D --> D3["GET /api/v1/features/{id}"]
+    E --> E1["GET /api/v1/predictions/performance"]
+    F --> F1["GET /api/v1/bets/summary"]
+    F --> F2["GET /api/v1/bets"]

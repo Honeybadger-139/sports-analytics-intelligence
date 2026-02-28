@@ -119,6 +119,30 @@ Implement dashboard modules shown in architecture (not just system health).
 3. Bankroll Tracker view.
 4. Model Performance charts.
 
+### Implemented Scope (Phase 3A)
+1. Rebuilt `frontend/index.html` into an operations console with modular sections.
+2. Integrated live API modules:
+   - Today's Predictions (`/predictions/today`)
+   - Match Deep Dive (`/matches`, `/predictions/game/{id}`, `/features/{id}`)
+   - Model Performance (`/predictions/performance`)
+   - Bankroll Tracker (`/bets/summary`, `/bets`)
+3. Added explicit loading, empty, and error states in each module.
+4. Updated responsive layout and visual hierarchy for desktop/mobile usage.
+
+### Verification Commands
+```bash
+cd backend
+PYTHONPATH=. venv/bin/pytest tests -q
+PYTHONPATH=. venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
+curl -sS http://127.0.0.1:8001/
+curl -sS http://127.0.0.1:8001/api/v1/predictions/today
+curl -sS 'http://127.0.0.1:8001/api/v1/matches?season=2025-26&limit=1'
+curl -sS http://127.0.0.1:8001/api/v1/predictions/game/0022500859
+curl -sS http://127.0.0.1:8001/api/v1/features/0022500859
+curl -sS http://127.0.0.1:8001/api/v1/bets/summary
+curl -sS 'http://127.0.0.1:8001/api/v1/bets?season=2025-26&limit=3'
+```
+
 ### Definition of Done
 1. Frontend consumes Phase 2 APIs.
 2. Empty/error states are handled cleanly.

@@ -34,6 +34,7 @@ Recently completed and documented:
 2. Phase 1B: Advanced metric completeness and targeted backfill strategy.
 3. Observability hardening: self-healing `pipeline_audit` bootstrap.
 4. Phase 2 backend operations: prediction persistence/performance APIs + bankroll ledger endpoints.
+5. Phase 3A frontend integration: operations console modules wired to live APIs.
 
 ## Suggested Progression
 

@@ -78,8 +78,9 @@ sports-analytics-intelligence/
 | 0.5 Resilience/Observability | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
 | 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
 | 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
-| 3. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
-| 4. Dashboard & MLOps | ⬜ Planned | Full analytics frontend, model monitoring, deployment |
+| 3. Frontend Integration | ✅ Complete (Core) | Operations console for predictions, deep-dive, performance, and bankroll modules |
+| 4. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
+| 5. Dashboard Enhancements & MLOps | ⬜ Planned | Rule manager, research agent, monitoring, deployment |
 
 ## Phase 0 Definition Of Done
 

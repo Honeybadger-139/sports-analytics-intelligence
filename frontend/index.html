@@ -3,64 +3,217 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Real-time pipeline health monitoring for the Sports Analytics Intelligence Platform. Track data freshness, audit history, and system status.">
-    <title>System Pulse | Sports Analytics Intelligence</title>
+    <meta name="description" content="Sports Analytics Intelligence operations dashboard with predictions, explainability, model performance, and bankroll tracking.">
+    <title>Operations Console | Sports Analytics Intelligence</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="logo">
-                <span class="icon">🏀</span>
+    <div class="shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">SA</div>
                 <div>
                     <h1>Sports Analytics Intelligence</h1>
-                    <p class="subtitle">System Health Dashboard</p>
+                    <p>Phase 3 Operations Console</p>
                 </div>
             </div>
-            <div id="overall-status" class="status-badge status-loading">Checking System...</div>
+            <div class="topbar-actions">
+                <button id="refresh-all-btn" class="btn">Refresh All</button>
+                <div id="overall-status" class="pill pill-loading">Connecting...</div>
+            </div>
         </header>
 
-        <main>
-            <!-- System Health Overview -->
-            <section class="grid-stats">
-                <div class="card stat-card" id="card-db">
+        <main class="layout">
+            <section class="stats-grid">
+                <article class="panel">
                     <h3>Database</h3>
-                    <div id="db-status" class="status-indicator">--</div>
-                    <p class="stat-meta">PostgreSQL Connection</p>
-                </div>
-                <div class="card stat-card" id="card-pipeline">
+                    <div id="db-status" class="metric">--</div>
+                    <p class="meta">PostgreSQL connectivity</p>
+                </article>
+                <article class="panel">
                     <h3>Pipeline</h3>
-                    <div id="pipeline-status" class="status-indicator">--</div>
-                    <p id="last-sync" class="stat-meta">Last Sync: --</p>
-                </div>
-                <div class="card stat-card" id="card-matches">
+                    <div id="pipeline-status" class="metric">--</div>
+                    <p id="last-sync" class="meta">Last sync: --</p>
+                </article>
+                <article class="panel">
                     <h3>Matches</h3>
-                    <div id="match-count" class="stat-value">0</div>
-                    <p class="stat-meta">Total season games</p>
-                </div>
-                <div class="card stat-card" id="card-features">
+                    <div id="match-count" class="metric mono">0</div>
+                    <p class="meta">Current season records</p>
+                </article>
+                <article class="panel">
                     <h3>Features</h3>
-                    <div id="feature-count" class="stat-value">0</div>
-                    <p class="stat-meta">Computed ML features</p>
-                </div>
-                <div class="card stat-card" id="card-players">
+                    <div id="feature-count" class="metric mono">0</div>
+                    <p class="meta">Feature rows available</p>
+                </article>
+                <article class="panel">
                     <h3>Players</h3>
-                    <div id="player-count" class="stat-value">0</div>
-                    <p class="stat-meta">Active roster entries</p>
+                    <div id="player-count" class="metric mono">0</div>
+                    <p class="meta">Active player entries</p>
+                </article>
+                <article class="panel">
+                    <h3>Bankroll</h3>
+                    <div id="bankroll-value" class="metric mono">$0.00</div>
+                    <p class="meta">Current tracked capital</p>
+                </article>
+                <article class="panel">
+                    <h3>ROI</h3>
+                    <div id="roi-value" class="metric mono">0.00%</div>
+                    <p class="meta">Settled bet return</p>
+                </article>
+                <article class="panel">
+                    <h3>Open Bets</h3>
+                    <div id="open-bets-value" class="metric mono">0</div>
+                    <p class="meta">Pending settlements</p>
+                </article>
+            </section>
+
+            <section class="module">
+                <div class="module-header">
+                    <h2>Today's Predictions</h2>
+                    <div class="module-actions">
+                        <span id="today-date" class="chip">Date: --</span>
+                        <button id="refresh-today-btn" class="btn btn-ghost">Refresh</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Game ID</th>
+                                <th>Matchup</th>
+                                <th>Consensus</th>
+                                <th>Home Win %</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody id="today-body">
+                            <tr><td colspan="5" class="empty">Loading today's predictions...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
-            <!-- Audit History -->
-            <section class="audit-section">
-                <div class="section-header">
+            <section class="split">
+                <article class="module">
+                    <div class="module-header">
+                        <h2>Match Deep Dive</h2>
+                    </div>
+                    <div class="controls">
+                        <select id="deep-dive-select"></select>
+                        <button id="deep-dive-load-btn" class="btn">Load</button>
+                    </div>
+                    <div id="deep-dive-overview" class="callout">
+                        Select a game to inspect prediction details and top SHAP factors.
+                    </div>
+                    <h4>Top SHAP Factors</h4>
+                    <div class="table-wrap compact">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Factor</th>
+                                    <th>Impact</th>
+                                    <th>Direction</th>
+                                </tr>
+                            </thead>
+                            <tbody id="shap-body">
+                                <tr><td colspan="3" class="empty">No explanation loaded.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <h4>Feature Snapshot</h4>
+                    <div class="table-wrap compact">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Team</th>
+                                    <th>5-Game Win %</th>
+                                    <th>5-Game Margin</th>
+                                    <th>Rest</th>
+                                    <th>Streak</th>
+                                </tr>
+                            </thead>
+                            <tbody id="feature-body">
+                                <tr><td colspan="5" class="empty">No feature snapshot loaded.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="module">
+                    <div class="module-header">
+                        <h2>Model Performance</h2>
+                        <span class="chip">Season: 2025-26</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Games</th>
+                                    <th>Accuracy</th>
+                                    <th>Brier</th>
+                                    <th>Avg Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody id="performance-body">
+                                <tr><td colspan="5" class="empty">Loading performance metrics...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="split">
+                <article class="module">
+                    <div class="module-header">
+                        <h2>Bankroll Tracker</h2>
+                        <button id="refresh-bankroll-btn" class="btn btn-ghost">Refresh</button>
+                    </div>
+                    <div class="summary-grid">
+                        <div><span>Season</span><strong id="summary-season">--</strong></div>
+                        <div><span>Total Bets</span><strong id="summary-total-bets">0</strong></div>
+                        <div><span>Settled</span><strong id="summary-settled-bets">0</strong></div>
+                        <div><span>Total Stake</span><strong id="summary-total-stake">$0.00</strong></div>
+                        <div><span>Total PnL</span><strong id="summary-total-pnl">$0.00</strong></div>
+                        <div><span>Bankroll</span><strong id="summary-bankroll">$0.00</strong></div>
+                        <div><span>ROI</span><strong id="summary-roi">0.00%</strong></div>
+                    </div>
+                </article>
+
+                <article class="module">
+                    <div class="module-header">
+                        <h2>Recent Bets</h2>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Matchup</th>
+                                    <th>Selection</th>
+                                    <th>Stake</th>
+                                    <th>Result</th>
+                                    <th>PnL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bets-body">
+                                <tr><td colspan="6" class="empty">Loading bet history...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="module">
+                <div class="module-header">
                     <h2>Pipeline Audit History</h2>
-                    <button id="refresh-btn" class="btn secondary">↻ Refresh</button>
+                    <button id="refresh-audit-btn" class="btn btn-ghost">Refresh</button>
                 </div>
-                <div class="card table-container">
-                    <table id="audit-table">
+                <div class="table-wrap">
+                    <table>
                         <thead>
                             <tr>
                                 <th>Timestamp</th>
@@ -73,7 +226,7 @@
                             </tr>
                         </thead>
                         <tbody id="audit-body">
-                            <tr><td colspan="7" class="loading">Loading audit logs...</td></tr>
+                            <tr><td colspan="7" class="empty">Loading pipeline audit...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -81,7 +234,7 @@
         </main>
 
         <footer>
-            <p>&copy; 2026 Sports Analytics Intelligence Platform &mdash; v1.0.0</p>
+            <p>Sports Analytics Intelligence Platform · Phase 3 frontend integration</p>
         </footer>
     </div>
 
