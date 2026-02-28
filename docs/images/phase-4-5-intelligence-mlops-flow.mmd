@@ -1,0 +1,22 @@
+flowchart LR
+    A["RSS + Injury Feeds"] --> B["news_agent.py"]
+    B --> C["embeddings.py"]
+    C --> D["vector_store.py (Chroma / JSON fallback)"]
+    D --> E["retriever.py"]
+    E --> F["summarizer.py"]
+    E --> G["rules.py"]
+    F --> H["service.py"]
+    G --> H
+    H --> I["/api/v1/intelligence/game/{game_id}"]
+    H --> J["/api/v1/intelligence/brief"]
+    H --> K["intelligence_audit"]
+
+    L["predictions + matches + pipeline_audit"] --> M["mlops/monitoring.py"]
+    L --> N["mlops/retrain_policy.py"]
+    M --> O["/api/v1/mlops/monitoring"]
+    N --> P["/api/v1/mlops/retrain/policy"]
+
+    I --> Q["Frontend: Analysis Context Brief"]
+    J --> R["Frontend: Intelligence Tab"]
+    O --> R
+    P --> R

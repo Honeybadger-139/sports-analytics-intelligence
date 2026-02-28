@@ -35,7 +35,11 @@ app.add_middleware(
 
 # Include API routes
 from src.api.routes import router
+from src.api.intelligence_routes import router as intelligence_router
+from src.api.mlops_routes import router as mlops_router
 app.include_router(router)
+app.include_router(intelligence_router)
+app.include_router(mlops_router)
 
 # Serve static frontend files (Phase 4)
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -59,6 +63,10 @@ async def root():
             "predict_today": "/api/v1/predictions/today",
             "prediction_performance": "/api/v1/predictions/performance?season=2025-26",
             "bet_sizing": "/api/v1/predictions/bet-sizing",
+            "intelligence_game": "/api/v1/intelligence/game/{game_id}",
+            "intelligence_brief": "/api/v1/intelligence/brief",
+            "mlops_monitoring": "/api/v1/mlops/monitoring",
+            "mlops_retrain_policy": "/api/v1/mlops/retrain/policy?dry_run=true",
             "bets_create": "POST /api/v1/bets",
             "bets_history": "/api/v1/bets",
             "bets_summary": "/api/v1/bets/summary",

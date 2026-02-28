@@ -251,6 +251,15 @@ body.theme-dark {
     gap: 8px;
 }
 
+.module-subheader {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: 6px;
+}
+
 .split {
     display: grid;
     grid-template-columns: 1.25fr 1fr;
@@ -289,6 +298,46 @@ input[type="number"] {
     background: var(--callout-bg);
     color: var(--ink-soft);
     font-size: 0.86rem;
+}
+
+.risk-wrap {
+    margin: 10px 0;
+}
+
+.chips-wrap {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.chip-risk-low {
+    background: #e8f8ef;
+    color: var(--success);
+}
+
+.chip-risk-medium {
+    background: #fff5e6;
+    color: #9a6b0d;
+}
+
+.chip-risk-high {
+    background: #feecee;
+    color: var(--error);
+}
+
+body.theme-dark .chip-risk-low {
+    background: #1d4735;
+    color: #b2f2d1;
+}
+
+body.theme-dark .chip-risk-medium {
+    background: #4a391a;
+    color: #ffd98f;
+}
+
+body.theme-dark .chip-risk-high {
+    background: #4c2730;
+    color: #ffb1bc;
 }
 
 h4 {
@@ -357,6 +406,10 @@ tbody td {
 
 tbody tr:hover td {
     background: var(--table-row-hover);
+}
+
+.intelligence-row {
+    cursor: pointer;
 }
 
 .empty {

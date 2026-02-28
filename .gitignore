@@ -42,3 +42,4 @@ logs/
 *.log
 ingestion.pid
 ingestion_output.log
+backend/data/chroma/

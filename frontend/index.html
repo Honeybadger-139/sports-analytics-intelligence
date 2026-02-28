@@ -31,6 +31,7 @@
             <button class="tab-btn active" data-tab="home">Home</button>
             <button class="tab-btn" data-tab="raw">Raw Data Explorer</button>
             <button class="tab-btn" data-tab="quality">Data Quality</button>
+            <button class="tab-btn" data-tab="intelligence">Intelligence</button>
             <button class="tab-btn" data-tab="analysis">Analysis</button>
         </nav>
 
@@ -282,6 +283,27 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <h4>Context Brief (RAG)</h4>
+                        <div id="context-summary" class="callout">
+                            Select a game to load citation-grounded context.
+                        </div>
+                        <div class="risk-wrap">
+                            <div class="module-subheader">Risk Signals</div>
+                            <div id="context-risk-wrap" class="chips-wrap">
+                                <span class="chip">No risk signals loaded.</span>
+                            </div>
+                        </div>
+                        <div class="table-wrap compact">
+                            <table>
+                                <thead>
+                                    <tr><th>Source</th><th>Published</th><th>Citation</th></tr>
+                                </thead>
+                                <tbody id="context-citations-body">
+                                    <tr><td colspan="3" class="empty">No citations loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </article>
 
                     <article class="module">
@@ -350,6 +372,91 @@
                             </tbody>
                         </table>
                     </div>
+                </section>
+            </section>
+
+            <section id="tab-intelligence" class="tab-panel">
+                <article class="module">
+                    <div class="module-header">
+                        <h2>Daily Intelligence Brief</h2>
+                        <div class="module-actions">
+                            <input id="intelligence-date-input" type="date">
+                            <button id="intelligence-refresh-btn" class="btn btn-ghost">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Game ID</th>
+                                    <th>Matchup</th>
+                                    <th>Risk</th>
+                                    <th>Citations</th>
+                                    <th>Summary</th>
+                                </tr>
+                            </thead>
+                            <tbody id="intelligence-brief-body">
+                                <tr><td colspan="5" class="empty">Loading intelligence brief...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <section class="split">
+                    <article class="module">
+                        <div class="module-header">
+                            <h2>Selected Game Citations</h2>
+                            <span id="intelligence-selected-game" class="chip">Game: --</span>
+                        </div>
+                        <div id="intelligence-selected-summary" class="callout">
+                            Select a game from the brief table to inspect citations and risk signals.
+                        </div>
+                        <div class="risk-wrap">
+                            <div class="module-subheader">Risk Signals</div>
+                            <div id="intelligence-risk-wrap" class="chips-wrap">
+                                <span class="chip">No signals loaded.</span>
+                            </div>
+                        </div>
+                        <div class="table-wrap compact">
+                            <table>
+                                <thead>
+                                    <tr><th>Source</th><th>Published</th><th>Citation</th></tr>
+                                </thead>
+                                <tbody id="intelligence-citations-body">
+                                    <tr><td colspan="3" class="empty">No citations loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="module">
+                        <div class="module-header">
+                            <h2>MLOps Monitoring</h2>
+                            <button id="mlops-refresh-btn" class="btn btn-ghost">Refresh</button>
+                        </div>
+                        <div class="summary-grid">
+                            <div><span>Evaluated</span><strong id="mlops-evaluated">0</strong></div>
+                            <div><span>Accuracy</span><strong id="mlops-accuracy">--</strong></div>
+                            <div><span>Brier</span><strong id="mlops-brier">--</strong></div>
+                            <div><span>Game Freshness (days)</span><strong id="mlops-game-freshness">--</strong></div>
+                            <div><span>Pipeline Freshness (days)</span><strong id="mlops-pipeline-freshness">--</strong></div>
+                        </div>
+                        <h4>Alerts</h4>
+                        <div class="table-wrap compact">
+                            <table>
+                                <thead>
+                                    <tr><th>Alert</th><th>Severity</th></tr>
+                                </thead>
+                                <tbody id="mlops-alerts-body">
+                                    <tr><td colspan="2" class="empty">No alerts loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h4>Retrain Policy (Dry Run)</h4>
+                        <div id="mlops-policy-summary" class="callout">
+                            Policy summary not loaded.
+                        </div>
+                    </article>
                 </section>
             </section>
         </main>

@@ -195,6 +195,18 @@ CREATE TABLE IF NOT EXISTS pipeline_audit (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Intelligence Audit: logs retrieval/summarization runs
+CREATE TABLE IF NOT EXISTS intelligence_audit (
+    id SERIAL PRIMARY KEY,
+    run_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    module VARCHAR(50) NOT NULL,              -- 'indexer', 'retriever', 'summarizer', 'brief'
+    status VARCHAR(20) NOT NULL,              -- 'success', 'failed', 'degraded'
+    records_processed INTEGER DEFAULT 0,
+    errors TEXT,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(game_date);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season);
@@ -207,3 +219,5 @@ CREATE INDEX IF NOT EXISTS idx_bets_game ON bets(game_id);
 CREATE INDEX IF NOT EXISTS idx_bets_result ON bets(result);
 CREATE INDEX IF NOT EXISTS idx_pipeline_audit_module ON pipeline_audit(module);
 CREATE INDEX IF NOT EXISTS idx_pipeline_audit_status ON pipeline_audit(status);
+CREATE INDEX IF NOT EXISTS idx_intelligence_audit_module ON intelligence_audit(module);
+CREATE INDEX IF NOT EXISTS idx_intelligence_audit_status ON intelligence_audit(status);

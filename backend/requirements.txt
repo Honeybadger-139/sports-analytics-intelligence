@@ -25,10 +25,9 @@ matplotlib==3.10.0
 seaborn==0.13.2
 jupyter==1.1.1
 
-# === RAG / Intelligence (Phase 3) ===
-# google-generativeai==0.8.4
-# chromadb==0.5.23
-# sentence-transformers==3.4.1
+# === RAG / Intelligence (Phase 4) ===
+google-generativeai==0.8.4
+chromadb==0.5.23
 
 # === Utilities ===
 python-dotenv==1.0.1

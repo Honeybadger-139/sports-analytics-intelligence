@@ -9,7 +9,7 @@ A production-grade ML platform for NBA match outcome prediction, SHAP-powered ex
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Backend** | FastAPI (Python 3.11) | ML predictions served as REST API |
-| **Frontend** | HTML + CSS + JS | System health dashboard |
+| **Frontend** | HTML + CSS + JS | NBA operations dashboard (raw, quality, intelligence, analysis) |
 | **Database** | PostgreSQL 16 (Docker) | Raw data, features, predictions, audit trail |
 | **ML Stack** | XGBoost, LightGBM, SHAP | Ensemble prediction with per-game explainability |
 | **Risk** | Kelly Criterion | Mathematically optimal bet sizing |
@@ -50,7 +50,7 @@ sports-analytics-intelligence/
 │   │   ├── api/            # FastAPI routes (predictions, health, teams)
 │   │   ├── data/           # Ingestion, feature store, DB, init.sql
 │   │   ├── models/         # Trainer, predictor, explainability, bet sizing
-│   │   ├── intelligence/   # RAG agent (Phase 3)
+│   │   ├── intelligence/   # RAG + rule engine (Phase 4)
 │   │   └── config.py       # Centralized configuration
 │   ├── tests/              # Pytest test suite
 │   ├── config/             # settings.yaml
@@ -59,7 +59,7 @@ sports-analytics-intelligence/
 │   ├── Makefile            # Pipeline automation
 │   └── main.py             # FastAPI entry point
 ├── frontend/
-│   ├── index.html          # System Health Dashboard
+│   ├── index.html          # Multi-tab NBA operations dashboard
 │   ├── css/style.css
 │   └── js/dashboard.js
 ├── docs/
@@ -79,8 +79,8 @@ sports-analytics-intelligence/
 | 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
 | 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
 | 3. Frontend Integration | ✅ Complete | Tab-based NBA console: Home, Raw Data Explorer, Data Quality, Analysis |
-| 4. Intelligence Layer | ⬜ Planned | RAG agent with Gemini LLM + ChromaDB |
-| 5. Dashboard Enhancements & MLOps | ⬜ Planned | Rule manager, research agent, monitoring, deployment |
+| 4. Intelligence Layer | ✅ Baseline Complete | RAG context APIs + citation guardrails + intelligence tab + deep-dive context brief |
+| 5. Dashboard Enhancements & MLOps | ✅ Foundation Complete | Monitoring API, retrain-policy dry-run API, model artifact governance signals |
 
 ## Phase 0 Definition Of Done
 
@@ -106,6 +106,10 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/raw/tables` | GET | Raw-table catalog for explorer tab |
 | `/api/v1/raw/{table_name}` | GET | Paginated raw table rows |
 | `/api/v1/quality/overview` | GET | Data quality + timing + team metrics snapshot |
+| `/api/v1/intelligence/game/{game_id}` | GET | Citation-grounded game context brief |
+| `/api/v1/intelligence/brief` | GET | Daily intelligence digest |
+| `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring + alerts |
+| `/api/v1/mlops/retrain/policy` | GET | Deterministic retrain-policy evaluation (dry-run supported) |
 | `/api/v1/bets` | POST | Create bet ledger entry |
 | `/api/v1/bets` | GET | List bet ledger entries |
 | `/api/v1/bets/{id}/settle` | POST | Settle bet and compute PnL |

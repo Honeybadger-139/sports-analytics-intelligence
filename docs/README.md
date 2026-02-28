@@ -28,6 +28,8 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-02-28-phase-3a-frontend-integration.md`
 - `changelogs/2026-02-28-phase-3b-theme-toggle.md`
 - `changelogs/2026-02-28-phase-3c-tabbed-redesign.md`
+- `changelogs/2026-02-28-phase-4-rag-plan-update.md`
+- `changelogs/2026-02-28-phase-4-5-implementation.md`
 
 ## Recommended Start Order
 

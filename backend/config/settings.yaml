@@ -52,13 +52,24 @@ risk:
   min_edge_threshold: 0.03       # Minimum 3% edge to recommend a bet
   daily_loss_limit_pct: 0.10     # Stop if daily loss exceeds 10% of bankroll
 
-# Intelligence (Phase 3)
-# intelligence:
-#   gemini_model: "gemini-2.0-flash"
-#   embedding_model: "all-MiniLM-L6-v2"
-#   news_sources:
-#     - "https://www.espn.com/nba/rss"
-#     - "https://www.nba.com/rss"
+# Intelligence (Phase 4)
+intelligence:
+  enabled: true
+  gemini_model: "gemini-2.0-flash"
+  embedding_model: "models/embedding-001"
+  collection: "nba_context_v1"
+  top_k_default: 6
+  max_age_hours_default: 120
+  require_citations: true
+  request_timeout_seconds: 8
+  news_sources:
+    - "https://www.espn.com/espn/rss/nba/news"
+    - "https://www.cbssports.com/rss/headlines/nba/"
+  injury_sources:
+    - "https://www.rotowire.com/rss/news.php?sport=NBA"
+  risk_rules:
+    stale_context_hours: 120
+    low_rest_days_threshold: 1
 
 # Monitoring
 monitoring:
@@ -68,3 +79,4 @@ monitoring:
   max_calibration_error: 0.10
   # Days of predictions to consider for drift detection
   drift_window_days: 30
+  retrain_min_new_labels: 40

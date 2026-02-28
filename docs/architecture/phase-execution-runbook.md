@@ -171,19 +171,68 @@ curl -sS 'http://127.0.0.1:8001/api/v1/quality/overview?season=2025-26'
 
 ---
 
-## Phase 4: Intelligence Layer (LLM + Rules)
+## Phase 4: Intelligence Layer (RAG + Rules)
 
 ### Objective
-Implement `news_agent` + rule engine to add context-aware insights.
+Add Retrieval-Augmented Generation (RAG) so predictions are accompanied by grounded context, not just model probabilities.
+
+### Why This Phase Matters
+1. Makes predictions explainable in business terms (injuries, lineup news, fatigue, matchup context).
+2. Demonstrates practical LLM usage in daily operations.
+3. Creates interview-ready evidence of AI orchestration (retrieval + generation + guardrails).
 
 ### Planned Scope
-1. News ingestion and embedding store.
-2. Retrieval + LLM summarization path.
-3. Rule filters for prediction confidence adjustments.
+1. **Phase 4A — Context Ingestion + Vector Index**
+   - Build `news_agent.py` pipeline to ingest NBA context sources (news/injury reports/team updates).
+   - Chunk and embed documents with metadata (`team`, `game_date`, `source`, `published_at`).
+   - Store embeddings in vector store (ChromaDB in current architecture).
+2. **Phase 4B — Retrieval + Summarization Service**
+   - Add API endpoint for game-specific context retrieval and summarization:
+     - `GET /api/v1/intelligence/game/{game_id}`
+   - Add API endpoint for daily intelligence brief:
+     - `GET /api/v1/intelligence/brief?date=YYYY-MM-DD`
+   - Return structured payload: summary, risk signals, confidence, and citations.
+3. **Phase 4C — Rule Engine Overlay**
+   - Implement deterministic post-retrieval rules:
+     - injury severity thresholds
+     - back-to-back/rest/travel flags
+     - stale-context rejection
+   - Rules adjust confidence bands but never mutate raw model probabilities silently.
+4. **Phase 4D — Dashboard Integration**
+   - Add an `Intelligence` workspace/tab in frontend.
+   - Add "Context Brief" card to Match Deep Dive with source citations.
+   - Add "Ask" interaction scoped to retrieved context only (no free-form ungrounded output).
+
+### Validation Gates
+1. Retrieval relevance checks on sampled games (`top_k` quality and source freshness).
+2. Response schema contract tests for intelligence endpoints.
+3. Hallucination guard: every generated insight must include at least one citation.
+4. Latency SLO target for intelligence endpoints (p95 under agreed threshold).
+5. Prompt + retrieval strategy documented in learning notes with example traces.
 
 ### Definition of Done
-1. Intelligence output is deterministic enough for audit trails.
-2. Prompt and retrieval path are documented in learning notes.
+1. RAG endpoints are available and tested.
+2. Dashboard shows grounded context with citations.
+3. Rule overlays are deterministic and auditable.
+4. Intelligence outputs are reproducible from stored retrieval context.
+
+### Implemented Scope (Phase 4A + 4B Baseline)
+1. Added intelligence backend modules:
+   - `news_agent.py` (RSS ingestion + normalization)
+   - `embeddings.py` (Gemini primary, deterministic fallback)
+   - `vector_store.py` (Chroma primary, JSON fallback)
+   - `retriever.py`, `summarizer.py`, `rules.py`, `service.py`
+2. Added intelligence APIs:
+   - `GET /api/v1/intelligence/game/{game_id}`
+   - `GET /api/v1/intelligence/brief`
+3. Added `intelligence_audit` persistence with self-healing bootstrap logic.
+4. Added Analysis-tab `Context Brief (RAG)` card:
+   - summary + risk chips + citation table
+5. Added full `Intelligence` tab baseline:
+   - daily brief table
+   - selected-game citation inspector
+   - risk signal display
+6. Added architecture flow diagram: `docs/images/phase-4-5-intelligence-mlops-flow.mmd`.
 
 ---
 
@@ -201,3 +250,25 @@ Production-style monitoring and retrain triggers.
 1. Monitoring produces actionable alerts.
 2. Retraining flow is testable and repeatable.
 3. Runbooks and decision records are complete.
+
+### Implemented Scope (Phase 5 Foundation)
+1. Added `src/mlops/monitoring.py` for:
+   - evaluated prediction counts
+   - accuracy/Brier aggregation
+   - freshness checks and alert generation
+2. Added `src/mlops/retrain_policy.py` for deterministic dry-run policy evaluation.
+3. Added MLOps APIs:
+   - `GET /api/v1/mlops/monitoring`
+   - `GET /api/v1/mlops/retrain/policy?dry_run=true`
+4. Exposed model artifact snapshot in `/api/v1/system/status`.
+5. Integrated MLOps cards into frontend Intelligence tab (monitoring + dry-run policy summary).
+
+### Verification Commands
+```bash
+cd backend
+PYTHONPATH=. venv/bin/pytest tests -q
+curl -sS 'http://127.0.0.1:8001/api/v1/intelligence/game/0022500859?season=2025-26'
+curl -sS 'http://127.0.0.1:8001/api/v1/intelligence/brief?date=2026-02-28&season=2025-26&limit=5'
+curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring?season=2025-26'
+curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=true'
+```

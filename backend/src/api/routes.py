@@ -9,6 +9,7 @@ and historical data access.
 import logging
 import json
 from datetime import date, datetime
+from pathlib import Path
 from typing import Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -113,6 +114,29 @@ def _normalize_json_field(value):
 
 def _as_dict_rows(rows):
     return [dict(row._mapping) for row in rows]
+
+
+def _model_artifact_snapshot() -> Dict:
+    model_dir = Path(config.MODEL_DIR)
+    if not model_dir.exists():
+        return {"active_artifact": None, "artifacts": []}
+
+    artifacts = []
+    for file_path in sorted(model_dir.glob("*.pkl")):
+        try:
+            stat = file_path.stat()
+            artifacts.append(
+                {
+                    "name": file_path.name,
+                    "size_bytes": stat.st_size,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
+        except Exception:
+            continue
+
+    active = artifacts[-1]["name"] if artifacts else None
+    return {"active_artifact": active, "artifacts": artifacts}
 
 
 @router.get("/raw/tables")
@@ -925,6 +949,7 @@ def get_system_status(db: Session = Depends(get_db)):
                 "features": features_count,
                 "active_players": players_count
             },
+            "models": _model_artifact_snapshot(),
             "audit_history": logs
         }
     except Exception as e:

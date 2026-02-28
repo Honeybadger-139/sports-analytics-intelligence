@@ -1,6 +1,6 @@
 # Frontend — Learning Notes
 
-> 📌 **Status**: Implemented (Phase 3C) — tab-based NBA console with Home, Raw Data Explorer, Data Quality, and Analysis workspaces.
+> 📌 **Status**: Implemented through **Phase 5 foundation** — Home, Raw Data Explorer, Data Quality, Intelligence, and Analysis workspaces.
 
 ## What Is the Frontend?
 
@@ -10,6 +10,7 @@ The frontend is the product surface for this ML system. It turns backend APIs in
 2. Inspect raw Postgres records without mixing feature-engineering tables.
 3. Monitor pipeline quality and load-time metrics.
 4. Run model + bankroll analysis.
+5. Consume citation-grounded intelligence and MLOps signals in dedicated UX surfaces.
 
 ## Current Implementation (`frontend/index.html`)
 
@@ -54,18 +55,34 @@ The frontend is the product surface for this ML system. It turns backend APIs in
   - `GET /api/v1/predictions/game/{game_id}`
   - `GET /api/v1/features/{game_id}`
 - Shows per-game prediction context + top SHAP factors + compact feature snapshot
+- Adds `Context Brief (RAG)` block:
+  - summary from `/api/v1/intelligence/game/{game_id}`
+  - deterministic risk signals
+  - citation table
 
-### 7) Analysis Tab: Model Performance
+### 7) Intelligence Tab
+- APIs:
+  - `GET /api/v1/intelligence/brief`
+  - `GET /api/v1/intelligence/game/{game_id}`
+  - `GET /api/v1/mlops/monitoring`
+  - `GET /api/v1/mlops/retrain/policy?dry_run=true`
+- Shows:
+  - daily intelligence brief
+  - selected game citation inspector
+  - MLOps alert summary
+  - retrain policy dry-run outcome
+
+### 8) Analysis Tab: Model Performance
 - API: `GET /api/v1/predictions/performance`
 - Displays evaluated games, accuracy, Brier score, and confidence by model
 
-### 8) Analysis Tab: Bankroll Tracker
+### 9) Analysis Tab: Bankroll Tracker
 - APIs:
   - `GET /api/v1/bets/summary`
   - `GET /api/v1/bets`
 - Shows bankroll KPIs and recent settled/pending bets
 
-### 9) Theme Toggle (Light/Dark)
+### 10) Theme Toggle (Light/Dark)
 - Header button toggles between light and dark UI modes.
 - Theme preference is persisted in browser `localStorage` using key `sai_theme`.
 - CSS token overrides (`body.theme-dark`) update font and surface colors consistently across modules.
@@ -73,7 +90,7 @@ The frontend is the product surface for this ML system. It turns backend APIs in
 ## Design Decisions
 
 1. **No frontend framework (yet)**: Vanilla HTML/CSS/JS keeps deployment simple and demonstrates API-first architecture.
-2. **Tab-first information architecture**: separated raw data, quality monitoring, and analysis tasks into dedicated tabs.
+2. **Tab-first information architecture**: separated raw data, quality monitoring, intelligence operations, and analysis tasks into dedicated tabs.
 3. **Resilient states**: Every module handles loading, empty, and error states explicitly.
 4. **Responsive by default**: The same page works across desktop/mobile breakpoints with no separate build.
 5. **Theme via design tokens**: Light/dark switch is implemented with CSS variables rather than duplicated styles.
@@ -84,7 +101,7 @@ This frontend is not a cosmetic layer; it is an operational dashboard. The value
 
 ## Interview Angle
 
-> "I designed the UI around operator intent: raw data inspection, data quality monitoring, and model analysis are separate tabs with focused APIs. This improves usability and makes the architecture easy to explain in interviews."
+> "I designed the UI around operator intent: raw data inspection, quality monitoring, intelligence retrieval, and model analysis are split into focused tabs with explicit API contracts."
 
 ## Common Interview Questions
 
