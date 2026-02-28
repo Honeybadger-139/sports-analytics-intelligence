@@ -144,3 +144,40 @@ class TestSystemStatus:
         assert response.status_code == 200
         payload = response.json()
         assert payload["pipeline"]["audit_violations"]["passed"] is True
+
+    def test_system_status_handles_missing_audit_table(self):
+        class _Result:
+            def __init__(self, *, scalar_value=None):
+                self._scalar_value = scalar_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT 1" in q:
+                    return _Result()
+                if "FROM pipeline_audit" in q:
+                    raise RuntimeError('relation "pipeline_audit" does not exist')
+                if "SELECT COUNT(*) FROM matches" in q:
+                    return _Result(scalar_value=10)
+                if "SELECT COUNT(*) FROM match_features" in q:
+                    return _Result(scalar_value=8)
+                if "SELECT COUNT(*) FROM players" in q:
+                    return _Result(scalar_value=300)
+                return _Result(scalar_value=0)
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/system/status")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["audit_history"] == []
+        assert payload["pipeline"]["last_status"] == "unknown"

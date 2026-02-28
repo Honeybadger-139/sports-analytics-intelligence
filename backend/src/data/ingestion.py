@@ -36,7 +36,7 @@ import logging
 import random
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, date
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 import json
 
 import pandas as pd
@@ -52,6 +52,10 @@ from dotenv import load_dotenv
 import os
 
 from src import config
+from src.data.audit_store import (
+    ensure_pipeline_audit_table,
+    is_missing_pipeline_audit_error,
+)
 
 # Ensure logs directory exists
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
@@ -129,6 +133,14 @@ def record_audit(engine, module: str, status: str, processed: int = 0, inserted:
     Record pipeline results into the pipeline_audit table.
     """
     logger.info(f"📊 Recording audit log for {module} (status: {status})...")
+    payload = {
+        "module": module,
+        "status": status,
+        "processed": processed,
+        "inserted": inserted,
+        "errors": errors,
+        "details": json.dumps(details) if details else None
+    }
     try:
         with engine.begin() as conn:
             conn.execute(
@@ -136,16 +148,26 @@ def record_audit(engine, module: str, status: str, processed: int = 0, inserted:
                     INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
                     VALUES (:module, :status, :processed, :inserted, :errors, :details)
                 """),
-                {
-                    "module": module,
-                    "status": status,
-                    "processed": processed,
-                    "inserted": inserted,
-                    "errors": errors,
-                    "details": json.dumps(details) if details else None
-                }
+                payload
             )
     except Exception as e:
+        if is_missing_pipeline_audit_error(e):
+            logger.warning("  ⚠️ pipeline_audit missing. Bootstrapping table and retrying once...")
+            try:
+                ensure_pipeline_audit_table(engine)
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
+                            VALUES (:module, :status, :processed, :inserted, :errors, :details)
+                        """),
+                        payload
+                    )
+                logger.info("  ✅ pipeline_audit bootstrapped and audit log recorded.")
+                return
+            except Exception as retry_err:
+                logger.error(f"  ❌ Failed to bootstrap/retry audit log: {retry_err}")
+                return
         logger.error(f"  ❌ Failed to record audit log: {e}")
 
 
@@ -174,6 +196,138 @@ def retry_api_call(func, *args, **kwargs):
             else:
                 logger.error(f"    ❌ All {config.MAX_RETRIES} attempts failed: {e}")
                 raise
+
+
+def _to_float(value) -> Optional[float]:
+    """Safely cast numeric-like values to float."""
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value) -> Optional[int]:
+    """Safely cast numeric-like values to int."""
+    if pd.isna(value):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_games_missing_advanced_metrics(engine, season: str) -> Set[str]:
+    """
+    Return game_ids where advanced team metrics are missing and need backfill.
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT DISTINCT tgs.game_id
+                FROM team_game_stats tgs
+                JOIN matches m ON tgs.game_id = m.game_id
+                WHERE m.season = :season
+                    AND (
+                        tgs.offensive_rating IS NULL
+                        OR tgs.defensive_rating IS NULL
+                        OR tgs.pace IS NULL
+                        OR tgs.effective_fg_pct IS NULL
+                        OR tgs.true_shooting_pct IS NULL
+                    )
+                """
+            ),
+            {"season": season},
+        ).fetchall()
+    return {str(r[0]) for r in rows}
+
+
+def _compute_advanced_team_metrics(row: pd.Series) -> Dict[str, Optional[float]]:
+    """
+    Compute advanced metrics from team game-log columns when available.
+
+    Notes:
+    - `pace` is modeled as estimated possessions/game.
+    - Defensive rating uses opponent points inferred via plus-minus.
+    """
+    fga = _to_float(row.get("FGA"))
+    fgm = _to_float(row.get("FGM"))
+    fg3m = _to_float(row.get("FG3M"))
+    fta = _to_float(row.get("FTA"))
+    oreb = _to_float(row.get("OREB"))
+    tov = _to_float(row.get("TOV"))
+    pts = _to_float(row.get("PTS"))
+    plus_minus = _to_float(row.get("PLUS_MINUS"))
+
+    possessions = None
+    if None not in (fga, oreb, tov, fta):
+        poss = fga - oreb + tov + 0.44 * fta
+        if poss > 0:
+            possessions = poss
+
+    effective_fg_pct = None
+    if fga and fga > 0 and fgm is not None and fg3m is not None:
+        effective_fg_pct = (fgm + 0.5 * fg3m) / fga
+
+    true_shooting_pct = None
+    if pts is not None and fga is not None and fta is not None:
+        ts_denom = 2 * (fga + 0.44 * fta)
+        if ts_denom > 0:
+            true_shooting_pct = pts / ts_denom
+
+    offensive_rating = None
+    if possessions and pts is not None:
+        offensive_rating = 100 * pts / possessions
+
+    defensive_rating = None
+    if possessions and pts is not None and plus_minus is not None:
+        opp_points = pts - plus_minus
+        defensive_rating = 100 * opp_points / possessions
+
+    pace = possessions
+
+    return {
+        "offensive_rating": round(offensive_rating, 2) if offensive_rating is not None else None,
+        "defensive_rating": round(defensive_rating, 2) if defensive_rating is not None else None,
+        "pace": round(pace, 2) if pace is not None else None,
+        "effective_fg_pct": round(effective_fg_pct, 3) if effective_fg_pct is not None else None,
+        "true_shooting_pct": round(true_shooting_pct, 3) if true_shooting_pct is not None else None,
+    }
+
+
+def _backfill_defensive_rating_from_opponent_points(engine, season: str) -> None:
+    """
+    Fill missing defensive ratings using opponent points and estimated pace.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                WITH opponent_points AS (
+                    SELECT
+                        tgs.game_id,
+                        tgs.team_id,
+                        opp.points AS opp_points
+                    FROM team_game_stats tgs
+                    JOIN team_game_stats opp
+                        ON tgs.game_id = opp.game_id
+                        AND tgs.team_id <> opp.team_id
+                    JOIN matches m ON m.game_id = tgs.game_id
+                    WHERE m.season = :season
+                )
+                UPDATE team_game_stats tgs
+                SET defensive_rating = ROUND((op.opp_points::numeric * 100) / NULLIF(tgs.pace, 0), 2)
+                FROM opponent_points op
+                WHERE tgs.game_id = op.game_id
+                    AND tgs.team_id = op.team_id
+                    AND tgs.pace IS NOT NULL
+                    AND tgs.defensive_rating IS NULL
+                """
+            ),
+            {"season": season},
+        )
 
 
 # ==========================================
@@ -263,6 +417,12 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
         logger.info(f"  -> Incremental sync: fetching games on or after {latest_date}")
     else:
         logger.info("  -> Full sync: no existing games found for season")
+
+    games_requiring_backfill = _load_games_missing_advanced_metrics(engine, season)
+    if games_requiring_backfill:
+        logger.info(
+            f"  -> Advanced-metrics backfill detected for {len(games_requiring_backfill)} games"
+        )
     
     all_teams = nba_teams.get_teams()
     games_seen = set()
@@ -287,7 +447,14 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
             
             if latest_date:
                 df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"], format="mixed").dt.date
-                df = df[df["GAME_DATE_DT"] >= latest_date]
+                if games_requiring_backfill:
+                    df["GAME_ID_STR"] = df["Game_ID"].astype(str)
+                    df = df[
+                        (df["GAME_DATE_DT"] >= latest_date)
+                        | (df["GAME_ID_STR"].isin(games_requiring_backfill))
+                    ]
+                else:
+                    df = df[df["GAME_DATE_DT"] >= latest_date]
             
             if df.empty:
                 logger.info(f"    No new games found for {team_abbrev}")
@@ -364,17 +531,22 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                         game_count += 1
                     
                     # Insert team game stats (one row per team per game)
+                    advanced_metrics = _compute_advanced_team_metrics(row)
                     conn.execute(
                         text("""
                             INSERT INTO team_game_stats (
                                 game_id, team_id, points, rebounds, assists, 
                                 steals, blocks, turnovers, 
-                                field_goal_pct, three_point_pct, free_throw_pct
+                                field_goal_pct, three_point_pct, free_throw_pct,
+                                offensive_rating, defensive_rating, pace,
+                                effective_fg_pct, true_shooting_pct
                             )
                             VALUES (
                                 :game_id, :team_id, :pts, :reb, :ast,
                                 :stl, :blk, :tov,
-                                :fg_pct, :fg3_pct, :ft_pct
+                                :fg_pct, :fg3_pct, :ft_pct,
+                                :off_rating, :def_rating, :pace,
+                                :efg_pct, :ts_pct
                             )
                             ON CONFLICT (game_id, team_id) DO UPDATE SET
                                 points = EXCLUDED.points,
@@ -385,26 +557,40 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                                 turnovers = EXCLUDED.turnovers,
                                 field_goal_pct = EXCLUDED.field_goal_pct,
                                 three_point_pct = EXCLUDED.three_point_pct,
-                                free_throw_pct = EXCLUDED.free_throw_pct
+                                free_throw_pct = EXCLUDED.free_throw_pct,
+                                offensive_rating = EXCLUDED.offensive_rating,
+                                defensive_rating = EXCLUDED.defensive_rating,
+                                pace = EXCLUDED.pace,
+                                effective_fg_pct = EXCLUDED.effective_fg_pct,
+                                true_shooting_pct = EXCLUDED.true_shooting_pct
                         """),
                         {
                             "game_id": game_id,
                             "team_id": team_id,
-                            "pts": int(row["PTS"]) if pd.notna(row["PTS"]) else None,
-                            "reb": int(row["REB"]) if pd.notna(row.get("REB", None)) else None,
-                            "ast": int(row["AST"]) if pd.notna(row.get("AST", None)) else None,
-                            "stl": int(row["STL"]) if pd.notna(row.get("STL", None)) else None,
-                            "blk": int(row["BLK"]) if pd.notna(row.get("BLK", None)) else None,
-                            "tov": int(row["TOV"]) if pd.notna(row.get("TOV", None)) else None,
-                            "fg_pct": float(row["FG_PCT"]) if pd.notna(row.get("FG_PCT", None)) else None,
-                            "fg3_pct": float(row["FG3_PCT"]) if pd.notna(row.get("FG3_PCT", None)) else None,
-                            "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT", None)) else None,
+                            "pts": _to_int(row.get("PTS")),
+                            "reb": _to_int(row.get("REB")),
+                            "ast": _to_int(row.get("AST")),
+                            "stl": _to_int(row.get("STL")),
+                            "blk": _to_int(row.get("BLK")),
+                            "tov": _to_int(row.get("TOV")),
+                            "fg_pct": _to_float(row.get("FG_PCT")),
+                            "fg3_pct": _to_float(row.get("FG3_PCT")),
+                            "ft_pct": _to_float(row.get("FT_PCT")),
+                            "off_rating": advanced_metrics["offensive_rating"],
+                            "def_rating": advanced_metrics["defensive_rating"],
+                            "pace": advanced_metrics["pace"],
+                            "efg_pct": advanced_metrics["effective_fg_pct"],
+                            "ts_pct": advanced_metrics["true_shooting_pct"],
                         },
                     )
             
         except Exception as e:
             logger.error(f"    ❌ Error pulling {team_abbrev}: {e}")
             continue
+
+    # Final pass: ensure defensive ratings are backfilled even when PLUS_MINUS
+    # is unavailable in upstream payload.
+    _backfill_defensive_rating_from_opponent_points(engine, season)
     
     logger.info(f"✅ Ingested {game_count} unique games for season {season}")
     return game_count

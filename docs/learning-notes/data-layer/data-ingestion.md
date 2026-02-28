@@ -69,3 +69,52 @@ We now record every pipeline event in the `pipeline_audit` table.
 > **"How do you handle pipeline observability?"**
 > 
 > "I implemented what I call the 'Flight Recorder' pattern. Every ingestion and feature engineering run records its start time, status, record counts, and any stack traces into an audit table. This allowed me to build a real-time health dashboard, moving us away from 'guessing' if the data is fresh to 'knowing' the system's state at a glance."
+
+---
+
+## Phase 1B Upgrade: Advanced Metric Completeness
+
+### What Problem Did We Hit?
+Our feature SQL used advanced columns (`offensive_rating`, `defensive_rating`, `pace`, `effective_fg_pct`, `true_shooting_pct`), but older rows in `team_game_stats` had these as NULL. That meant the model saw avoidable zeros/defaults.
+
+### What We Added
+1. **Targeted NULL detector**: find game_ids missing advanced metrics.
+2. **Incremental + selective backfill**: keep watermark logic but also include those historical game_ids.
+3. **Derived advanced metrics at ingestion time**:
+   - possessions estimate (`pace`)
+   - offensive rating
+   - effective FG%
+   - true shooting %
+4. **Defensive rating fallback pass**:
+   - if row-level `PLUS_MINUS` path is unavailable, compute via opponent points from self-join and `pace`.
+
+### Why This Matters (Senior Perspective)
+- We avoided a full historical reload.
+- We kept idempotency (UPSERT-only behavior).
+- We repaired old data with low operational risk.
+
+### Interview Framing
+**Junior answer:** "I reran everything from scratch."
+
+**Senior answer:** "I designed a selective backfill strategy: detect incomplete rows, pull only impacted game_ids, and repair missing advanced metrics idempotently. That minimized API calls and protected production stability."
+
+---
+
+## Phase 1C Reliability Patch: Self-Healing `pipeline_audit`
+
+### Issue
+Some legacy Docker volumes lacked `pipeline_audit`, so observability writes failed even though ingestion succeeded.
+
+### Fix
+On missing-table error:
+1. Create `pipeline_audit` + indexes with idempotent DDL.
+2. Retry audit insert once.
+3. For read path (`/api/v1/system/status`), return empty history if table is absent.
+
+### Why This Matters
+This is a classic **schema drift in long-lived dev volumes** problem. Self-healing bootstrap reduces downtime and removes manual SQL hotfixes.
+
+### Interview Question You Might Get
+**"How do you handle schema drift without breaking nightly jobs?"**
+
+Answer: "For critical observability tables, I added idempotent runtime bootstrap + bounded retry, and made read endpoints degrade gracefully. We still raise visibility through logs and follow with a proper migration."

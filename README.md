@@ -106,6 +106,7 @@ Phase 0 is considered production-ready only when all checks below pass:
 
 - [System Architecture](docs/architecture/system-design.md)
 - [Database Schema](docs/architecture/database-schema.md)
+- [Phase Execution Runbook](docs/architecture/phase-execution-runbook.md) — Step-by-step phase delivery plan with validation gates
 - [Decision Log](docs/decisions/decision-log.md) — 23+ documented architectural decisions
 - [Learning Notes](docs/learning-notes/) — Interview-ready concept deep dives
 

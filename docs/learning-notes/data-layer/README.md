@@ -39,6 +39,11 @@ Deep dives into every design decision, implementation pattern, and tool used in 
 | [api-header.md](api-header-engineering.md) | **API Headers** | Bypassing bot detection, STATS_HEADERS |
 | [query-tools.md](query-tools.md) | **SQL Exploration** | pgAdmin setup, Docker networking, Common SQL recipes |
 
+### Practical Execution Guide
+
+If you want a strict phase-by-phase execution checklist (commands + quality gates), use:
+- [Phase Execution Runbook](../../architecture/phase-execution-runbook.md)
+
 ---
 
 ## Production Patterns Summary
@@ -58,3 +63,15 @@ If you are preparing for an interview, remember these 5 "Senior" patterns we imp
 > **"How do you ensure data quality in your pipeline?"**
 >
 > "I implemented a two-fold approach: First, **Schema-level integrity** using strict foreign keys and precision constraints. Second, a **Post-Ingestion Audit layer** in Python that executes a series of SQL set-logic checks to verify that every game has exactly two teams' stats and no missing player boxes. This catches 'silent failures' from the API before the bad data can bias our ML models."
+
+---
+
+## Future Learning Topics (Phase 0+)
+
+If you want to go deeper from this foundation, prioritize these topics:
+
+1. **Contract-Driven Data Quality**: versioning and validating audit contracts exposed via APIs.
+2. **DB-Backed Integration Testing**: fixture strategy, transaction isolation, and negative data-quality cases.
+3. **Pipeline Observability Design**: defining SLOs and alert thresholds from audit metrics.
+4. **Advanced Incremental Sync**: handling late-arriving corrections and source-side data mutation.
+5. **Operational Logging Strategy**: rotation vs aggregation, retention, and failure forensics.

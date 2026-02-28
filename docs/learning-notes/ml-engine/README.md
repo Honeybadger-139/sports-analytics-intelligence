@@ -13,3 +13,6 @@ The ML Engine represents **Phase 1** of the platform transition. While **Phase 0
 | [model-selection.md](model-selection.md) | **Model Selection** | XGBoost vs LightGBM, ensemble strategy |
 
 *Note: Phase 0.5 covers resilience/observability hardening and is documented under Data Layer notes.*
+
+For cross-phase study planning, see:
+- [Future Learning Roadmap](../future-learning-roadmap.md)

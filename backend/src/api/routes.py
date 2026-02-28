@@ -17,6 +17,7 @@ from sqlalchemy import text
 import pandas as pd
 
 from src.data.db import get_db
+from src.data.audit_store import is_missing_pipeline_audit_error
 
 logger = logging.getLogger(__name__)
 
@@ -238,12 +239,19 @@ def get_system_status(db: Session = Depends(get_db)):
             db_status = "offline"
 
         # 2. Get recent audit logs
-        audit_logs = db.execute(text("""
-            SELECT id, sync_time, module, status, records_processed, records_inserted, errors, details
-            FROM pipeline_audit
-            ORDER BY sync_time DESC
-            LIMIT 10
-        """)).fetchall()
+        try:
+            audit_logs = db.execute(text("""
+                SELECT id, sync_time, module, status, records_processed, records_inserted, errors, details
+                FROM pipeline_audit
+                ORDER BY sync_time DESC
+                LIMIT 10
+            """)).fetchall()
+        except Exception as audit_err:
+            if is_missing_pipeline_audit_error(audit_err):
+                logger.warning("pipeline_audit table missing; returning empty audit history")
+                audit_logs = []
+            else:
+                raise
         
         # Format logs as dictionaries
         logs = []

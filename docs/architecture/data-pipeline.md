@@ -73,13 +73,18 @@ flowchart TD
 │  ├── 1b. ingest_season_games()   →  matches +          │
 │  │    (Incremental via MAX date)    team_game_stats    │
 │  ├── 1c. ingest_players()        →  players table      │
-│  └── 1d. audit_data()            →  Quality Report     │
+│  ├── 1d. advanced-metric backfill → team_game_stats    │
+│  │    (target only missing games)                      │
+│  ├── 1e. defensive rating backfill (SQL self-join)     │
+│  └── 1f. audit_data()            →  Quality Report     │
 │                                                        │
 │  Step 2: FEATURE ENGINEERING (feature_store.py)        │
 │  ├── 2a. compute_features()      →  match_features     │
 │  │    (In-DB Rolling Stats)                            │
-│  └── 2b. compute_h2h_features()  →  match_features     │
-│       (Matchup-specific edge)                          │
+│  ├── 2b. compute_h2h_features()  →  match_features     │
+│  │    (Matchup-specific edge)                          │
+│  └── 2c. compute_streak_features() → match_features    │
+│       (Pregame, non-leaky streak state)                │
 │                                                        │
 │  Step 3: CONSUMPTION                                   │
 │  └── 3a. API serves fresh features for tonight's games │
@@ -104,6 +109,14 @@ To minimize the load on the NBA API and our database, we use a **Watermarking St
 - We only request and process games from the API that occurred on or after this date.
 - This reduces a full season poll (~1230 games) to a tiny delta (~5-10 games) in daily runs.
 
+### 4. Targeted Historical Backfill
+When the schema evolves (for example, adding new advanced metrics), we do not run a full season replay by default. Instead:
+- We detect games whose advanced columns are still NULL.
+- We include only those game_ids in the next incremental pass.
+- We keep the same UPSERT pattern so reruns stay idempotent.
+
+This gives migration-like repair behavior with daily pipeline cost.
+
 ## Feature Store Strategy: "Push Compute to Data"
 
 Instead of pulling raw data into Python (Pandas) for feature engineering, we use **PostgreSQL Window Functions**. This follows the "Senior Manager" philosophy of **Pushing Computation to the Data Layer**:
@@ -121,6 +134,24 @@ We implement an `audit_data()` function that runs post-ingestion to check for:
 - **Consistency**: Does every completed match have exactly 2 team_game_stats records?
 - **Completeness**: Are there any NULL scores in completed games?
 - **Health**: Total row count changes compared to historical averages.
+
+### Structured Audit Output
+
+Audit results are now represented as a structured contract and stored in pipeline audit details:
+
+- `team_stats_violations`
+- `player_stats_missing_games`
+- `null_score_matches`
+- `passed`
+
+The API surfaces this data additively via `/api/v1/system/status` at:
+
+- `pipeline.audit_violations`
+
+### Audit Table Bootstrap Guardrail
+For legacy Docker volumes, `pipeline_audit` might not exist even though it is present in `init.sql`.
+- On missing-table error, ingestion/feature pipeline now creates `pipeline_audit` + indexes (`CREATE TABLE IF NOT EXISTS ...`) and retries the write once.
+- `/api/v1/system/status` returns an empty audit history (instead of failing) if the table is missing at read-time.
 
 ## Data Lineage
 

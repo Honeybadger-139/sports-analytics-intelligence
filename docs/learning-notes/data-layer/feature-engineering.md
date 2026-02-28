@@ -84,3 +84,30 @@ A lead architect would think about:
 - **Staleness**: How quickly does this feature become outdated? Rolling 5-game is more responsive than rolling 20-game.
 - **Interpretability**: Can a business user understand why this feature matters? "Rolling win%" is intuitive.
 - **Maintenance**: Will this feature break if the data schema changes? We designed it to be robust to missing data.
+
+---
+
+## Phase 1A Hardening: H2H and Pregame Streak Reliability
+
+### Gap We Fixed
+`compute_h2h_features()` existed but was not called in the main feature pipeline. Also, `current_streak` was a placeholder (`0`) instead of a real pregame signal.
+
+### What Changed
+1. Feature pipeline execution now runs:
+   - `compute_features()`
+   - `compute_h2h_features()`
+   - `compute_streak_features()`
+2. `current_streak` is now computed as **pregame streak**, not postgame streak.
+
+### Why Pregame Streak Matters
+If you compute streak including the current game, you leak outcome information into features. Pregame streak ensures the model only sees what was known before tipoff.
+
+### Intuition
+If Lakers are on a 4-game win streak before tonight, feature = `+4`.
+If they lost 3 straight before tonight, feature = `-3`.
+For first game with no history, feature = `0`.
+
+### Interview Angle
+**Junior answer:** "I added streak as a feature."
+
+**Senior answer:** "I explicitly implemented pregame streak segmentation and lag logic so the feature is leakage-safe and production-realistic."

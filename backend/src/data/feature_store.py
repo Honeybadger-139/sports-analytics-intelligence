@@ -52,6 +52,10 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 from src import config
+from src.data.audit_store import (
+    ensure_pipeline_audit_table,
+    is_missing_pipeline_audit_error,
+)
 
 load_dotenv()
 
@@ -85,6 +89,14 @@ def record_audit(engine, module: str, status: str, processed: int = 0, inserted:
     Record pipeline results into the pipeline_audit table.
     """
     logger.info(f"📊 Recording audit log for {module} (status: {status})...")
+    payload = {
+        "module": module,
+        "status": status,
+        "processed": processed,
+        "inserted": inserted,
+        "errors": errors,
+        "details": json.dumps(details) if details else None
+    }
     try:
         with engine.begin() as conn:
             conn.execute(
@@ -92,16 +104,26 @@ def record_audit(engine, module: str, status: str, processed: int = 0, inserted:
                     INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
                     VALUES (:module, :status, :processed, :inserted, :errors, :details)
                 """),
-                {
-                    "module": module,
-                    "status": status,
-                    "processed": processed,
-                    "inserted": inserted,
-                    "errors": errors,
-                    "details": json.dumps(details) if details else None
-                }
+                payload
             )
     except Exception as e:
+        if is_missing_pipeline_audit_error(e):
+            logger.warning("  ⚠️ pipeline_audit missing. Bootstrapping table and retrying once...")
+            try:
+                ensure_pipeline_audit_table(engine)
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO pipeline_audit (module, status, records_processed, records_inserted, errors, details)
+                            VALUES (:module, :status, :processed, :inserted, :errors, :details)
+                        """),
+                        payload
+                    )
+                logger.info("  ✅ pipeline_audit bootstrapped and audit log recorded.")
+                return
+            except Exception as retry_err:
+                logger.error(f"  ❌ Failed to bootstrap/retry audit log: {retry_err}")
+                return
         logger.error(f"  ❌ Failed to record audit log: {e}")
 
 
