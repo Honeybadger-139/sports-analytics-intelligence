@@ -171,7 +171,7 @@ export default function Overview() {
             animate="show"
           >
             {NAV_ITEMS.slice(3).map(item => (
-              <DirectoryCard key={item.id} item={item} onNavigate={navigate} />
+              <DirectoryCard key={item.id} item={item} onNavigate={navigate} liveIds={['chatbot']} />
             ))}
           </motion.div>
         </div>
@@ -184,10 +184,11 @@ export default function Overview() {
 interface DirectoryCardProps {
   item: (typeof NAV_ITEMS)[0]
   onNavigate: (path: string) => void
+  liveIds?: string[]
 }
 
-function DirectoryCard({ item, onNavigate }: DirectoryCardProps) {
-  const isComingSoon = !!item.badge
+function DirectoryCard({ item, onNavigate, liveIds = [] }: DirectoryCardProps) {
+  const isComingSoon = !!item.badge && !liveIds.includes(item.id)
 
   const descriptions: Record<string, string> = {
     pulse:   'Daily game intelligence, sports news, injury reports, and pre-game context grounded in cited sources.',

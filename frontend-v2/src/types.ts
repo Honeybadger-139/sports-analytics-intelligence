@@ -51,3 +51,19 @@ export interface NavItem {
   subItems: NavSubItem[]
   badge?: string
 }
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'error'
+  content: string
+  timestamp: string
+}
+
+export interface ChatRequest {
+  message: string
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+}
+
+export interface ChatResponse {
+  reply: string
+}
