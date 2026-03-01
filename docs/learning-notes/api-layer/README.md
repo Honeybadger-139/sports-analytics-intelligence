@@ -24,6 +24,8 @@ The API Layer exposes the platform's capabilities as RESTful endpoints using Fas
 | `GET /api/v1/bets/summary` | Aggregate bankroll KPIs (PnL, ROI, open/settled mix) |
 | `GET /api/v1/features/{id}` | Computed features for a game |
 | `GET /api/v1/system/status` | Pipeline health + audit trail |
+| `POST /api/v1/chat` | AI chatbot — hybrid RAG+DB query engine (Phase 7B) |
+| `POST /api/v1/scribble/query` | Read-only SQL execution for data playground (Phase 7C) |
 
 ## Key Design Patterns
 
@@ -64,6 +66,47 @@ This design creates a measurable feedback loop: model quality, decision quality,
 4. How would you handle duplicate or amended bets in a real sportsbook integration?
 5. What controls would you add before enabling auto-bet placement?
 
+## Phase 7 Additions
+
+### `POST /api/v1/chat` — Chatbot endpoint
+
+```python
+# chat_routes.py
+@router.post("/chat")
+async def chat(request: ChatRequest) -> ChatResponse:
+    service = ChatService(sport=request.sport or 'nba')
+    return service.chat(request.message, request.history)
+```
+
+- **Request**: `{ message, history[], sport? }`
+- **Response**: `{ reply, path: "rag"|"db"|"off_topic", sql_used?, citations? }`
+- HTTP 500 with detail message on unexpected errors (graceful degradation)
+- Registered in `main.py` as `chat_router`
+
+See `intelligence-layer/README.md` for the full backend architecture.
+
+### `POST /api/v1/scribble/query` — Safe SQL endpoint
+
+```python
+# scribble_routes.py
+@router.post("/scribble/query")
+async def run_query(req: QueryRequest, db: Session = Depends(get_db)) -> QueryResponse:
+    # Validate → execute in read-only transaction → return rows
+```
+
+- **Request**: `{ sql: str }`
+- **Response**: `{ columns: str[], rows: any[][], row_count: int }`
+- Security layers: regex whitelist, DML blocklist, 500-row cap, 10s timeout, read-only transaction
+- Registered in `main.py` as `scribble_router`
+
+See `frontend/scribble-playground.md` for the full security rationale.
+
+---
+
 ## Interview Angle
 
 > "I designed a stateless REST API that separates model serving from model training. The API lazy-loads model artifacts and uses FastAPI's dependency injection for database session management. This lets us scale horizontally — add more API instances behind a load balancer without shared state."
+
+> "The chat endpoint delegates all intelligence logic to `ChatService` — the route is intentionally thin. Routes are contracts; services are implementations. This separation makes the chatbot logic testable without an HTTP layer."
+
+> "The Scribble SQL endpoint enforces security at the application layer: SELECT-only via regex, DML blocklist, read-only transaction, and a 500-row cap. This is defense-in-depth without requiring infrastructure changes."
