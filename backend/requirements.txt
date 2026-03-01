@@ -34,6 +34,7 @@ python-dotenv==1.0.1
 pyyaml==6.0.2
 httpx==0.28.1
 requests==2.32.3
+urllib3<2  # Keep compatibility with local LibreSSL-linked Python runtimes
 
 # === Testing ===
 pytest==8.3.4

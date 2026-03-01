@@ -28,7 +28,7 @@ docker-compose up -d postgres
 
 # 3. Setup Python environment
 cd backend
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
@@ -80,7 +80,8 @@ sports-analytics-intelligence/
 | 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
 | 3. Frontend Integration | ✅ Complete | Tab-based NBA console: Home, Raw Data Explorer, Data Quality, Analysis |
 | 4. Intelligence Layer | ✅ Baseline + 4B Hardening Batch 1 | RAG context APIs + citation guardrails + source-quality scoring + intelligence UX filters |
-| 5. Dashboard Enhancements & MLOps | ✅ Foundation + 5A Hardening Batch 1 | Monitoring API + trend endpoint + snapshot persistence + retrain-policy dry-run API |
+| 5. Dashboard Enhancements & MLOps | ✅ Foundation + 5B Batch 2 | Monitoring API + trend/escalation + retrain queue + worker lifecycle |
+| 6. Delivery Hardening | ✅ Completed Baseline | CI regression gate + DB-backed invariant tests + runtime parity stabilization |
 
 ## Phase 0 Definition Of Done
 
@@ -119,6 +120,14 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/bets/summary` | GET | Bankroll KPI summary |
 | `/api/v1/features/{game_id}` | GET | Computed features for a game |
 | `/api/v1/system/status` | GET | Pipeline health + audit history |
+
+## Testing
+
+```bash
+cd backend
+PYTHONPATH=. venv/bin/pytest tests/test_ingestion_retry.py tests/test_routes.py tests/test_config.py -q
+PYTHONPATH=. venv/bin/pytest tests/test_ingestion_db_invariants.py -q
+```
 
 ## Documentation
 

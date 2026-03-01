@@ -322,3 +322,37 @@ curl -sS -X POST 'http://127.0.0.1:8001/api/v1/mlops/retrain/worker/run-next?sea
 7. Verify completion/failed status and artifact snapshot in retrain jobs list.
 8. Rollback rule (documented baseline):
    - revert to previous model artifact if post-retrain accuracy drops by >0.03 or Brier worsens by >0.02.
+
+---
+
+## Phase 6: Delivery Hardening (Completed Baseline)
+
+### Objective
+Harden release workflow and engineering reliability around the completed dashboard scope.
+
+### Implemented Scope (Phase 6A + 6B + 6C)
+1. Added GitHub Actions regression workflow:
+   - `.github/workflows/backend-regression.yml`
+2. CI trigger contract:
+   - `push` and `pull_request` on `main`
+3. Targeted regression suite in CI:
+   - `tests/test_ingestion_retry.py`
+   - `tests/test_routes.py`
+   - `tests/test_config.py`
+4. Added DB-backed integration invariants suite:
+   - `tests/test_ingestion_db_invariants.py`
+5. Added isolated DB test harness:
+   - real PostgreSQL engine session
+   - per-test temp table shadowing for `matches`, `team_game_stats`, `player_game_stats`
+   - rollback-scoped cleanup per test
+6. Added runtime parity guardrails:
+   - `urllib3<2` compatibility pin in backend requirements
+   - `.python-version` baseline (`3.11.11`)
+   - updated setup instructions to use Python 3.11
+
+### Verification Commands
+```bash
+cd backend
+PYTHONPATH=. venv/bin/pytest tests/test_ingestion_retry.py tests/test_routes.py tests/test_config.py -q
+PYTHONPATH=. venv/bin/pytest tests/test_ingestion_db_invariants.py -q
+```

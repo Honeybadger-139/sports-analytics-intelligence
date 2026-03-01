@@ -43,6 +43,9 @@ Recently completed and documented:
 11. Phase 5A hardening batch 2: escalation policy + incident workflow mapping.
 12. Phase 5B batch 1: retrain queue automation with duplicate guard + audit endpoint.
 13. Phase 5B batch 2: retrain worker lifecycle integration (`run-next` endpoint + status transitions).
+14. Phase 6A batch 1: GitHub Actions regression gate for ingestion/routes/config contracts.
+15. Phase 6B batch 2: DB-backed integration tests for ingestion integrity invariants.
+16. Phase 6C batch 3: runtime parity hardening (SSL warning removal + Python 3.11 baseline guidance).
 
 ## Suggested Progression
 

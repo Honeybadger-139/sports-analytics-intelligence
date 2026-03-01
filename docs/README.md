@@ -33,6 +33,9 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-01-phase-4b-hardening.md`
 - `changelogs/2026-03-01-phase-5a-monitoring-hardening.md`
 - `changelogs/2026-03-01-phase-5b-retrain-automation.md`
+- `changelogs/2026-03-01-phase-6a-ci-regression.md`
+- `changelogs/2026-03-01-phase-6b-db-integration-tests.md`
+- `changelogs/2026-03-01-phase-6c-runtime-parity.md`
 
 ## Recommended Start Order
 
