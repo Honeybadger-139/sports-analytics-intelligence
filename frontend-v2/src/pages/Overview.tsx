@@ -171,7 +171,7 @@ export default function Overview() {
             animate="show"
           >
             {NAV_ITEMS.slice(3).map(item => (
-              <DirectoryCard key={item.id} item={item} onNavigate={navigate} liveIds={['chatbot']} />
+              <DirectoryCard key={item.id} item={item} onNavigate={navigate} liveIds={['chatbot', 'scribble']} />
             ))}
           </motion.div>
         </div>

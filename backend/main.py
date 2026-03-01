@@ -38,10 +38,12 @@ from src.api.routes import router
 from src.api.intelligence_routes import router as intelligence_router
 from src.api.mlops_routes import router as mlops_router
 from src.api.chat_routes import router as chat_router
+from src.api.scribble_routes import router as scribble_router
 app.include_router(router)
 app.include_router(intelligence_router)
 app.include_router(mlops_router)
 app.include_router(chat_router)
+app.include_router(scribble_router)
 
 # Serve static frontend files (Phase 4)
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")

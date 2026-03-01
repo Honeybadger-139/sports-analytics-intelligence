@@ -47,10 +47,9 @@ const NAV_ITEMS: NavItem[] = [
     id: 'scribble',
     label: 'Scribble',
     path: '/scribble',
-    description: 'Custom metric builder',
+    description: 'Raw data playground & SQL lab',
     color: '#10B981',
     subItems: [],
-    badge: 'Soon',
   },
   {
     id: 'chatbot',
