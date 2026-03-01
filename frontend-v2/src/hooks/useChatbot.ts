@@ -7,7 +7,7 @@ const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
   content:
-    "Hey! I'm your Sports Analytics AI assistant. Ask me anything about your NBA data — predictions, team performance, model explanations, data quality, or bankroll stats. What would you like to explore?",
+    "Hey! I'm your Sports Analytics AI assistant — connected to your live NBA Postgres database and news feeds.\n\nAsk me about player stats, team win rates, predictions, bankroll performance, injury reports, or game context. What would you like to explore?",
   timestamp: new Date().toISOString(),
 }
 
@@ -64,11 +64,14 @@ export function useChatbot() {
         setMessages(prev => [...prev, assistantMsg])
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
+          const isNetworkError = (err as Error).message?.includes('Failed to fetch')
+            || (err as Error).message?.includes('NetworkError')
           const errorMsg: ChatMessage = {
             id: crypto.randomUUID(),
             role: 'error',
-            content:
-              'Backend integration is still in progress. The `/api/v1/chat` endpoint is not yet available. In the meantime, I can tell you that your RAG intelligence layer and PostgreSQL datasets are ready to be wired up.',
+            content: isNetworkError
+              ? 'Could not reach the backend. Make sure the FastAPI server is running (`uvicorn main:app --reload` inside `backend/`).'
+              : `Something went wrong: ${(err as Error).message || 'Unknown error'}. Please try again.`,
             timestamp: new Date().toISOString(),
           }
           setMessages(prev => [...prev, errorMsg])
