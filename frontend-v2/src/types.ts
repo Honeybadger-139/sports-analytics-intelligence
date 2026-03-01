@@ -67,3 +67,47 @@ export interface ChatRequest {
 export interface ChatResponse {
   reply: string
 }
+
+// ── Scribble ─────────────────────────────────────────────────────────────────
+
+export interface RawTableMeta {
+  table: string
+  label: string
+  description: string
+  season_filter_supported: boolean
+  row_count: number
+}
+
+export interface TableListResponse {
+  season: string
+  tables: RawTableMeta[]
+}
+
+export interface TableRowsResponse {
+  table: string
+  season: string | null
+  limit: number
+  offset: number
+  total: number
+  rows: Record<string, unknown>[]
+}
+
+export interface SqlQueryRequest {
+  sql: string
+}
+
+export interface SqlQueryResponse {
+  sql: string
+  columns: string[]
+  rows: Record<string, unknown>[]
+  row_count: number
+  elapsed_ms: number
+}
+
+export interface SavedNotebook {
+  id: string
+  name: string
+  description: string
+  sql: string
+  savedAt: string
+}
