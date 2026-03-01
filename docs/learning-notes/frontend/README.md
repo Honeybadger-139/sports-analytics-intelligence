@@ -74,6 +74,8 @@ The frontend is the product surface for this ML system. It turns backend APIs in
   - source quality summary table
   - MLOps alert summary
   - trend summary from monitoring snapshots (`/mlops/monitoring/trend`)
+  - action-ready alert table (`recommended_action` from escalation policy)
+  - latest retrain queue status (`/mlops/retrain/jobs`)
   - retrain policy dry-run outcome
 
 ### 8) Analysis Tab: Model Performance

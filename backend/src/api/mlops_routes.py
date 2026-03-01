@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.data.db import get_db
+from src.data.retrain_store import list_retrain_jobs
 from src.mlops.monitoring import get_monitoring_overview, get_monitoring_trend
 from src.mlops.retrain_policy import evaluate_retrain_need
 
@@ -56,3 +57,19 @@ async def mlops_retrain_policy(
     except Exception as exc:
         logger.error("Failed to evaluate retrain policy: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to evaluate retrain policy") from exc
+
+
+@router.get("/retrain/jobs")
+async def mlops_retrain_jobs(
+    season: str = Query(default=config.CURRENT_SEASON),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    try:
+        return {
+            "season": season,
+            "jobs": list_retrain_jobs(db, season=season, limit=limit),
+        }
+    except Exception as exc:
+        logger.error("Failed to list retrain jobs: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to list retrain jobs") from exc

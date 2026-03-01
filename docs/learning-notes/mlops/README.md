@@ -27,6 +27,14 @@ MLOps (Machine Learning Operations) is the practice of deploying, monitoring, an
    - `/api/v1/system/status` now includes model artifact snapshot metadata.
 5. Snapshot persistence:
    - monitoring overview writes `mlops_monitoring_snapshot` rows for trend analysis.
+6. Deterministic escalation policy:
+   - alerts now include `breach_streak`, `escalation_level`, and `recommended_action`
+   - payload includes escalation summary state for incident routing (`none|active|watch|incident`)
+7. Retrain queue automation baseline:
+   - `dry_run=false` queues a retrain job with policy evidence snapshots
+   - duplicate guard prevents repeated queued/running jobs in short windows
+   - retrain queue is exposed via `GET /api/v1/mlops/retrain/jobs`
+   - rollback baseline criteria are persisted with each queued job
 
 ## Why It Matters
 

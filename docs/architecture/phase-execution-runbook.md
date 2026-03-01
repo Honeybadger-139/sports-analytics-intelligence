@@ -271,6 +271,13 @@ Production-style monitoring and retrain triggers.
    - `mlops_monitoring_snapshot` persistence layer
    - `GET /api/v1/mlops/monitoring/trend`
    - frontend trend summary callout wired to trend API
+7. Added deterministic escalation policy:
+   - alert-level `recommended_action`
+   - payload-level escalation summary (`none|active|watch|incident`)
+8. Added retrain queue automation baseline:
+   - execute mode queueing in `/api/v1/mlops/retrain/policy?dry_run=false`
+   - duplicate-guard to avoid repeated queued jobs
+   - `GET /api/v1/mlops/retrain/jobs` for audit visibility
 
 ### Verification Commands
 ```bash
@@ -281,4 +288,28 @@ curl -sS 'http://127.0.0.1:8001/api/v1/intelligence/brief?date=2026-02-28&season
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring?season=2025-26'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring/trend?season=2025-26&days=14&limit=5'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=true'
+curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=false'
+curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/jobs?season=2025-26&limit=5'
 ```
+
+### Incident Workflow (Phase 5A)
+1. Poll `GET /api/v1/mlops/monitoring` on schedule.
+2. Check `escalation.state`:
+   - `none`: continue normal monitoring.
+   - `active`: monitor next snapshot and confirm no upward trend.
+   - `watch`: investigate now (data freshness, model outcomes, ingestion anomalies).
+   - `incident`: open incident and freeze non-essential model/retrain changes until triage completes.
+3. Use `recommended_action` at alert row level for immediate operator action.
+4. Confirm stabilization when two consecutive snapshots return `escalation.state=none`.
+
+### Retrain Guardrail Workflow (Phase 5B Baseline)
+1. Evaluate policy in dry-run:
+   - `GET /api/v1/mlops/retrain/policy?season=...&dry_run=true`
+2. Queue retrain only when ready:
+   - `GET /api/v1/mlops/retrain/policy?season=...&dry_run=false`
+3. Confirm duplicate guard behavior:
+   - repeated execute-mode calls should return `action=already-queued` while queued/running job exists.
+4. Inspect queued jobs:
+   - `GET /api/v1/mlops/retrain/jobs?season=...`
+5. Rollback rule (documented baseline):
+   - revert to previous model artifact if post-retrain accuracy drops by >0.03 or Brier worsens by >0.02.

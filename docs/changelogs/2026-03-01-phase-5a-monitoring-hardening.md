@@ -21,6 +21,10 @@ Extend MLOps monitoring from point-in-time metrics to trend-ready observability.
 4. Updated `backend/src/api/mlops_routes.py`:
    - added `GET /api/v1/mlops/monitoring/trend?season=...&days=...&limit=...`
 5. Updated root endpoint map in `backend/main.py` to include trend route.
+6. Added deterministic escalation policy in `backend/src/mlops/monitoring.py`:
+   - breach streak computation from recent snapshot trend
+   - alert-level `recommended_action` + `escalation_level`
+   - payload-level escalation summary block
 
 ## Frontend Changes
 
@@ -28,19 +32,22 @@ Extend MLOps monitoring from point-in-time metrics to trend-ready observability.
    - added trend summary callout (`14-day snapshots / avg accuracy / latest alert count`)
 2. Frontend now calls trend API in `loadMlopsMonitoring()`:
    - `GET /api/v1/mlops/monitoring/trend`
+3. Updated Alerts table to include deterministic action guidance column.
 
 ## Tests
 
 1. Updated `backend/tests/test_mlops_routes.py`:
    - added route test for `/api/v1/mlops/monitoring/trend`
+   - added escalation-policy behavior test
 
 ## Validation
 
-1. `PYTHONPATH=. ../backend/venv/bin/pytest tests -q` -> `78 passed, 1 warning`
+1. `PYTHONPATH=. ../backend/venv/bin/pytest tests -q` -> `79 passed, 1 warning`
 2. `node --check frontend/js/dashboard.js` -> pass
 3. Runtime checks:
    - `/api/v1/mlops/monitoring?season=2025-26` -> 200
    - `/api/v1/mlops/monitoring/trend?season=2025-26&days=14&limit=5` -> 200 with snapshot points
+   - `/api/v1/mlops/monitoring` now returns `escalation` summary and action-ready alerts
 
 ## Notes
 

@@ -108,9 +108,10 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/quality/overview` | GET | Data quality + timing + team metrics snapshot |
 | `/api/v1/intelligence/game/{game_id}` | GET | Citation-grounded game context brief |
 | `/api/v1/intelligence/brief` | GET | Daily intelligence digest |
-| `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring + alerts |
+| `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring + action-ready escalations |
 | `/api/v1/mlops/monitoring/trend` | GET | Monitoring snapshot trend points for charting |
 | `/api/v1/mlops/retrain/policy` | GET | Deterministic retrain-policy evaluation (dry-run supported) |
+| `/api/v1/mlops/retrain/jobs` | GET | Retrain queue audit view (recent jobs by season) |
 | `/api/v1/bets` | POST | Create bet ledger entry |
 | `/api/v1/bets` | GET | List bet ledger entries |
 | `/api/v1/bets/{id}/settle` | POST | Settle bet and compute PnL |

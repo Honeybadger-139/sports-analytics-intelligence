@@ -40,6 +40,8 @@ Recently completed and documented:
 8. Phase 5 foundation: MLOps monitoring + retrain policy API surfaces.
 9. Phase 4B hardening batch: source-quality scoring, feed-health telemetry, and Intelligence tab filters.
 10. Phase 5A hardening batch: monitoring snapshot persistence + trend API contract.
+11. Phase 5A hardening batch 2: escalation policy + incident workflow mapping.
+12. Phase 5B batch 1: retrain queue automation with duplicate guard + audit endpoint.
 
 ## Suggested Progression
 

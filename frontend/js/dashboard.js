@@ -709,14 +709,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function loadMlopsMonitoring() {
-        tableMessage(dom.mlopsAlertsBody, 2, "Loading monitoring...");
+        tableMessage(dom.mlopsAlertsBody, 3, "Loading monitoring...");
         dom.mlopsPolicySummary.textContent = "Loading retrain policy...";
         dom.mlopsTrendSummary.textContent = "Loading trend summary...";
         try {
-            const [monitoring, policy, trend] = await Promise.all([
+            const [monitoring, policy, trend, retrainJobs] = await Promise.all([
                 fetchJSON(`/mlops/monitoring?season=${encodeURIComponent(CURRENT_SEASON)}`),
                 fetchJSON(`/mlops/retrain/policy?season=${encodeURIComponent(CURRENT_SEASON)}&dry_run=true`),
                 fetchJSON(`/mlops/monitoring/trend?season=${encodeURIComponent(CURRENT_SEASON)}&days=14&limit=20`),
+                fetchJSON(`/mlops/retrain/jobs?season=${encodeURIComponent(CURRENT_SEASON)}&limit=3`),
             ]);
             dom.mlopsEvaluated.textContent = fmtNum(monitoring.metrics?.evaluated_predictions);
             dom.mlopsAccuracy.textContent =
@@ -731,7 +732,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const trendPoints = trend.points || [];
             const validAccuracy = trendPoints.filter((point) => point.accuracy != null);
             if (!trendPoints.length || !validAccuracy.length) {
-                dom.mlopsTrendSummary.textContent = "Trend data is not sufficient yet (need persisted snapshots).";
+                dom.mlopsTrendSummary.textContent = `Trend data is not sufficient yet (need persisted snapshots). Escalation state: ${
+                    monitoring.escalation?.state || "none"
+                }.`;
             } else {
                 const avgAccuracy =
                     validAccuracy.reduce((sum, point) => sum + Number(point.accuracy || 0), 0) / validAccuracy.length;
@@ -739,12 +742,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 dom.mlopsTrendSummary.textContent =
                     `14-day snapshots: ${fmtNum(trendPoints.length)} points · Avg accuracy ${fmtPct(avgAccuracy)} · Latest alerts ${fmtNum(
                         latestPoint.alert_count || 0
-                    )}`;
+                    )} · Escalation ${monitoring.escalation?.state || "none"}`;
             }
 
             const alerts = monitoring.alerts || [];
             if (!alerts.length) {
-                tableMessage(dom.mlopsAlertsBody, 2, "No active monitoring alerts.");
+                tableMessage(dom.mlopsAlertsBody, 3, "No active monitoring alerts.");
             } else {
                 dom.mlopsAlertsBody.innerHTML = alerts
                     .map(
@@ -752,18 +755,23 @@ document.addEventListener("DOMContentLoaded", () => {
                         <tr>
                             <td>${alert.message}</td>
                             <td><span class="${riskChipClass(alert.severity)}">${alert.severity}</span></td>
+                            <td><code>${safeText(alert.recommended_action)}</code></td>
                         </tr>
                     `
                     )
                     .join("");
             }
 
+            const latestJob = (retrainJobs.jobs || [])[0];
+            const queueText = latestJob
+                ? ` Latest queued job: #${latestJob.id} (${latestJob.status}) at ${fmtDateTime(latestJob.created_at)}.`
+                : " No queued retrain jobs.";
             dom.mlopsPolicySummary.textContent = policy.should_retrain
-                ? `Retrain recommended (${policy.reasons.join("; ")})`
-                : "Retrain not required by current dry-run thresholds.";
+                ? `Retrain recommended (${policy.reasons.join("; ")}).${queueText}`
+                : `Retrain not required by current dry-run thresholds.${queueText}`;
         } catch (err) {
             console.error("loadMlopsMonitoring failed", err);
-            tableMessage(dom.mlopsAlertsBody, 2, "Could not load monitoring.");
+            tableMessage(dom.mlopsAlertsBody, 3, "Could not load monitoring.");
             dom.mlopsPolicySummary.textContent = "Could not load retrain policy.";
             dom.mlopsTrendSummary.textContent = "Could not load trend summary.";
         }

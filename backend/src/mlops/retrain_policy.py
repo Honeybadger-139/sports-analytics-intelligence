@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
+from src.data.retrain_store import create_retrain_job, find_recent_active_retrain_job
 
 
 def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> Dict:
@@ -68,6 +69,36 @@ def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> 
 
     should_retrain = len(reasons) > 0
     action = "dry-run-noop" if dry_run else ("queue-retrain" if should_retrain else "noop")
+    retrain_job = None
+    duplicate_guard_triggered = False
+
+    engine = db.get_bind() if hasattr(db, "get_bind") else None
+    if not dry_run and should_retrain and engine is not None:
+        existing = find_recent_active_retrain_job(engine, season=season, window_hours=12)
+        if existing:
+            duplicate_guard_triggered = True
+            action = "already-queued"
+            retrain_job = existing
+        else:
+            retrain_job = create_retrain_job(
+                engine,
+                season=season,
+                reasons=reasons,
+                metrics={
+                    "completed_games": completed_games,
+                    "evaluated_predictions": evaluated_predictions,
+                    "new_labels_pending": new_labels_pending,
+                    "accuracy": accuracy,
+                    "brier_score": brier,
+                },
+                thresholds={
+                    "accuracy_min": config.MLOPS_ACCURACY_THRESHOLD,
+                    "brier_max": config.MLOPS_MAX_BRIER,
+                    "new_labels_min": config.MLOPS_NEW_LABEL_MIN,
+                },
+                trigger_source="policy",
+            )
+            action = "queued-retrain"
 
     payload = {
         "season": season,
@@ -87,9 +118,13 @@ def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> 
             "brier_max": config.MLOPS_MAX_BRIER,
             "new_labels_min": config.MLOPS_NEW_LABEL_MIN,
         },
+        "execution": {
+            "duplicate_guard_triggered": duplicate_guard_triggered,
+            "retrain_job": retrain_job,
+            "rollback_strategy": "revert_to_previous_model_artifact_on_post_retrain_regression",
+        },
     }
 
-    engine = db.get_bind() if hasattr(db, "get_bind") else None
     if engine is not None:
         record_intelligence_audit(
             engine,

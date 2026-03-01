@@ -222,6 +222,21 @@ CREATE TABLE IF NOT EXISTS mlops_monitoring_snapshot (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Retrain Jobs: controlled automation queue for model retraining
+CREATE TABLE IF NOT EXISTS retrain_jobs (
+    id SERIAL PRIMARY KEY,
+    season VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued', -- queued/running/completed/failed/canceled
+    trigger_source VARCHAR(40) NOT NULL DEFAULT 'policy',
+    reasons JSONB,
+    metrics JSONB,
+    thresholds JSONB,
+    artifact_snapshot JSONB,
+    rollback_plan JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(game_date);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season);
@@ -237,3 +252,4 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_audit_status ON pipeline_audit(status);
 CREATE INDEX IF NOT EXISTS idx_intelligence_audit_module ON intelligence_audit(module);
 CREATE INDEX IF NOT EXISTS idx_intelligence_audit_status ON intelligence_audit(status);
 CREATE INDEX IF NOT EXISTS idx_mlops_snapshot_season_time ON mlops_monitoring_snapshot(season, snapshot_time DESC);
+CREATE INDEX IF NOT EXISTS idx_retrain_jobs_season_status_time ON retrain_jobs(season, status, created_at DESC);
