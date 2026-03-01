@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.data.db import get_db
-from src.mlops.monitoring import get_monitoring_overview
+from src.mlops.monitoring import get_monitoring_overview, get_monitoring_trend
 from src.mlops.retrain_policy import evaluate_retrain_need
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,20 @@ async def mlops_monitoring(
     except Exception as exc:
         logger.error("Failed to fetch monitoring overview: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch monitoring overview") from exc
+
+
+@router.get("/monitoring/trend")
+async def mlops_monitoring_trend(
+    season: str = Query(default=config.CURRENT_SEASON),
+    days: int = Query(default=14, ge=1, le=90),
+    limit: int = Query(default=30, ge=1, le=180),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_monitoring_trend(db, season, days=days, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to fetch monitoring trend: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch monitoring trend") from exc
 
 
 @router.get("/retrain/policy")

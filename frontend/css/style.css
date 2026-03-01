@@ -275,7 +275,8 @@ body.theme-dark {
 
 select,
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+input[type="date"] {
     border: 1px solid var(--line);
     border-radius: 10px;
     padding: 8px 10px;
@@ -410,6 +411,24 @@ tbody tr:hover td {
 
 .intelligence-row {
     cursor: pointer;
+}
+
+#intelligence-sort-select,
+#intelligence-risk-filter,
+#intelligence-min-citations-input {
+    min-width: 150px;
+}
+
+.citation-stale td {
+    background: rgba(214, 133, 30, 0.09);
+}
+
+.citation-noisy td {
+    border-left: 3px solid var(--error);
+}
+
+body.theme-dark .citation-stale td {
+    background: rgba(255, 206, 128, 0.14);
 }
 
 .empty {

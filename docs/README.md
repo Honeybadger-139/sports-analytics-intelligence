@@ -30,6 +30,8 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-02-28-phase-3c-tabbed-redesign.md`
 - `changelogs/2026-02-28-phase-4-rag-plan-update.md`
 - `changelogs/2026-02-28-phase-4-5-implementation.md`
+- `changelogs/2026-03-01-phase-4b-hardening.md`
+- `changelogs/2026-03-01-phase-5a-monitoring-hardening.md`
 
 ## Recommended Start Order
 

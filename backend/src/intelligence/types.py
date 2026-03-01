@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,12 +36,35 @@ class Citation(BaseModel):
     source: str
     published_at: str
     snippet: str
+    quality_score: Optional[float] = None
+    freshness_hours: Optional[float] = None
+    is_stale: bool = False
+    is_noisy: bool = False
+
+
+class SourceQuality(BaseModel):
+    source: str
+    docs_used: int
+    avg_quality_score: float
+    avg_freshness_hours: Optional[float] = None
+    fresh_docs: int = 0
+    stale_docs: int = 0
+    noisy_docs: int = 0
+
+
+class FeedHealth(BaseModel):
+    source: str
+    status: Literal["ok", "empty", "error"]
+    items_fetched: int = 0
+    latency_ms: Optional[int] = None
+    error: Optional[str] = None
 
 
 class RetrievalStats(BaseModel):
     docs_considered: int = 0
     docs_used: int = 0
     freshness_window_hours: int = 0
+    source_quality: List[SourceQuality] = Field(default_factory=list)
 
 
 class GameIntelligenceResponse(BaseModel):
@@ -53,6 +76,7 @@ class GameIntelligenceResponse(BaseModel):
     citations: List[Citation] = Field(default_factory=list)
     retrieval: RetrievalStats
     coverage_status: Literal["sufficient", "insufficient"]
+    feed_health: List[FeedHealth] = Field(default_factory=list)
 
 
 class BriefItem(BaseModel):

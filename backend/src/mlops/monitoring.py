@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
+from src.data.mlops_store import fetch_monitoring_trend, record_monitoring_snapshot
 
 
 def _days_since(value) -> int | None:
@@ -126,5 +127,15 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
                 "thresholds": payload["thresholds"],
             },
         )
+        record_monitoring_snapshot(engine, season=season, payload=payload)
 
     return payload
+
+
+def get_monitoring_trend(db: Session, season: str, *, days: int = 14, limit: int = 30) -> Dict:
+    points = fetch_monitoring_trend(db, season=season, days=days, limit=limit)
+    return {
+        "season": season,
+        "window_days": days,
+        "points": points,
+    }

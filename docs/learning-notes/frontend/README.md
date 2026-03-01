@@ -68,8 +68,12 @@ The frontend is the product surface for this ML system. It turns backend APIs in
   - `GET /api/v1/mlops/retrain/policy?dry_run=true`
 - Shows:
   - daily intelligence brief
+  - brief sort/filter controls (risk level, citation minimum, sort mode)
   - selected game citation inspector
+  - citation quality signals (stale/noisy flags + quality score)
+  - source quality summary table
   - MLOps alert summary
+  - trend summary from monitoring snapshots (`/mlops/monitoring/trend`)
   - retrain policy dry-run outcome
 
 ### 8) Analysis Tab: Model Performance

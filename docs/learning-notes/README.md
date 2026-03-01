@@ -38,6 +38,8 @@ Recently completed and documented:
 6. Phase 3C redesign: tab-based UX for home, raw data, quality monitoring, and analysis.
 7. Phase 4 foundation: RAG intelligence endpoints + context brief integration.
 8. Phase 5 foundation: MLOps monitoring + retrain policy API surfaces.
+9. Phase 4B hardening batch: source-quality scoring, feed-health telemetry, and Intelligence tab filters.
+10. Phase 5A hardening batch: monitoring snapshot persistence + trend API contract.
 
 ## Suggested Progression
 

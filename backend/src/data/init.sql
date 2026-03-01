@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS intelligence_audit (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- MLOps Monitoring Snapshot: time-series points for trend analysis
+CREATE TABLE IF NOT EXISTS mlops_monitoring_snapshot (
+    id SERIAL PRIMARY KEY,
+    snapshot_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    season VARCHAR(10) NOT NULL,
+    evaluated_predictions INTEGER DEFAULT 0,
+    accuracy DECIMAL(6,4),
+    brier_score DECIMAL(6,4),
+    game_data_freshness_days INTEGER,
+    pipeline_freshness_days INTEGER,
+    alert_count INTEGER DEFAULT 0,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(game_date);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season);
@@ -221,3 +236,4 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_audit_module ON pipeline_audit(module);
 CREATE INDEX IF NOT EXISTS idx_pipeline_audit_status ON pipeline_audit(status);
 CREATE INDEX IF NOT EXISTS idx_intelligence_audit_module ON intelligence_audit(module);
 CREATE INDEX IF NOT EXISTS idx_intelligence_audit_status ON intelligence_audit(status);
+CREATE INDEX IF NOT EXISTS idx_mlops_snapshot_season_time ON mlops_monitoring_snapshot(season, snapshot_time DESC);

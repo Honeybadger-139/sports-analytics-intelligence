@@ -5,7 +5,8 @@ Orchestrator for game intelligence retrieval + summarization.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
 from src.intelligence.embeddings import EmbeddingClient
-from src.intelligence.news_agent import chunk_context_document, fetch_context_documents
+from src.intelligence.news_agent import chunk_context_document, fetch_context_documents_with_health
 from src.intelligence.retriever import ContextRetriever
 from src.intelligence.rules import derive_risk_signals
 from src.intelligence.summarizer import ContextSummarizer
@@ -34,6 +35,87 @@ def _risk_level(signals: List[Dict]) -> str:
     return max(signals, key=lambda item: _severity_rank(item.get("severity", "low"))).get("severity", "low")
 
 
+NOISE_KEYWORDS = (
+    "parlay",
+    "promo code",
+    "odds",
+    "longshot",
+    "betting",
+    "mock draft",
+    "kalshi",
+)
+
+
+def _parse_published_at(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(tz=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return datetime.now(tz=timezone.utc)
+
+
+def _freshness_hours(value: str | None) -> float:
+    published_at = _parse_published_at(value)
+    return max((datetime.now(tz=timezone.utc) - published_at).total_seconds() / 3600.0, 0.0)
+
+
+def _is_noisy_context(doc: Dict) -> bool:
+    text = f"{doc.get('title', '')} {doc.get('content', '')}".lower()
+    return any(keyword in text for keyword in NOISE_KEYWORDS)
+
+
+def _score_doc_quality(doc: Dict, max_age_hours: int) -> Dict:
+    freshness = _freshness_hours(doc.get("published_at"))
+    similarity = float(doc.get("score") or 0.0)
+    freshness_factor = max(0.0, 1.0 - (freshness / max(max_age_hours, 1)))
+    similarity_factor = max(min((similarity + 1.0) / 2.0, 1.0), 0.0)
+    noisy = _is_noisy_context(doc)
+    quality_score = max(
+        0.0,
+        min(1.0, (0.55 * similarity_factor) + (0.45 * freshness_factor) - (0.35 if noisy else 0.0)),
+    )
+    stale = freshness >= (max_age_hours * 0.75)
+    annotated = dict(doc)
+    annotated.update(
+        {
+            "quality_score": round(quality_score, 4),
+            "freshness_hours": round(freshness, 1),
+            "is_stale": stale,
+            "is_noisy": noisy,
+        }
+    )
+    return annotated
+
+
+def _source_quality_summary(docs: List[Dict]) -> List[Dict]:
+    grouped: Dict[str, List[Dict]] = {}
+    for doc in docs:
+        source = doc.get("source") or "unknown-source"
+        grouped.setdefault(source, []).append(doc)
+
+    summary = []
+    for source, rows in grouped.items():
+        avg_quality = sum(float(row.get("quality_score") or 0.0) for row in rows) / len(rows)
+        avg_freshness = sum(float(row.get("freshness_hours") or 0.0) for row in rows) / len(rows)
+        summary.append(
+            {
+                "source": source,
+                "docs_used": len(rows),
+                "avg_quality_score": round(avg_quality, 3),
+                "avg_freshness_hours": round(avg_freshness, 1),
+                "fresh_docs": sum(1 for row in rows if float(row.get("freshness_hours") or 0.0) <= 24),
+                "stale_docs": sum(1 for row in rows if bool(row.get("is_stale"))),
+                "noisy_docs": sum(1 for row in rows if bool(row.get("is_noisy"))),
+            }
+        )
+    summary.sort(key=lambda row: row["avg_quality_score"], reverse=True)
+    return summary
+
+
 class IntelligenceService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -42,6 +124,33 @@ class IntelligenceService:
         self.retriever = ContextRetriever(self.embedding_client, self.vector_store)
         self.summarizer = ContextSummarizer()
         self._index_refreshed = False
+        self._feed_health: List[Dict] = []
+
+    def _load_feed_health_from_audit(self) -> List[Dict]:
+        try:
+            row = self.db.execute(
+                text(
+                    """
+                    SELECT details
+                    FROM intelligence_audit
+                    WHERE module = 'indexer'
+                    ORDER BY run_time DESC
+                    LIMIT 1
+                    """
+                )
+            ).fetchone()
+            if not row:
+                return []
+            details = row[0]
+            if isinstance(details, str):
+                details = json.loads(details)
+            if isinstance(details, dict):
+                feed_health = details.get("feed_health")
+                if isinstance(feed_health, list):
+                    return feed_health
+            return []
+        except Exception:
+            return []
 
     def _get_game_context(self, game_id: str, season: Optional[str]) -> Dict:
         row = self.db.execute(
@@ -76,14 +185,16 @@ class IntelligenceService:
             return
         self._index_refreshed = True
         if self.vector_store.count() > 0:
+            self._feed_health = self._load_feed_health_from_audit()
             return
 
         sources = config.INTELLIGENCE_SOURCES + config.INJURY_SOURCES
-        docs = fetch_context_documents(
+        docs, health = fetch_context_documents_with_health(
             sources=sources,
             timeout_seconds=config.RAG_REQUEST_TIMEOUT_SECONDS,
             max_items_per_feed=40,
         )
+        self._feed_health = health
         if not docs:
             record_intelligence_audit(
                 self.db.get_bind(),
@@ -91,7 +202,7 @@ class IntelligenceService:
                 status="degraded",
                 records_processed=0,
                 errors="No context documents fetched from configured sources",
-                details={"sources": sources},
+                details={"sources": sources, "feed_health": health},
             )
             return
 
@@ -120,7 +231,7 @@ class IntelligenceService:
             module="indexer",
             status="success" if inserted else "degraded",
             records_processed=inserted,
-            details={"sources": sources, "store_count": self.vector_store.count()},
+            details={"sources": sources, "store_count": self.vector_store.count(), "feed_health": health},
         )
 
     @staticmethod
@@ -139,6 +250,10 @@ class IntelligenceService:
                     "source": doc.get("source") or "unknown-source",
                     "published_at": doc.get("published_at") or "",
                     "snippet": (doc.get("content") or "")[:220],
+                    "quality_score": doc.get("quality_score"),
+                    "freshness_hours": doc.get("freshness_hours"),
+                    "is_stale": bool(doc.get("is_stale")),
+                    "is_noisy": bool(doc.get("is_noisy")),
                 }
             )
         return citations
@@ -165,6 +280,15 @@ class IntelligenceService:
             max_age_hours=max_age_hours,
             team_filter=[game["home_team"], game["away_team"]],
         )
+        scored_docs = [_score_doc_quality(doc, max_age_hours) for doc in docs]
+        scored_docs.sort(key=lambda row: float(row.get("quality_score") or 0.0), reverse=True)
+        docs = [
+            row
+            for row in scored_docs
+            if float(row.get("quality_score") or 0.0) >= 0.18 and not (row.get("is_noisy") and row["quality_score"] < 0.35)
+        ][:top_k]
+        retrieval_stats["docs_used"] = len(docs)
+        retrieval_stats["source_quality"] = _source_quality_summary(docs)
 
         risk_signals = derive_risk_signals(
             docs,
@@ -192,6 +316,7 @@ class IntelligenceService:
             "citations": citations,
             "retrieval": retrieval_stats,
             "coverage_status": coverage_status,
+            "feed_health": self._feed_health,
         }
 
         record_intelligence_audit(

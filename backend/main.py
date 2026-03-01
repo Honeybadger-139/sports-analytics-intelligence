@@ -66,6 +66,7 @@ async def root():
             "intelligence_game": "/api/v1/intelligence/game/{game_id}",
             "intelligence_brief": "/api/v1/intelligence/brief",
             "mlops_monitoring": "/api/v1/mlops/monitoring",
+            "mlops_monitoring_trend": "/api/v1/mlops/monitoring/trend?season=2025-26&days=14",
             "mlops_retrain_policy": "/api/v1/mlops/retrain/policy?dry_run=true",
             "bets_create": "POST /api/v1/bets",
             "bets_history": "/api/v1/bets",

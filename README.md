@@ -79,8 +79,8 @@ sports-analytics-intelligence/
 | 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
 | 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
 | 3. Frontend Integration | ✅ Complete | Tab-based NBA console: Home, Raw Data Explorer, Data Quality, Analysis |
-| 4. Intelligence Layer | ✅ Baseline Complete | RAG context APIs + citation guardrails + intelligence tab + deep-dive context brief |
-| 5. Dashboard Enhancements & MLOps | ✅ Foundation Complete | Monitoring API, retrain-policy dry-run API, model artifact governance signals |
+| 4. Intelligence Layer | ✅ Baseline + 4B Hardening Batch 1 | RAG context APIs + citation guardrails + source-quality scoring + intelligence UX filters |
+| 5. Dashboard Enhancements & MLOps | ✅ Foundation + 5A Hardening Batch 1 | Monitoring API + trend endpoint + snapshot persistence + retrain-policy dry-run API |
 
 ## Phase 0 Definition Of Done
 
@@ -109,6 +109,7 @@ Phase 0 is considered production-ready only when all checks below pass:
 | `/api/v1/intelligence/game/{game_id}` | GET | Citation-grounded game context brief |
 | `/api/v1/intelligence/brief` | GET | Daily intelligence digest |
 | `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring + alerts |
+| `/api/v1/mlops/monitoring/trend` | GET | Monitoring snapshot trend points for charting |
 | `/api/v1/mlops/retrain/policy` | GET | Deterministic retrain-policy evaluation (dry-run supported) |
 | `/api/v1/bets` | POST | Create bet ledger entry |
 | `/api/v1/bets` | GET | List bet ledger entries |

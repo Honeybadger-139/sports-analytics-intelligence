@@ -233,6 +233,11 @@ Add Retrieval-Augmented Generation (RAG) so predictions are accompanied by groun
    - selected-game citation inspector
    - risk signal display
 6. Added architecture flow diagram: `docs/images/phase-4-5-intelligence-mlops-flow.mmd`.
+7. Added Phase 4B hardening controls:
+   - source-quality scoring + noisy-content penalties
+   - feed-health telemetry in intelligence responses
+   - rule precision pass (noise-aware injury signals + conflict detection)
+   - Intelligence tab sorting/filtering and stale/noisy citation highlighting
 
 ---
 
@@ -262,6 +267,10 @@ Production-style monitoring and retrain triggers.
    - `GET /api/v1/mlops/retrain/policy?dry_run=true`
 4. Exposed model artifact snapshot in `/api/v1/system/status`.
 5. Integrated MLOps cards into frontend Intelligence tab (monitoring + dry-run policy summary).
+6. Added snapshot persistence + trend readiness:
+   - `mlops_monitoring_snapshot` persistence layer
+   - `GET /api/v1/mlops/monitoring/trend`
+   - frontend trend summary callout wired to trend API
 
 ### Verification Commands
 ```bash
@@ -270,5 +279,6 @@ PYTHONPATH=. venv/bin/pytest tests -q
 curl -sS 'http://127.0.0.1:8001/api/v1/intelligence/game/0022500859?season=2025-26'
 curl -sS 'http://127.0.0.1:8001/api/v1/intelligence/brief?date=2026-02-28&season=2025-26&limit=5'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring?season=2025-26'
+curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring/trend?season=2025-26&days=14&limit=5'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=true'
 ```

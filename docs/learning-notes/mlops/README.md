@@ -21,14 +21,18 @@ MLOps (Machine Learning Operations) is the practice of deploying, monitoring, an
      - minimum new-label threshold
 3. API contracts:
    - `GET /api/v1/mlops/monitoring`
+   - `GET /api/v1/mlops/monitoring/trend`
    - `GET /api/v1/mlops/retrain/policy?dry_run=true`
 4. Governance signal:
    - `/api/v1/system/status` now includes model artifact snapshot metadata.
+5. Snapshot persistence:
+   - monitoring overview writes `mlops_monitoring_snapshot` rows for trend analysis.
 
 ## Why It Matters
 
 Without MLOps, a strong model degrades silently in production.
 This baseline gives us operational visibility and deterministic retrain logic before full automation.
+Trend snapshots now make this visibility time-series ready for charting and alert trend analysis.
 
 ## Senior Manager Perspective
 

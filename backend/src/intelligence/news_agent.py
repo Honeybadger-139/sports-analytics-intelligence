@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Iterable, List
@@ -215,13 +216,50 @@ def fetch_context_documents(
     """
     Fetch and parse configured context feeds.
     """
+    docs, _ = fetch_context_documents_with_health(
+        sources=sources,
+        timeout_seconds=timeout_seconds,
+        max_items_per_feed=max_items_per_feed,
+    )
+    return docs
+
+
+def fetch_context_documents_with_health(
+    sources: List[str],
+    timeout_seconds: int = 8,
+    max_items_per_feed: int = 40,
+) -> tuple[List[ContextDocument], List[dict]]:
+    """
+    Fetch and parse configured feeds and return feed-health telemetry.
+    """
     docs: List[ContextDocument] = []
+    health: List[dict] = []
     for source in sources:
+        started = time.monotonic()
         try:
             response = requests.get(source, timeout=timeout_seconds)
             response.raise_for_status()
         except Exception as exc:
             logger.warning("Skipping source %s due to fetch error: %s", source, exc)
+            health.append(
+                {
+                    "source": _host(source),
+                    "status": "error",
+                    "items_fetched": 0,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                    "error": str(exc),
+                }
+            )
             continue
-        docs.extend(parse_feed_content(response.text, source, max_items=max_items_per_feed))
-    return docs
+        parsed_docs = parse_feed_content(response.text, source, max_items=max_items_per_feed)
+        docs.extend(parsed_docs)
+        health.append(
+            {
+                "source": _host(source),
+                "status": "ok" if parsed_docs else "empty",
+                "items_fetched": len(parsed_docs),
+                "latency_ms": int((time.monotonic() - started) * 1000),
+                "error": None if parsed_docs else "No parseable feed items",
+            }
+        )
+    return docs, health

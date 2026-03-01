@@ -72,6 +72,21 @@ Modules in `backend/src/intelligence/`:
 3. Rule overlays are deterministic and auditable.
 4. Model probability is never overwritten by context logic.
 
+## Phase 4B Hardening Additions
+
+1. Source quality scoring now penalizes low-signal/noisy betting content.
+2. Citation payload now includes:
+   - `quality_score`
+   - `freshness_hours`
+   - `is_stale`
+   - `is_noisy`
+3. Retrieval payload now includes source-level quality aggregates.
+4. Feed health telemetry is captured during indexing and surfaced in game intelligence responses.
+5. Intelligence tab now supports operator filtering/sorting so high-risk and high-citation games are prioritized quickly.
+6. Rule precision improvements:
+   - noisy docs are excluded from injury severity inference
+   - mixed injury certainty emits explicit conflict signal
+
 ## Why This Matters (Senior Manager Perspective)
 
 This layer improves decision quality by combining:

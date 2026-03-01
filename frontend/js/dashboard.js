@@ -39,18 +39,23 @@ document.addEventListener("DOMContentLoaded", () => {
         qualityRunBody: document.getElementById("quality-run-body"),
 
         intelligenceDateInput: document.getElementById("intelligence-date-input"),
+        intelligenceSortSelect: document.getElementById("intelligence-sort-select"),
+        intelligenceRiskFilter: document.getElementById("intelligence-risk-filter"),
+        intelligenceMinCitationsInput: document.getElementById("intelligence-min-citations-input"),
         intelligenceRefreshBtn: document.getElementById("intelligence-refresh-btn"),
         intelligenceBriefBody: document.getElementById("intelligence-brief-body"),
         intelligenceSelectedGame: document.getElementById("intelligence-selected-game"),
         intelligenceSelectedSummary: document.getElementById("intelligence-selected-summary"),
         intelligenceRiskWrap: document.getElementById("intelligence-risk-wrap"),
         intelligenceCitationsBody: document.getElementById("intelligence-citations-body"),
+        intelligenceSourceQualityBody: document.getElementById("intelligence-source-quality-body"),
         mlopsRefreshBtn: document.getElementById("mlops-refresh-btn"),
         mlopsEvaluated: document.getElementById("mlops-evaluated"),
         mlopsAccuracy: document.getElementById("mlops-accuracy"),
         mlopsBrier: document.getElementById("mlops-brier"),
         mlopsGameFreshness: document.getElementById("mlops-game-freshness"),
         mlopsPipelineFreshness: document.getElementById("mlops-pipeline-freshness"),
+        mlopsTrendSummary: document.getElementById("mlops-trend-summary"),
         mlopsAlertsBody: document.getElementById("mlops-alerts-body"),
         mlopsPolicySummary: document.getElementById("mlops-policy-summary"),
 
@@ -100,6 +105,10 @@ document.addEventListener("DOMContentLoaded", () => {
         intelligence: {
             date: new Date().toISOString().slice(0, 10),
             selectedGameId: null,
+            briefItems: [],
+            sortBy: "risk_desc",
+            riskFilter: "all",
+            minCitations: 0,
         },
     };
 
@@ -147,6 +156,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return "chip chip-risk-low";
     }
 
+    function riskRank(level) {
+        if (level === "high") return 3;
+        if (level === "medium") return 2;
+        return 1;
+    }
+
     function renderRiskSignals(container, signals) {
         if (!container) return;
         if (!signals || !signals.length) {
@@ -158,7 +173,9 @@ document.addEventListener("DOMContentLoaded", () => {
             .join("");
     }
 
-    function renderCitations(tbody, citations, colspan = 3) {
+    function renderCitations(tbody, citations, options = {}) {
+        const colspan = options.colspan || 3;
+        const includeQuality = Boolean(options.includeQuality);
         if (!tbody) return;
         if (!citations || !citations.length) {
             tableMessage(tbody, colspan, "No citations available.");
@@ -167,14 +184,95 @@ document.addEventListener("DOMContentLoaded", () => {
         tbody.innerHTML = citations
             .map(
                 (citation) => `
-                <tr>
+                <tr class="${citation.is_stale ? "citation-stale" : ""} ${citation.is_noisy ? "citation-noisy" : ""}">
                     <td><code>${safeText(citation.source)}</code></td>
                     <td class="mono">${fmtDateTime(citation.published_at)}</td>
                     <td><a href="${safeText(citation.url)}" target="_blank" rel="noopener noreferrer">${safeText(citation.title)}</a><br><span class="meta">${safeText(citation.snippet)}</span></td>
+                    ${
+                        includeQuality
+                            ? `<td class="mono">${citation.quality_score == null ? "--" : Number(citation.quality_score).toFixed(2)}
+                        ${citation.is_stale ? '<span class="tag tag-pending">aging</span>' : ""}
+                        ${citation.is_noisy ? '<span class="tag tag-failed">noisy</span>' : ""}</td>`
+                            : ""
+                    }
                 </tr>
             `
             )
             .join("");
+    }
+
+    function renderSourceQuality(rows) {
+        if (!dom.intelligenceSourceQualityBody) return;
+        if (!rows || !rows.length) {
+            tableMessage(dom.intelligenceSourceQualityBody, 5, "No source quality loaded.");
+            return;
+        }
+        dom.intelligenceSourceQualityBody.innerHTML = rows
+            .map(
+                (row) => `
+                <tr>
+                    <td><code>${safeText(row.source)}</code></td>
+                    <td class="mono">${fmtNum(row.docs_used)}</td>
+                    <td class="mono">${Number(row.avg_quality_score || 0).toFixed(2)}</td>
+                    <td class="mono">${fmtNum(row.fresh_docs)}</td>
+                    <td class="mono">${fmtNum(row.noisy_docs)}</td>
+                </tr>
+            `
+            )
+            .join("");
+    }
+
+    async function renderIntelligenceBriefRows() {
+        const minCitations = Number(state.intelligence.minCitations || 0);
+        const riskFilter = state.intelligence.riskFilter;
+        const sortBy = state.intelligence.sortBy;
+        let rows = [...(state.intelligence.briefItems || [])];
+
+        rows = rows.filter((item) => {
+            if ((item.citation_count || 0) < minCitations) return false;
+            if (riskFilter === "high") return item.risk_level === "high";
+            if (riskFilter === "medium") return riskRank(item.risk_level) >= 2;
+            if (riskFilter === "low") return item.risk_level === "low";
+            return true;
+        });
+
+        rows.sort((a, b) => {
+            if (sortBy === "citations_desc") return (b.citation_count || 0) - (a.citation_count || 0);
+            if (sortBy === "matchup_asc") return String(a.matchup || "").localeCompare(String(b.matchup || ""));
+            return riskRank(b.risk_level) - riskRank(a.risk_level);
+        });
+
+        if (!rows.length) {
+            tableMessage(dom.intelligenceBriefBody, 5, "No games match current filters.");
+            await loadIntelligenceGameDetail(null);
+            return;
+        }
+
+        dom.intelligenceBriefBody.innerHTML = rows
+            .map(
+                (item) => `
+                <tr data-game-id="${item.game_id}" class="intelligence-row">
+                    <td class="mono">${item.game_id}</td>
+                    <td>${item.matchup}</td>
+                    <td><span class="${riskChipClass(item.risk_level)}">${item.risk_level}</span></td>
+                    <td class="mono">${fmtNum(item.citation_count)}</td>
+                    <td>${item.summary}</td>
+                </tr>
+            `
+            )
+            .join("");
+
+        Array.from(dom.intelligenceBriefBody.querySelectorAll("tr[data-game-id]")).forEach((row) => {
+            row.addEventListener("click", () => {
+                state.intelligence.selectedGameId = row.dataset.gameId;
+                loadIntelligenceGameDetail(state.intelligence.selectedGameId);
+            });
+        });
+
+        if (!state.intelligence.selectedGameId || !rows.some((r) => r.game_id === state.intelligence.selectedGameId)) {
+            state.intelligence.selectedGameId = rows[0].game_id;
+        }
+        await loadIntelligenceGameDetail(state.intelligence.selectedGameId);
     }
 
     function setOverallStatus(type, message) {
@@ -555,25 +653,35 @@ document.addEventListener("DOMContentLoaded", () => {
             dom.intelligenceSelectedSummary.textContent =
                 "Select a game from the brief table to inspect citations and risk signals.";
             renderRiskSignals(dom.intelligenceRiskWrap, []);
-            tableMessage(dom.intelligenceCitationsBody, 3, "No citations loaded.");
+            tableMessage(dom.intelligenceCitationsBody, 4, "No citations loaded.");
+            tableMessage(dom.intelligenceSourceQualityBody, 5, "No source quality loaded.");
             return;
         }
 
         dom.intelligenceSelectedGame.textContent = `Game: ${gameId}`;
         dom.intelligenceSelectedSummary.textContent = "Loading selected game intelligence...";
         renderRiskSignals(dom.intelligenceRiskWrap, []);
-        tableMessage(dom.intelligenceCitationsBody, 3, "Loading citations...");
+        tableMessage(dom.intelligenceCitationsBody, 4, "Loading citations...");
+        tableMessage(dom.intelligenceSourceQualityBody, 5, "Loading source quality...");
         try {
             const payload = await fetchJSON(`/intelligence/game/${gameId}?season=${encodeURIComponent(CURRENT_SEASON)}`);
+            const feedIssues = (payload.feed_health || []).filter((row) => row.status !== "ok");
             dom.intelligenceSelectedSummary.textContent =
                 payload.summary || "No context summary available for this game.";
+            if (feedIssues.length) {
+                dom.intelligenceSelectedSummary.textContent += ` Feed issues: ${feedIssues
+                    .map((row) => `${row.source} (${row.status})`)
+                    .join(", ")}.`;
+            }
             renderRiskSignals(dom.intelligenceRiskWrap, payload.risk_signals || []);
-            renderCitations(dom.intelligenceCitationsBody, payload.citations || []);
+            renderCitations(dom.intelligenceCitationsBody, payload.citations || [], { colspan: 4, includeQuality: true });
+            renderSourceQuality(payload.retrieval?.source_quality || []);
         } catch (err) {
             console.error("loadIntelligenceGameDetail failed", err);
             dom.intelligenceSelectedSummary.textContent = "Could not load selected game intelligence.";
             renderRiskSignals(dom.intelligenceRiskWrap, []);
-            tableMessage(dom.intelligenceCitationsBody, 3, "Could not load citations.");
+            tableMessage(dom.intelligenceCitationsBody, 4, "Could not load citations.");
+            tableMessage(dom.intelligenceSourceQualityBody, 5, "Could not load source quality.");
         }
     }
 
@@ -586,36 +694,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 `/intelligence/brief?date=${encodeURIComponent(dateValue)}&season=${encodeURIComponent(CURRENT_SEASON)}&limit=10`
             );
             const rows = payload.items || [];
+            state.intelligence.briefItems = rows;
             if (!rows.length) {
                 tableMessage(dom.intelligenceBriefBody, 5, "No games available for selected date.");
                 await loadIntelligenceGameDetail(null);
                 return;
             }
-            dom.intelligenceBriefBody.innerHTML = rows
-                .map(
-                    (item) => `
-                    <tr data-game-id="${item.game_id}" class="intelligence-row">
-                        <td class="mono">${item.game_id}</td>
-                        <td>${item.matchup}</td>
-                        <td><span class="${riskChipClass(item.risk_level)}">${item.risk_level}</span></td>
-                        <td class="mono">${fmtNum(item.citation_count)}</td>
-                        <td>${item.summary}</td>
-                    </tr>
-                `
-                )
-                .join("");
-
-            Array.from(dom.intelligenceBriefBody.querySelectorAll("tr[data-game-id]")).forEach((row) => {
-                row.addEventListener("click", () => {
-                    state.intelligence.selectedGameId = row.dataset.gameId;
-                    loadIntelligenceGameDetail(state.intelligence.selectedGameId);
-                });
-            });
-
-            if (!state.intelligence.selectedGameId || !rows.some((r) => r.game_id === state.intelligence.selectedGameId)) {
-                state.intelligence.selectedGameId = rows[0].game_id;
-            }
-            await loadIntelligenceGameDetail(state.intelligence.selectedGameId);
+            await renderIntelligenceBriefRows();
         } catch (err) {
             console.error("loadIntelligenceBrief failed", err);
             tableMessage(dom.intelligenceBriefBody, 5, "Could not load intelligence brief.");
@@ -626,10 +711,12 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadMlopsMonitoring() {
         tableMessage(dom.mlopsAlertsBody, 2, "Loading monitoring...");
         dom.mlopsPolicySummary.textContent = "Loading retrain policy...";
+        dom.mlopsTrendSummary.textContent = "Loading trend summary...";
         try {
-            const [monitoring, policy] = await Promise.all([
+            const [monitoring, policy, trend] = await Promise.all([
                 fetchJSON(`/mlops/monitoring?season=${encodeURIComponent(CURRENT_SEASON)}`),
                 fetchJSON(`/mlops/retrain/policy?season=${encodeURIComponent(CURRENT_SEASON)}&dry_run=true`),
+                fetchJSON(`/mlops/monitoring/trend?season=${encodeURIComponent(CURRENT_SEASON)}&days=14&limit=20`),
             ]);
             dom.mlopsEvaluated.textContent = fmtNum(monitoring.metrics?.evaluated_predictions);
             dom.mlopsAccuracy.textContent =
@@ -640,6 +727,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 monitoring.metrics?.game_data_freshness_days == null ? "--" : fmtNum(monitoring.metrics.game_data_freshness_days);
             dom.mlopsPipelineFreshness.textContent =
                 monitoring.metrics?.pipeline_freshness_days == null ? "--" : fmtNum(monitoring.metrics.pipeline_freshness_days);
+
+            const trendPoints = trend.points || [];
+            const validAccuracy = trendPoints.filter((point) => point.accuracy != null);
+            if (!trendPoints.length || !validAccuracy.length) {
+                dom.mlopsTrendSummary.textContent = "Trend data is not sufficient yet (need persisted snapshots).";
+            } else {
+                const avgAccuracy =
+                    validAccuracy.reduce((sum, point) => sum + Number(point.accuracy || 0), 0) / validAccuracy.length;
+                const latestPoint = trendPoints[0];
+                dom.mlopsTrendSummary.textContent =
+                    `14-day snapshots: ${fmtNum(trendPoints.length)} points · Avg accuracy ${fmtPct(avgAccuracy)} · Latest alerts ${fmtNum(
+                        latestPoint.alert_count || 0
+                    )}`;
+            }
 
             const alerts = monitoring.alerts || [];
             if (!alerts.length) {
@@ -664,6 +765,7 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("loadMlopsMonitoring failed", err);
             tableMessage(dom.mlopsAlertsBody, 2, "Could not load monitoring.");
             dom.mlopsPolicySummary.textContent = "Could not load retrain policy.";
+            dom.mlopsTrendSummary.textContent = "Could not load trend summary.";
         }
     }
 
@@ -788,6 +890,18 @@ document.addEventListener("DOMContentLoaded", () => {
     dom.qualityLoadBtn.addEventListener("click", loadQualityOverview);
     dom.intelligenceRefreshBtn.addEventListener("click", loadIntelligenceBrief);
     dom.intelligenceDateInput.addEventListener("change", loadIntelligenceBrief);
+    dom.intelligenceSortSelect.addEventListener("change", async () => {
+        state.intelligence.sortBy = dom.intelligenceSortSelect.value;
+        await renderIntelligenceBriefRows();
+    });
+    dom.intelligenceRiskFilter.addEventListener("change", async () => {
+        state.intelligence.riskFilter = dom.intelligenceRiskFilter.value;
+        await renderIntelligenceBriefRows();
+    });
+    dom.intelligenceMinCitationsInput.addEventListener("change", async () => {
+        state.intelligence.minCitations = Math.max(0, Number(dom.intelligenceMinCitationsInput.value || 0));
+        await renderIntelligenceBriefRows();
+    });
     dom.mlopsRefreshBtn.addEventListener("click", loadMlopsMonitoring);
 
     dom.refreshTodayBtn.addEventListener("click", loadTodayPredictions);
@@ -798,6 +912,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initTheme();
     dom.intelligenceDateInput.value = state.intelligence.date;
+    dom.intelligenceSortSelect.value = state.intelligence.sortBy;
+    dom.intelligenceRiskFilter.value = state.intelligence.riskFilter;
+    dom.intelligenceMinCitationsInput.value = String(state.intelligence.minCitations);
     switchTab("home");
     refreshAll();
 

@@ -4,7 +4,13 @@ Unit tests for intelligence ingestion/retrieval utilities.
 
 from datetime import datetime, timedelta, timezone
 
-from src.intelligence.news_agent import chunk_context_document, parse_feed_content
+from src.intelligence.news_agent import (
+    chunk_context_document,
+    fetch_context_documents_with_health,
+    parse_feed_content,
+)
+from src.intelligence.rules import derive_risk_signals
+from src.intelligence.service import _score_doc_quality
 from src.intelligence.types import ContextDocument
 from src.intelligence.retriever import ContextRetriever
 
@@ -108,3 +114,113 @@ def test_chunk_context_document_overlap_boundaries_are_deterministic():
     assert chunks[2].doc_id == "doc-1::chunk_2"
     assert chunks[0].content[-200:] == chunks[1].content[:200]
     assert chunks[1].content[-200:] == chunks[2].content[:200]
+
+
+def test_fetch_context_documents_with_health_reports_source_statuses(monkeypatch):
+    class _Resp:
+        def __init__(self, body):
+            self.text = body
+
+        def raise_for_status(self):
+            return None
+
+    xml = """
+    <rss>
+      <channel>
+        <item>
+          <title>Lakers injury update</title>
+          <description>Questionable tag before tipoff</description>
+          <pubDate>Sat, 28 Feb 2026 10:00:00 GMT</pubDate>
+        </item>
+      </channel>
+    </rss>
+    """
+
+    def _fake_get(url, timeout):  # noqa: ARG001 - parity with requests.get signature
+        if "bad-feed" in url:
+            raise RuntimeError("network error")
+        return _Resp(xml)
+
+    monkeypatch.setattr("src.intelligence.news_agent.requests.get", _fake_get)
+    docs, health = fetch_context_documents_with_health(
+        ["https://good-feed.test/rss", "https://bad-feed.test/rss"],
+        timeout_seconds=2,
+        max_items_per_feed=5,
+    )
+
+    assert len(docs) == 1
+    assert any(item["status"] == "ok" and item["source"] == "good-feed.test" for item in health)
+    assert any(item["status"] == "error" and item["source"] == "bad-feed.test" for item in health)
+
+
+def test_score_doc_quality_penalizes_noisy_betting_content():
+    now = datetime.now(tz=timezone.utc).isoformat()
+    baseline = _score_doc_quality(
+        {
+            "title": "BOS lineup update",
+            "content": "Injury status changed to questionable",
+            "published_at": now,
+            "score": 0.9,
+        },
+        max_age_hours=120,
+    )
+    noisy = _score_doc_quality(
+        {
+            "title": "NBA parlay odds and promo code",
+            "content": "Best betting longshot",
+            "published_at": now,
+            "score": 0.9,
+        },
+        max_age_hours=120,
+    )
+
+    assert baseline["is_noisy"] is False
+    assert noisy["is_noisy"] is True
+    assert noisy["quality_score"] < baseline["quality_score"]
+
+
+def test_rules_ignore_noisy_docs_for_injury_signal():
+    now = datetime.now(tz=timezone.utc).isoformat()
+    signals = derive_risk_signals(
+        [
+            {
+                "title": "Parlay odds update",
+                "content": "questionable doubtful out",
+                "published_at": now,
+                "is_noisy": True,
+            }
+        ],
+        home_days_rest=3,
+        away_days_rest=3,
+        max_age_hours=120,
+    )
+    ids = {signal["id"] for signal in signals}
+    assert "injury_high" not in ids
+    assert "injury_watch" not in ids
+    assert "low_signal_context" in ids
+
+
+def test_rules_emit_injury_conflict_when_high_and_medium_signals_present():
+    now = datetime.now(tz=timezone.utc).isoformat()
+    signals = derive_risk_signals(
+        [
+            {
+                "title": "Starter ruled out tonight",
+                "content": "official report says out",
+                "published_at": now,
+                "is_noisy": False,
+            },
+            {
+                "title": "Another player questionable",
+                "content": "game-time decision note",
+                "published_at": now,
+                "is_noisy": False,
+            },
+        ],
+        home_days_rest=2,
+        away_days_rest=2,
+        max_age_hours=120,
+    )
+    ids = {signal["id"] for signal in signals}
+    assert "injury_high" in ids
+    assert "injury_signal_conflict" in ids

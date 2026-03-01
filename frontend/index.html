@@ -381,6 +381,27 @@
                         <h2>Daily Intelligence Brief</h2>
                         <div class="module-actions">
                             <input id="intelligence-date-input" type="date">
+                            <select id="intelligence-sort-select" aria-label="Sort brief">
+                                <option value="risk_desc">Sort: Risk (High to Low)</option>
+                                <option value="citations_desc">Sort: Citations (High to Low)</option>
+                                <option value="matchup_asc">Sort: Matchup (A to Z)</option>
+                            </select>
+                            <select id="intelligence-risk-filter" aria-label="Risk filter">
+                                <option value="all">Risk: All</option>
+                                <option value="high">Risk: High</option>
+                                <option value="medium">Risk: Medium+</option>
+                                <option value="low">Risk: Low only</option>
+                            </select>
+                            <input
+                                id="intelligence-min-citations-input"
+                                type="number"
+                                min="0"
+                                max="20"
+                                step="1"
+                                value="0"
+                                aria-label="Minimum citations"
+                                placeholder="Min citations"
+                            >
                             <button id="intelligence-refresh-btn" class="btn btn-ghost">Refresh</button>
                         </div>
                     </div>
@@ -420,10 +441,21 @@
                         <div class="table-wrap compact">
                             <table>
                                 <thead>
-                                    <tr><th>Source</th><th>Published</th><th>Citation</th></tr>
+                                    <tr><th>Source</th><th>Published</th><th>Citation</th><th>Quality</th></tr>
                                 </thead>
                                 <tbody id="intelligence-citations-body">
-                                    <tr><td colspan="3" class="empty">No citations loaded.</td></tr>
+                                    <tr><td colspan="4" class="empty">No citations loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h4>Source Quality</h4>
+                        <div class="table-wrap compact">
+                            <table>
+                                <thead>
+                                    <tr><th>Source</th><th>Docs</th><th>Avg Quality</th><th>Fresh (24h)</th><th>Noisy</th></tr>
+                                </thead>
+                                <tbody id="intelligence-source-quality-body">
+                                    <tr><td colspan="5" class="empty">No source quality loaded.</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -440,6 +472,9 @@
                             <div><span>Brier</span><strong id="mlops-brier">--</strong></div>
                             <div><span>Game Freshness (days)</span><strong id="mlops-game-freshness">--</strong></div>
                             <div><span>Pipeline Freshness (days)</span><strong id="mlops-pipeline-freshness">--</strong></div>
+                        </div>
+                        <div id="mlops-trend-summary" class="callout">
+                            Trend summary not loaded.
                         </div>
                         <h4>Alerts</h4>
                         <div class="table-wrap compact">
