@@ -59,7 +59,6 @@ const NAV_ITEMS: NavItem[] = [
     description: 'AI data assistant',
     color: '#F59E0B',
     subItems: [],
-    badge: 'Soon',
   },
 ]
 
