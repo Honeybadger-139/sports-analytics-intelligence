@@ -233,6 +233,10 @@ CREATE TABLE IF NOT EXISTS retrain_jobs (
     thresholds JSONB,
     artifact_snapshot JSONB,
     rollback_plan JSONB,
+    run_details JSONB,
+    error TEXT,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

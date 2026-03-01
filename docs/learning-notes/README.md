@@ -42,6 +42,7 @@ Recently completed and documented:
 10. Phase 5A hardening batch: monitoring snapshot persistence + trend API contract.
 11. Phase 5A hardening batch 2: escalation policy + incident workflow mapping.
 12. Phase 5B batch 1: retrain queue automation with duplicate guard + audit endpoint.
+13. Phase 5B batch 2: retrain worker lifecycle integration (`run-next` endpoint + status transitions).
 
 ## Suggested Progression
 

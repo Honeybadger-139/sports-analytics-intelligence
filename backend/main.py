@@ -69,6 +69,7 @@ async def root():
             "mlops_monitoring_trend": "/api/v1/mlops/monitoring/trend?season=2025-26&days=14",
             "mlops_retrain_policy": "/api/v1/mlops/retrain/policy?dry_run=true",
             "mlops_retrain_jobs": "/api/v1/mlops/retrain/jobs?season=2025-26&limit=10",
+            "mlops_retrain_worker": "POST /api/v1/mlops/retrain/worker/run-next?execute=false",
             "bets_create": "POST /api/v1/bets",
             "bets_history": "/api/v1/bets",
             "bets_summary": "/api/v1/bets/summary",

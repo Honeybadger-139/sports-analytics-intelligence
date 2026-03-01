@@ -5,6 +5,7 @@ Tests for Phase 5 MLOps endpoints.
 from fastapi.testclient import TestClient
 
 from main import app
+from src.api import mlops_routes as mlops_routes_module
 from src.data.db import get_db
 
 
@@ -186,3 +187,25 @@ class TestMlopsRoutes:
         payload = response.json()
         assert payload["season"] == "2025-26"
         assert "jobs" in payload
+
+    def test_retrain_worker_run_next_endpoint(self, monkeypatch):
+        monkeypatch.setattr(
+            mlops_routes_module,
+            "process_next_retrain_job",
+            lambda _db, season, execute: {
+                "status": "completed",
+                "message": "ok",
+                "job": {"id": 99, "season": season, "status": "completed"},
+                "run_details": {"mode": "simulate" if not execute else "execute"},
+            },
+        )
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.post("/api/v1/mlops/retrain/worker/run-next?season=2025-26&execute=false")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "completed"
+        assert payload["job"]["id"] == 99

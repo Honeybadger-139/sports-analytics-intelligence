@@ -33,12 +33,21 @@ def ensure_retrain_jobs_table(engine) -> None:
                     thresholds JSONB,
                     artifact_snapshot JSONB,
                     rollback_plan JSONB,
+                    run_details JSONB,
+                    error TEXT,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
         )
+        # Backfill schema for existing tables created in earlier sessions.
+        conn.execute(text("ALTER TABLE retrain_jobs ADD COLUMN IF NOT EXISTS run_details JSONB"))
+        conn.execute(text("ALTER TABLE retrain_jobs ADD COLUMN IF NOT EXISTS error TEXT"))
+        conn.execute(text("ALTER TABLE retrain_jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP"))
+        conn.execute(text("ALTER TABLE retrain_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"))
         conn.execute(
             text(
                 """
@@ -167,16 +176,113 @@ def create_retrain_job(
 
 
 def list_retrain_jobs(db, *, season: str, limit: int = 20) -> List[Dict[str, Any]]:
-    rows = db.execute(
-        text(
-            """
-            SELECT id, season, status, trigger_source, created_at, updated_at, reasons, metrics, thresholds
-            FROM retrain_jobs
-            WHERE season = :season
-            ORDER BY created_at DESC
-            LIMIT :limit
-            """
-        ),
-        {"season": season, "limit": limit},
-    ).fetchall()
-    return [dict(row._mapping) for row in rows]
+    attempts = 0
+    while attempts < 2:
+        try:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT
+                        id, season, status, trigger_source,
+                        created_at, updated_at, started_at, completed_at,
+                        reasons, metrics, thresholds,
+                        artifact_snapshot, rollback_plan,
+                        run_details, error
+                    FROM retrain_jobs
+                    WHERE season = :season
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"season": season, "limit": limit},
+            ).fetchall()
+            return [dict(row._mapping) for row in rows]
+        except Exception as exc:
+            if attempts == 0 and _is_missing_retrain_jobs_error(exc):
+                ensure_retrain_jobs_table(db.get_bind())
+                attempts += 1
+                continue
+            raise
+
+
+def claim_next_retrain_job(engine, *, season: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    attempts = 0
+    while attempts < 2:
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        WITH next_job AS (
+                            SELECT id
+                            FROM retrain_jobs
+                            WHERE status = 'queued'
+                              AND (:season IS NULL OR season = :season)
+                            ORDER BY created_at ASC
+                            LIMIT 1
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        UPDATE retrain_jobs
+                        SET status = 'running',
+                            started_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id IN (SELECT id FROM next_job)
+                        RETURNING id, season, status, created_at, started_at
+                        """
+                    ),
+                    {"season": season},
+                ).fetchone()
+            if not row:
+                return None
+            return dict(row._mapping)
+        except Exception as exc:
+            if attempts == 0 and _is_missing_retrain_jobs_error(exc):
+                ensure_retrain_jobs_table(engine)
+                attempts += 1
+                continue
+            raise
+
+
+def finalize_retrain_job(
+    engine,
+    *,
+    job_id: int,
+    status: str,
+    run_details: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+) -> Dict[str, Any]:
+    attempts = 0
+    while attempts < 2:
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        UPDATE retrain_jobs
+                        SET status = :status,
+                            run_details = CAST(:run_details AS JSONB),
+                            error = :error,
+                            completed_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP,
+                            artifact_snapshot = CAST(:artifact_snapshot AS JSONB)
+                        WHERE id = :job_id
+                        RETURNING id, season, status, started_at, completed_at, error
+                        """
+                    ),
+                    {
+                        "job_id": job_id,
+                        "status": status,
+                        "run_details": json.dumps(run_details or {}),
+                        "error": error,
+                        "artifact_snapshot": json.dumps(_artifact_snapshot()),
+                    },
+                ).fetchone()
+            if not row:
+                raise RuntimeError(f"Retrain job {job_id} not found")
+            return dict(row._mapping)
+        except Exception as exc:
+            if attempts == 0 and _is_missing_retrain_jobs_error(exc):
+                ensure_retrain_jobs_table(engine)
+                attempts += 1
+                continue
+            raise

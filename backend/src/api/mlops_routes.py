@@ -14,6 +14,7 @@ from src.data.db import get_db
 from src.data.retrain_store import list_retrain_jobs
 from src.mlops.monitoring import get_monitoring_overview, get_monitoring_trend
 from src.mlops.retrain_policy import evaluate_retrain_need
+from src.mlops.retrain_worker import process_next_retrain_job
 
 logger = logging.getLogger(__name__)
 
@@ -73,3 +74,16 @@ async def mlops_retrain_jobs(
     except Exception as exc:
         logger.error("Failed to list retrain jobs: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to list retrain jobs") from exc
+
+
+@router.post("/retrain/worker/run-next")
+async def mlops_retrain_worker_run_next(
+    season: str = Query(default=config.CURRENT_SEASON),
+    execute: bool = Query(default=False, description="Set true to run actual training pipeline"),
+    db: Session = Depends(get_db),
+):
+    try:
+        return process_next_retrain_job(db, season=season, execute=execute)
+    except Exception as exc:
+        logger.error("Failed to process next retrain job: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to process next retrain job") from exc

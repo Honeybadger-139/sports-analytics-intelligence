@@ -278,6 +278,9 @@ Production-style monitoring and retrain triggers.
    - execute mode queueing in `/api/v1/mlops/retrain/policy?dry_run=false`
    - duplicate-guard to avoid repeated queued jobs
    - `GET /api/v1/mlops/retrain/jobs` for audit visibility
+9. Added worker lifecycle integration:
+   - `POST /api/v1/mlops/retrain/worker/run-next`
+   - lifecycle states now observable: `queued -> running -> completed/failed`
 
 ### Verification Commands
 ```bash
@@ -290,6 +293,7 @@ curl -sS 'http://127.0.0.1:8001/api/v1/mlops/monitoring/trend?season=2025-26&day
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=true'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/policy?season=2025-26&dry_run=false'
 curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/jobs?season=2025-26&limit=5'
+curl -sS -X POST 'http://127.0.0.1:8001/api/v1/mlops/retrain/worker/run-next?season=2025-26&execute=false'
 ```
 
 ### Incident Workflow (Phase 5A)
@@ -311,5 +315,10 @@ curl -sS 'http://127.0.0.1:8001/api/v1/mlops/retrain/jobs?season=2025-26&limit=5
    - repeated execute-mode calls should return `action=already-queued` while queued/running job exists.
 4. Inspect queued jobs:
    - `GET /api/v1/mlops/retrain/jobs?season=...`
-5. Rollback rule (documented baseline):
+5. Run worker lifecycle (safe mode first):
+   - `POST /api/v1/mlops/retrain/worker/run-next?season=...&execute=false`
+6. If approved for full training execution:
+   - `POST /api/v1/mlops/retrain/worker/run-next?season=...&execute=true`
+7. Verify completion/failed status and artifact snapshot in retrain jobs list.
+8. Rollback rule (documented baseline):
    - revert to previous model artifact if post-retrain accuracy drops by >0.03 or Brier worsens by >0.02.

@@ -35,6 +35,10 @@ MLOps (Machine Learning Operations) is the practice of deploying, monitoring, an
    - duplicate guard prevents repeated queued/running jobs in short windows
    - retrain queue is exposed via `GET /api/v1/mlops/retrain/jobs`
    - rollback baseline criteria are persisted with each queued job
+8. Worker lifecycle integration:
+   - `POST /api/v1/mlops/retrain/worker/run-next`
+   - lifecycle transitions recorded (`queued -> running -> completed/failed`)
+   - safe simulation mode (`execute=false`) vs full training mode (`execute=true`)
 
 ## Why It Matters
 
