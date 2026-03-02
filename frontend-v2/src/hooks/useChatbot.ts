@@ -3,6 +3,21 @@ import type { ChatMessage, ChatRequest, ChatResponse } from '../types'
 
 const API_BASE = '/api/v1'
 
+/** Stable per-browser session ID — persisted in localStorage for Langfuse trace grouping. */
+const SESSION_STORAGE_KEY = 'sai_chat_session_id'
+
+function getOrCreateSessionId(): string {
+  try {
+    const existing = localStorage.getItem(SESSION_STORAGE_KEY)
+    if (existing) return existing
+    const id = crypto.randomUUID()
+    localStorage.setItem(SESSION_STORAGE_KEY, id)
+    return id
+  } catch {
+    return 'anonymous'
+  }
+}
+
 const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
@@ -26,6 +41,7 @@ export function useChatbot() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE])
   const [isLoading, setIsLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const sessionIdRef = useRef<string>(getOrCreateSessionId())
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -51,7 +67,7 @@ export function useChatbot() {
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
         const res = await postChat(
-          { message: content.trim(), history },
+          { message: content.trim(), history, session_id: sessionIdRef.current },
           ctrl.signal
         )
 

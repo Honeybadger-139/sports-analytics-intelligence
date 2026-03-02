@@ -91,6 +91,16 @@ PIPELINE_SEASONS: list[str] = _env_csv("PIPELINE_SEASONS", ["2024-25", "2025-26"
 PIPELINE_SCHEDULE_HOUR: int = int(os.getenv("PIPELINE_SCHEDULE_HOUR", "9"))
 PIPELINE_SCHEDULE_MINUTE: int = int(os.getenv("PIPELINE_SCHEDULE_MINUTE", "0"))
 
+# ── Langfuse (Phase 8 — chatbot observability) ──────────────────────────────
+# Sign up at https://cloud.langfuse.com to get keys (free tier available).
+# All values are optional — if LANGFUSE_SECRET_KEY is empty, tracing is silently
+# disabled and the chatbot continues to work normally.
+LANGFUSE_ENABLED: bool = _env_bool("LANGFUSE_ENABLED", True)
+LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+LANGFUSE_DEBUG: bool = _env_bool("LANGFUSE_DEBUG", False)
+
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))
 MLOPS_MAX_BRIER = float(os.getenv("MLOPS_MAX_BRIER", "0.25"))

@@ -39,11 +39,30 @@ async def lifespan(app: FastAPI):
         Gracefully stops the scheduler so in-flight pipeline jobs can finish.
     """
     from scheduler import create_scheduler
+    from src.intelligence.langfuse_client import init_langfuse
 
+    # Start Langfuse observability (no-op if keys not set)
+    langfuse_ready = init_langfuse()
+    if langfuse_ready:
+        logger.info("📊 [lifespan] Langfuse observability active.")
+    else:
+        logger.info("📊 [lifespan] Langfuse observability disabled (set LANGFUSE_* keys to enable).")
+
+    # Start the daily ingestion scheduler
     scheduler = create_scheduler()
     scheduler.start()
     logger.info("⏰ [lifespan] Daily pipeline scheduler started.")
+
     yield
+
+    # Flush any pending Langfuse traces before shutdown
+    if langfuse_ready:
+        try:
+            from langfuse import get_client
+            get_client().flush()
+        except Exception:
+            pass
+
     scheduler.shutdown(wait=False)
     logger.info("🛑 [lifespan] Daily pipeline scheduler stopped.")
 

@@ -44,6 +44,14 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     history: Optional[List[HistoryMessage]] = Field(default_factory=list)
     sport: Optional[str] = Field(default="nba", description="Sport context (reserved for future multi-sport support)")
+    session_id: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Optional stable per-session identifier (e.g. localStorage UUID). "
+            "Used to group all turns from one browser session in Langfuse traces."
+        ),
+    )
 
 
 class ChatResponse(BaseModel):
@@ -137,7 +145,11 @@ async def chat(
         from src.intelligence.chat_service import IntentRouter
         intent = IntentRouter.route(payload.message)
 
-        reply = service.reply(message=payload.message, history=history)
+        reply = service.reply(
+            message=payload.message,
+            history=history,
+            session_id=payload.session_id,
+        )
         return ChatResponse(reply=reply, intent=intent)
 
     except HTTPException:

@@ -32,6 +32,9 @@ chromadb==0.5.23
 # === Scheduler ===
 apscheduler>=3.10.0
 
+# === Observability ===
+langfuse>=3.7.0
+
 # === Utilities ===
 python-dotenv==1.0.1
 pyyaml==6.0.2

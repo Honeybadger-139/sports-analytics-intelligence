@@ -29,8 +29,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from langfuse import observe
+
 from src import config
 from src.intelligence.embeddings import EmbeddingClient
+from src.intelligence.langfuse_client import record_generation, set_session_context
 from src.intelligence.retriever import ContextRetriever
 from src.intelligence.vector_store import VectorStore
 
@@ -125,21 +128,40 @@ class LLMClient:
     def available(self) -> bool:
         return self._genai is not None
 
-    def generate(self, prompt: str, *, max_tokens: int = 400) -> Optional[str]:
+    @observe(name="llm.generate", as_type="generation", capture_input=False, capture_output=False)
+    def generate(self, prompt: str, *, max_tokens: int = 400, _span_name: str = "llm.generate") -> Optional[str]:
         """Generate a text response. Returns None if LLM is unavailable."""
         if not self._genai:
             return None
+        output_text: Optional[str] = None
+        input_tokens: Optional[int] = None
+        output_tokens: Optional[int] = None
         try:
             model = self._genai.GenerativeModel(self._model_name)  # type: ignore[union-attr]
             response = model.generate_content(
                 prompt,
                 generation_config={"temperature": 0.25, "max_output_tokens": max_tokens},
             )
-            text = (response.text or "").strip()
-            return text if text else None
+            output_text = (response.text or "").strip() or None
+
+            # Extract token usage from Gemini response metadata if available
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                input_tokens = getattr(response.usage_metadata, "prompt_token_count", None)
+                output_tokens = getattr(response.usage_metadata, "candidates_token_count", None)
         except Exception as exc:
             logger.warning("LLMClient.generate failed: %s", exc)
             return None
+        finally:
+            # Record a nested generation span in Langfuse with full prompt, output, and tokens
+            record_generation(
+                name=_span_name,
+                prompt=prompt,
+                output=output_text,
+                model=self._model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        return output_text
 
 
 # ── Intent Router ────────────────────────────────────────────────────────────
@@ -291,6 +313,7 @@ class ChatService:
 
     # ── RAG path ──────────────────────────────────────────────────────────
 
+    @observe(name="chatbot.rag_reply", as_type="retriever")
     def _rag_reply(self, message: str, history: List[Dict[str, str]]) -> str:
         """Retrieve recent sports news/context from ChromaDB, then synthesise an answer."""
         try:
@@ -348,6 +371,7 @@ class ChatService:
 
     # ── DB path ───────────────────────────────────────────────────────────
 
+    @observe(name="chatbot.db_reply", as_type="chain")
     def _db_reply(self, message: str, history: List[Dict[str, str]]) -> str:
         """
         Natural language → SQL → execute → narrate.
@@ -484,27 +508,39 @@ class ChatService:
 
     # ── Public Interface ──────────────────────────────────────────────────
 
+    @observe(name="chatbot.reply", as_type="chain")
     def reply(
         self,
         message: str,
         history: Optional[List[Dict[str, str]]] = None,
+        session_id: Optional[str] = None,
     ) -> str:
         """
         Generate a chatbot reply.
 
         Parameters
         ----------
-        message : The user's latest message.
-        history : Previous conversation turns [{role, content}, ...].
+        message    : The user's latest message.
+        history    : Previous conversation turns [{role, content}, ...].
+        session_id : Optional frontend session ID for Langfuse trace grouping.
+                     Pass a stable per-user/per-browser identifier so that
+                     all turns from one session appear together in the
+                     Langfuse dashboard.
 
         Returns
         -------
         str : The assistant's reply.
         """
         history = history or []
-        intent = IntentRouter.route(message)
 
-        logger.info("ChatService.reply: intent=%s sport=%s", intent, self.sport)
+        # Attach session context to the Langfuse trace created by @observe above
+        set_session_context(
+            session_id=session_id,
+            trace_name=f"chatbot/{self.sport}",
+        )
+
+        intent = IntentRouter.route(message)
+        logger.info("ChatService.reply: intent=%s sport=%s session=%s", intent, self.sport, session_id)
 
         if intent == "off_topic":
             return self._decline()

@@ -62,6 +62,7 @@ export interface ChatMessage {
 export interface ChatRequest {
   message: string
   history: Array<{ role: 'user' | 'assistant'; content: string }>
+  session_id?: string
 }
 
 export interface ChatResponse {
