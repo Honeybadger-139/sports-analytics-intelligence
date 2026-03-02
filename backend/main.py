@@ -13,15 +13,46 @@ Architecture Decision:
     See docs/decisions/decision-log.md for full rationale.
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context — runs startup logic before the app starts
+    serving requests, and shutdown logic when the process exits.
+
+    Startup:
+        Starts the APScheduler BackgroundScheduler that fires the daily
+        NBA ingestion pipeline at PIPELINE_SCHEDULE_HOUR UTC.  The scheduler
+        runs in a daemon thread and does NOT block the async event loop.
+
+    Shutdown:
+        Gracefully stops the scheduler so in-flight pipeline jobs can finish.
+    """
+    from scheduler import create_scheduler
+
+    scheduler = create_scheduler()
+    scheduler.start()
+    logger.info("⏰ [lifespan] Daily pipeline scheduler started.")
+    yield
+    scheduler.shutdown(wait=False)
+    logger.info("🛑 [lifespan] Daily pipeline scheduler stopped.")
+
+
 app = FastAPI(
     title="Sports Analytics Intelligence Platform",
     description="ML-powered sports analytics with prediction, explainability, and risk optimization",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware — allows the HTML frontend to call the API
@@ -58,7 +89,7 @@ async def root():
         "name": "Sports Analytics Intelligence Platform",
         "version": "1.0.0",
         "status": "operational",
-        "phase": "Phase 2 Complete — Prediction Engine + Resilience",
+        "phase": "Phase 7 Active — UI Redesign + Chatbot + Scribble",
         "endpoints": {
             "teams": "/api/v1/teams",
             "matches": "/api/v1/matches?season=2025-26",

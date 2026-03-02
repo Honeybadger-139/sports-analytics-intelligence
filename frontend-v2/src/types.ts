@@ -110,4 +110,5 @@ export interface SavedNotebook {
   description: string
   sql: string
   savedAt: string
+  updatedAt?: string
 }

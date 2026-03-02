@@ -79,6 +79,18 @@ INJURY_SOURCES = _env_csv(
 )
 
 
+# Scheduler — daily pipeline settings (Phase 8)
+# Seasons loaded by the daily scheduled pipeline.
+# First entry = historical season (cold load on first run if absent).
+# Second entry = current season (incremental watermark sync daily).
+# Override via env: PIPELINE_SEASONS="2024-25,2025-26"
+PIPELINE_SEASONS: list[str] = _env_csv("PIPELINE_SEASONS", ["2024-25", "2025-26"])
+
+# UTC hour/minute at which the daily pipeline fires (default: 09:00 UTC —
+# after NBA game results are finalised overnight US time).
+PIPELINE_SCHEDULE_HOUR: int = int(os.getenv("PIPELINE_SCHEDULE_HOUR", "9"))
+PIPELINE_SCHEDULE_MINUTE: int = int(os.getenv("PIPELINE_SCHEDULE_MINUTE", "0"))
+
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))
 MLOPS_MAX_BRIER = float(os.getenv("MLOPS_MAX_BRIER", "0.25"))

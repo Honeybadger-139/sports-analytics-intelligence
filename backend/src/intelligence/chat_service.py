@@ -106,7 +106,13 @@ class LLMClient:
     def __init__(self) -> None:
         self._genai = None
         self._model_name = config.RAG_SUMMARY_MODEL
-        if config.GEMINI_API_KEY:
+        if not config.GEMINI_API_KEY:
+            logger.warning(
+                "LLMClient: GEMINI_API_KEY is not set in backend/.env — "
+                "the chatbot will use plain-text fallbacks instead of AI-narrated answers. "
+                "Set GEMINI_API_KEY to enable full chatbot functionality."
+            )
+        else:
             try:
                 import google.generativeai as genai  # type: ignore
                 genai.configure(api_key=config.GEMINI_API_KEY)
@@ -190,9 +196,17 @@ def _fetch_schema_context(db: Session) -> str:
             if rows:
                 cols = ", ".join(f"{r[0]}" for r in rows)
                 parts.append(f"  {table}({cols})")
-        except Exception:
-            pass
-    return "\n".join(parts)
+        except Exception as exc:
+            logger.warning("_fetch_schema_context: could not fetch schema for table %s — %s", table, exc)
+    schema = "\n".join(parts)
+    if schema:
+        logger.debug("_fetch_schema_context: fetched schema for %d tables", len(parts))
+    else:
+        logger.warning(
+            "_fetch_schema_context: schema is empty — DB may be unreachable or "
+            "tables may not exist yet. Run the ingestion pipeline first."
+        )
+    return schema
 
 
 def _extract_sql(text_: str) -> str:
@@ -346,6 +360,14 @@ class ChatService:
         schema = self._get_schema()
         history_str = self._format_history(history)
 
+        # Guard: if schema is empty the LLM cannot generate valid SQL
+        if not schema:
+            return (
+                "I can't query the database right now — the database schema appears to be "
+                "empty or unreachable. Make sure the backend is connected to PostgreSQL and "
+                "the ingestion pipeline has been run at least once."
+            )
+
         # ── Step 1: Generate SQL ──────────────────────────────────────────
         if self.llm.available:
             sql_prompt = (
@@ -369,15 +391,17 @@ class ChatService:
             raw_sql = None
 
         if not raw_sql:
+            logger.warning("ChatService._db_reply: LLM returned empty SQL for: %s", message)
             return self._db_fallback(message)
 
         sql = _extract_sql(raw_sql)
         valid, err = _validate_sql(sql)
         if not valid:
-            logger.warning("ChatService: invalid generated SQL (%s): %s", err, sql)
+            logger.warning("ChatService._db_reply: invalid SQL (%s): %s", err, sql)
             return self._db_fallback(message)
 
         sql = _cap_limit(sql)
+        logger.debug("ChatService._db_reply: executing SQL:\n%s", sql)
 
         # ── Step 2: Execute ───────────────────────────────────────────────
         try:
@@ -389,9 +413,12 @@ class ChatService:
                  for col, v in zip(columns, row)}
                 for row in raw_rows
             ]
+            logger.info(
+                "ChatService._db_reply: query returned %d row(s) | columns: %s",
+                len(rows), columns,
+            )
         except Exception as exc:
-            logger.warning("ChatService: SQL execution failed: %s\nSQL: %s", exc, sql)
-            # Provide a user-friendly error instead of crashing
+            logger.warning("ChatService._db_reply: SQL execution failed: %s | SQL: %s", exc, sql)
             return (
                 "I tried to query your data but hit a database error. "
                 "Could you rephrase the question? "
@@ -399,14 +426,18 @@ class ChatService:
             )
 
         if not rows:
-            return "I ran the query but found no matching data for that question in your database."
+            logger.info("ChatService._db_reply: 0 rows returned — no matching data.")
+            return (
+                "I ran the query but found no matching data for that question. "
+                "The tables may not have data for the requested season yet — "
+                "try asking about the 2025-26 or 2024-25 season specifically."
+            )
 
         # ── Step 3: Narrate ───────────────────────────────────────────────
-        # Build a compact table string for the LLM
         header = " | ".join(columns)
         data_rows = "\n".join(
             " | ".join(str(row.get(c, "")) for c in columns)
-            for row in rows[:20]  # Show up to 20 rows in the narration prompt
+            for row in rows[:20]
         )
         table_str = f"{header}\n{data_rows}"
 
@@ -421,8 +452,15 @@ class ChatService:
             f"Do not describe the query itself, just the answer.\n"
             f"Assistant:"
         )
-        reply = self.llm.generate(narrate_prompt, max_tokens=250)
-        return reply or self._rows_fallback(columns, rows)
+        if self.llm.available:
+            reply = self.llm.generate(narrate_prompt, max_tokens=250)
+            if reply:
+                logger.info("ChatService._db_reply: LLM narrated %d-row result.", len(rows))
+                return reply
+            logger.warning("ChatService._db_reply: LLM narration empty — using plain-text fallback.")
+        else:
+            logger.info("ChatService._db_reply: LLM unavailable — using plain-text row fallback.")
+        return self._rows_fallback(columns, rows)
 
     @staticmethod
     def _rows_fallback(columns: List[str], rows: List[Dict]) -> str:

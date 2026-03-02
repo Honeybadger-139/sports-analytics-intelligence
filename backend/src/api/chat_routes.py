@@ -1,9 +1,9 @@
 """
-Chatbot API route.
+Chatbot API routes.
 
-Exposes POST /api/v1/chat — the single endpoint consumed by the frontend
-ChatbotPanel component. Routes each message through ChatService which
-handles intent classification, RAG retrieval, and NL→SQL→narration.
+Exposes:
+  POST /api/v1/chat        — main conversational endpoint (hybrid RAG + DB path)
+  GET  /api/v1/chat/health — readiness check for the chatbot subsystem
 """
 
 from __future__ import annotations
@@ -14,13 +14,25 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from src.data.db import get_db
-from src.intelligence.chat_service import ChatService
+from src.intelligence.chat_service import ChatService, LLMClient
+from src import config
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["chatbot"])
+
+_llm_client: Optional[LLMClient] = None
+
+
+def _get_llm_client() -> LLMClient:
+    """Singleton LLM client used for health checks (avoids re-init on every request)."""
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client
 
 
 class HistoryMessage(BaseModel):
@@ -37,6 +49,68 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     intent: Optional[str] = None  # 'rag' | 'db' | 'off_topic' — useful for debugging
+
+
+class ChatHealthResponse(BaseModel):
+    status: str  # 'ok' | 'degraded' | 'unavailable'
+    llm_available: bool
+    db_connected: bool
+    schema_tables_visible: int
+    gemini_model: str
+    message: str
+
+
+@router.get("/chat/health", response_model=ChatHealthResponse)
+async def chat_health(db: Session = Depends(get_db)):
+    """
+    Readiness check for the chatbot subsystem.
+
+    Returns:
+    - llm_available: whether the Gemini API key is configured and reachable
+    - db_connected: whether the database session is live
+    - schema_tables_visible: how many whitelisted tables have columns in the schema
+    - status: 'ok' if both LLM + DB are up, 'degraded' if only one is, 'unavailable' if neither
+
+    Use this endpoint to diagnose "no matching data" issues:
+    - If schema_tables_visible == 0 → run the ingestion pipeline
+    - If llm_available == False     → set GEMINI_API_KEY in backend/.env
+    """
+    from src.intelligence.chat_service import _fetch_schema_context, _SQL_SAFE_TABLES
+
+    llm = _get_llm_client()
+    llm_ok = llm.available
+
+    db_ok = False
+    schema_count = 0
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+        schema = _fetch_schema_context(db)
+        schema_count = len([line for line in schema.splitlines() if line.strip()])
+    except Exception as exc:
+        logger.warning("chat/health: DB check failed — %s", exc)
+
+    if llm_ok and db_ok:
+        status = "ok"
+        msg = "Chatbot is fully operational."
+    elif db_ok and not llm_ok:
+        status = "degraded"
+        msg = "DB is connected but LLM is unavailable — set GEMINI_API_KEY in backend/.env for AI-narrated answers."
+    elif llm_ok and not db_ok:
+        status = "degraded"
+        msg = "LLM is available but DB is unreachable — check DATABASE_URL and PostgreSQL connection."
+    else:
+        status = "unavailable"
+        msg = "Both LLM and DB are unavailable — check GEMINI_API_KEY and DATABASE_URL."
+
+    return ChatHealthResponse(
+        status=status,
+        llm_available=llm_ok,
+        db_connected=db_ok,
+        schema_tables_visible=schema_count,
+        gemini_model=config.RAG_SUMMARY_MODEL,
+        message=msg,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)

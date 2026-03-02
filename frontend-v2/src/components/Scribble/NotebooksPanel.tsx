@@ -21,28 +21,47 @@ function formatDate(iso: string) {
 }
 
 export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: NotebooksPanelProps) {
-  const { notebooks, save, remove } = useNotebooks()
+  const { notebooks, loading, error, save, remove } = useNotebooks()
   const [showSaveForm, setShowSaveForm] = useState(!!pendingSql)
   const [saveName, setSaveName] = useState('')
   const [saveDesc, setSaveDesc] = useState('')
   const [saveSql, setSaveSql] = useState(pendingSql)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   function openSaveForm(sql = '') {
     setSaveSql(sql)
     setSaveName('')
     setSaveDesc('')
+    setSaveError(null)
     setShowSaveForm(true)
   }
 
-  function handleSave() {
-    if (!saveSql.trim()) return
-    save(saveName, saveDesc, saveSql)
-    setShowSaveForm(false)
-    setSaveName('')
-    setSaveDesc('')
-    setSaveSql('')
-    onClearPending()
+  async function handleSave() {
+    if (!saveSql.trim() || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await save(saveName, saveDesc, saveSql)
+      setShowSaveForm(false)
+      setSaveName('')
+      setSaveDesc('')
+      setSaveSql('')
+      onClearPending()
+    } catch (err) {
+      setSaveError((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove(id: string) {
+    try {
+      await remove(id)
+    } catch {
+      // silently ignore — refresh will restore
+    }
   }
 
   function handleLoad(nb: SavedNotebook) {
@@ -98,19 +117,23 @@ export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: N
                 rows={4}
                 spellCheck={false}
               />
+              {saveError && (
+                <p style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '4px' }}>{saveError}</p>
+              )}
               <div className="save-form-actions">
                 <button
                   className="save-form-cancel"
-                  onClick={() => { setShowSaveForm(false); onClearPending() }}
+                  onClick={() => { setShowSaveForm(false); onClearPending(); setSaveError(null) }}
+                  disabled={saving}
                 >
                   Cancel
                 </button>
                 <button
                   className="save-form-submit"
                   onClick={handleSave}
-                  disabled={!saveSql.trim()}
+                  disabled={!saveSql.trim() || saving}
                 >
-                  Save notebook
+                  {saving ? 'Saving…' : 'Save notebook'}
                 </button>
               </div>
             </div>
@@ -118,8 +141,21 @@ export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: N
         )}
       </AnimatePresence>
 
+      {/* Loading / error states */}
+      {loading && (
+        <div className="notebooks-empty">
+          <p className="notebooks-empty-title" style={{ opacity: 0.6 }}>Loading notebooks…</p>
+        </div>
+      )}
+      {error && !loading && (
+        <div className="notebooks-empty">
+          <p className="notebooks-empty-title" style={{ color: 'var(--error)' }}>Failed to load</p>
+          <p className="notebooks-empty-desc">{error}</p>
+        </div>
+      )}
+
       {/* Notebook list */}
-      {notebooks.length === 0 && !showSaveForm ? (
+      {!loading && !error && notebooks.length === 0 && !showSaveForm ? (
         <div className="notebooks-empty">
           <div className="notebooks-empty-icon">📓</div>
           <p className="notebooks-empty-title">No saved notebooks yet</p>
@@ -130,7 +166,7 @@ export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: N
             Create your first notebook
           </button>
         </div>
-      ) : (
+      ) : !loading && !error ? (
         <div className="notebooks-list">
           {notebooks.map(nb => (
             <div key={nb.id} className="notebook-card">
@@ -162,7 +198,7 @@ export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: N
                   </button>
                   <button
                     className="notebook-action-btn notebook-action-btn--delete"
-                    onClick={e => { e.stopPropagation(); remove(nb.id) }}
+                    onClick={e => { e.stopPropagation(); handleRemove(nb.id) }}
                     title="Delete notebook"
                   >
                     <svg width="11" height="11" viewBox="0 0 11 11" fill="none">

@@ -29,6 +29,9 @@ jupyter==1.1.1
 google-generativeai==0.8.4
 chromadb==0.5.23
 
+# === Scheduler ===
+apscheduler>=3.10.0
+
 # === Utilities ===
 python-dotenv==1.0.1
 pyyaml==6.0.2

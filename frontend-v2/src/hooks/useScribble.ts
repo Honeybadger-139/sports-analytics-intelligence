@@ -8,7 +8,9 @@ import type {
 } from '../types'
 
 const API_BASE = '/api/v1'
-const NOTEBOOKS_KEY = 'sai_scribble_notebooks'
+
+/** Key used by the legacy localStorage implementation — kept for one-time migration only. */
+const _LEGACY_NOTEBOOKS_KEY = 'sai_scribble_notebooks'
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, options)
@@ -149,55 +151,104 @@ export function useSqlQuery() {
   return { result, loading, error, run, clear }
 }
 
-// ── Saved Notebooks (localStorage) ───────────────────────────────────────────
+// ── Saved Notebooks (PostgreSQL via API) ──────────────────────────────────────
+//
+// Notebooks are now persisted in the scribble_notebooks table in PostgreSQL.
+// On first load, any notebooks found in the legacy localStorage key are
+// automatically migrated to the server and removed from localStorage.
 
-function readNotebooks(): SavedNotebook[] {
-  try {
-    const raw = localStorage.getItem(NOTEBOOKS_KEY)
-    return raw ? (JSON.parse(raw) as SavedNotebook[]) : []
-  } catch {
-    return []
+async function _migrateLegacyNotebooks(notebooks: SavedNotebook[]): Promise<void> {
+  for (const nb of notebooks) {
+    try {
+      await apiFetch<SavedNotebook>('/scribble/notebooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nb.name,
+          description: nb.description,
+          sql: nb.sql,
+        }),
+      })
+    } catch {
+      // best-effort — skip individual failures
+    }
   }
-}
-
-function writeNotebooks(notebooks: SavedNotebook[]) {
-  localStorage.setItem(NOTEBOOKS_KEY, JSON.stringify(notebooks))
+  localStorage.removeItem(_LEGACY_NOTEBOOKS_KEY)
 }
 
 export function useNotebooks() {
-  const [notebooks, setNotebooks] = useState<SavedNotebook[]>(readNotebooks)
+  const [notebooks, setNotebooks] = useState<SavedNotebook[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const save = useCallback((name: string, description: string, sql: string): SavedNotebook => {
-    const nb: SavedNotebook = {
-      id: crypto.randomUUID(),
-      name: name.trim() || 'Untitled',
-      description: description.trim(),
-      sql,
-      savedAt: new Date().toISOString(),
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const list = await apiFetch<SavedNotebook[]>('/scribble/notebooks')
+      setNotebooks(list)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(false)
     }
-    setNotebooks(prev => {
-      const next = [nb, ...prev]
-      writeNotebooks(next)
-      return next
-    })
-    return nb
   }, [])
 
-  const remove = useCallback((id: string) => {
-    setNotebooks(prev => {
-      const next = prev.filter(nb => nb.id !== id)
-      writeNotebooks(next)
-      return next
-    })
+  // Initial load + one-time localStorage migration
+  useEffect(() => {
+    const run = async () => {
+      // Migrate legacy localStorage notebooks first (if any)
+      try {
+        const raw = localStorage.getItem(_LEGACY_NOTEBOOKS_KEY)
+        if (raw) {
+          const legacy = JSON.parse(raw) as SavedNotebook[]
+          if (legacy.length > 0) {
+            await _migrateLegacyNotebooks(legacy)
+          } else {
+            localStorage.removeItem(_LEGACY_NOTEBOOKS_KEY)
+          }
+        }
+      } catch {
+        // Ignore migration errors — they shouldn't block the main load
+      }
+      await refresh()
+    }
+    run()
+  }, [refresh])
+
+  const save = useCallback(
+    async (name: string, description: string, sql: string): Promise<SavedNotebook> => {
+      const nb = await apiFetch<SavedNotebook>('/scribble/notebooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || 'Untitled',
+          description: description.trim(),
+          sql,
+        }),
+      })
+      setNotebooks(prev => [nb, ...prev])
+      return nb
+    },
+    []
+  )
+
+  const remove = useCallback(async (id: string) => {
+    await apiFetch<void>(`/scribble/notebooks/${id}`, { method: 'DELETE' })
+    setNotebooks(prev => prev.filter(nb => nb.id !== id))
   }, [])
 
-  const update = useCallback((id: string, patch: Partial<Pick<SavedNotebook, 'name' | 'description'>>) => {
-    setNotebooks(prev => {
-      const next = prev.map(nb => nb.id === id ? { ...nb, ...patch } : nb)
-      writeNotebooks(next)
-      return next
-    })
-  }, [])
+  const update = useCallback(
+    async (id: string, patch: Partial<Pick<SavedNotebook, 'name' | 'description'>>) => {
+      const updated = await apiFetch<SavedNotebook>(`/scribble/notebooks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      setNotebooks(prev => prev.map(nb => (nb.id === id ? updated : nb)))
+    },
+    []
+  )
 
-  return { notebooks, save, remove, update }
+  return { notebooks, loading, error, save, remove, update, refresh }
 }
