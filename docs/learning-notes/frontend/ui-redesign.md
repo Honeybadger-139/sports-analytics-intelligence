@@ -1,4 +1,4 @@
-# UI Redesign — Learning Notes (`frontend-v2`)
+# UI Redesign — Learning Notes (`frontend`)
 
 > 📌 **Status**: Active on `ui-redesign` branch. Not yet merged to `main`.
 > **Commits**: `24312be` (scaffold) · `0e848c9` (logo redesign)
@@ -34,7 +34,7 @@ The vanilla `frontend/index.html` was approaching its scaling ceiling:
 ## Project Structure
 
 ```
-frontend-v2/
+frontend/
 ├── index.html              ← Vite entry, loads Google Fonts
 ├── vite.config.ts          ← port 5174, /api proxy to :8000
 ├── src/
@@ -223,11 +223,11 @@ main (production)
         └── scribble  ← merged: data playground
 ```
 
-**Development**: `frontend-v2/` on port 5174, `frontend/` served by FastAPI on 8000. Two UIs coexist.
+**Development**: `frontend/` on port 5174, `frontend/` served by FastAPI on 8000. Two UIs coexist.
 
 **Promotion flow** (when UI is approved):
 1. Delete `frontend/` from `ui-redesign` branch.
-2. Rename `frontend-v2/` → `frontend/`.
+2. Rename `frontend/` → `frontend/`.
 3. Merge `ui-redesign` → `main`.
 
 Git sees it as the contents of `frontend/` changing — same as any other file replacement. Identical to a staging → production deploy.
@@ -251,4 +251,4 @@ Git sees it as the contents of `frontend/` changing — same as any other file r
 3. What is `AnimatePresence` and why is it needed for exit animations?
 4. How does the `useApi` polling hook prevent memory leaks on unmount?
 5. Why embed CSS keyframes inside the SVG `<style>` tag instead of using Framer Motion?
-6. How would you promote `frontend-v2` to production without a deployment downtime window?
+6. How would you promote `frontend` to production without a deployment downtime window?

@@ -2,7 +2,7 @@
 
 > 📌 **Status**: Two parallel implementations:
 > - `frontend/` (vanilla HTML/CSS/JS) — production on `main`, Phase 5 complete
-> - `frontend-v2/` (React + Vite + TypeScript) — staging on `ui-redesign`, Phase 7 active
+> - `frontend/` (React + Vite + TypeScript) — staging on `ui-redesign`, Phase 7 active
 >
 > See sub-notes: [`ui-redesign.md`](ui-redesign.md) · [`chatbot-ui.md`](chatbot-ui.md) · [`scribble-playground.md`](scribble-playground.md)
 
@@ -107,7 +107,7 @@ The frontend is the product surface for this ML system. It turns backend APIs in
 
 ---
 
-## `frontend-v2/` — React + Vite + TypeScript Redesign (Phase 7, `ui-redesign` branch)
+## `frontend/` — React + Vite + TypeScript Redesign (Phase 7, `ui-redesign` branch)
 
 > Full deep-dive in [`ui-redesign.md`](ui-redesign.md).
 
@@ -163,11 +163,11 @@ The chatbot, Scribble playground, and future Lab/Arena modules require complex i
 
 ```
 main  (production — frontend/ never touched)
-  └── ui-redesign  (staging — frontend-v2/ actively developed)
+  └── ui-redesign  (staging — frontend/ actively developed)
         ├── chatbot   (feature sub-branch — merged ✓)
         └── scribble  (feature sub-branch — merged ✓)
 ```
-Merge trigger: UI approved and tested → rename `frontend-v2/` → `frontend/`, merge to `main`.
+Merge trigger: UI approved and tested → rename `frontend/` → `frontend/`, merge to `main`.
 
 ---
 

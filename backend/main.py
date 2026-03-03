@@ -95,8 +95,8 @@ app.include_router(mlops_router)
 app.include_router(chat_router)
 app.include_router(scribble_router)
 
-# Serve the production build of the React frontend (frontend-v2/dist/)
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend-v2", "dist")
+# Serve the production build of the React frontend (frontend/dist/)
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 

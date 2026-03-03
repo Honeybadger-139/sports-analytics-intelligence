@@ -1,6 +1,6 @@
-# 🏀 Sports Analytics Intelligence Platform
+# Sports Analytics Intelligence Platform
 
-A production-grade ML platform for NBA match outcome prediction, SHAP-powered explainability, risk-optimized bet sizing via Kelly Criterion, and real-time pipeline observability.
+A production-grade NBA analytics platform with ML-powered match predictions, SHAP explainability, risk-optimized bet sizing, AI chatbot, and a SQL playground — all served from a single FastAPI backend.
 
 ---
 
@@ -8,118 +8,197 @@ A production-grade ML platform for NBA match outcome prediction, SHAP-powered ex
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Backend** | FastAPI (Python 3.11) | ML predictions served as REST API |
-| **Frontend** | HTML + CSS + JS | NBA operations dashboard (raw, quality, intelligence, analysis) |
-| **Database** | PostgreSQL 16 (Docker) | Raw data, features, predictions, audit trail |
+| **Backend** | FastAPI + Python 3.9 | REST API, ML inference, static file serving |
+| **Frontend** | React 19 + Vite + TypeScript | NBA command centre dashboard |
+| **Database** | PostgreSQL 16 (Docker) | Raw data, features, predictions, notebooks, audit trail |
 | **ML Stack** | XGBoost, LightGBM, SHAP | Ensemble prediction with per-game explainability |
 | **Risk** | Kelly Criterion | Mathematically optimal bet sizing |
-| **Observability** | Pipeline Audit + Dual Logging | Every sync leaves a trace in the database |
+| **AI Chatbot** | Google Gemini + RAG | Natural-language NBA queries over live DB |
+| **Observability** | Langfuse + Pipeline Audit | LLM chain tracing + every sync leaves a DB trace |
 
-## Quick Start
+---
+
+## Getting Started on a New Machine
+
+### Prerequisites
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Python | 3.9+ | [python.org](https://www.python.org/downloads/) |
+| Node.js | 18+ | [nodejs.org](https://nodejs.org/) |
+| Docker Desktop | latest | [docker.com](https://www.docker.com/products/docker-desktop/) |
+| make | built-in | pre-installed on macOS/Linux |
+
+### 1. Clone the repo
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/2001abhigupta/sports-analytics-intelligence.git
+git clone git@github.com:Honeybadger-139/sports-analytics-intelligence.git
 cd sports-analytics-intelligence
-cp .env.example .env
-
-# 2. Start PostgreSQL (Docker)
-docker-compose up -d postgres
-
-# 3. Setup Python environment
-cd backend
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 4. Run the data pipeline
-make ingest       # Pull NBA data
-make features     # Compute ML features
-make train        # Train prediction models
-
-# 5. Start the API
-make run-api      # http://localhost:8000/docs
 ```
+
+### 2. Set up environment variables
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Open `backend/.env` and fill in your keys:
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `GEMINI_API_KEY` | Yes | Google Gemini API key (chatbot) |
+| `LANGFUSE_PUBLIC_KEY` | No | Langfuse observability (optional) |
+| `LANGFUSE_SECRET_KEY` | No | Langfuse observability (optional) |
+
+### 3. Install all dependencies (one command)
+
+```bash
+make install
+```
+
+This installs `npm` packages for the frontend and creates a Python `venv` for the backend automatically.
+
+### 4. Start the database
+
+```bash
+make db-start
+```
+
+This starts the PostgreSQL Docker container (`sports-analytics-db`). Make sure Docker Desktop is running first.
+
+### 5. Run the app
+
+**Option A — Test/validate mode (single URL: `localhost:8000`)**
+
+```bash
+make start
+```
+
+Builds the React frontend, then starts the backend. Open `http://localhost:8000` — everything runs from one port.
+
+**Option B — Development mode (hot reload while coding)**
+
+```bash
+make dev
+```
+
+Starts the backend on `localhost:8000` and the Vite dev server on `localhost:5174`. Open `http://localhost:5174` — changes to frontend files appear in the browser instantly without a full rebuild. API calls are forwarded to `localhost:8000` automatically.
+
+### 6. Stop everything
+
+```bash
+make stop
+```
+
+---
+
+## Available Make Commands
+
+| Command | What it does |
+|---------|-------------|
+| `make install` | Install all frontend + backend dependencies (run once after cloning) |
+| `make build` | Compile the React frontend into `frontend/dist/` |
+| `make start` | Build frontend + start backend on `localhost:8000` |
+| `make dev` | Start backend (8000) + Vite hot-reload server (5174) for active coding |
+| `make db-start` | Start the PostgreSQL Docker container |
+| `make stop` | Stop all running servers |
+
+---
+
+## Branch Strategy
+
+```
+main              ← production — what gets deployed to the server
+  ├── ui-redesign ← UI / design changes
+  ├── chatbot     ← chatbot feature work
+  └── scribble    ← SQL playground feature work
+```
+
+**Workflow:**
+1. Check out the relevant feature branch
+2. Code with `make dev` (hot reload on `localhost:5174`)
+3. Validate with `make start` (production build on `localhost:8000`)
+4. Push to your feature branch
+5. Merge into `main` when ready to ship
+
+> **Note:** The `frontend/dist/` build output is gitignored. Run `make build` (or `make start`) to regenerate it. The `Makefile` handles this automatically.
+
+---
 
 ## Project Structure
 
 ```
 sports-analytics-intelligence/
+├── Makefile                    ← all common commands live here
 ├── backend/
-│   ├── src/
-│   │   ├── api/            # FastAPI routes (predictions, health, teams)
-│   │   ├── data/           # Ingestion, feature store, DB, init.sql
-│   │   ├── models/         # Trainer, predictor, explainability, bet sizing
-│   │   ├── intelligence/   # RAG + rule engine (Phase 4)
-│   │   └── config.py       # Centralized configuration
-│   ├── tests/              # Pytest test suite
-│   ├── config/             # settings.yaml
-│   ├── models/             # Saved model artifacts (.pkl)
-│   ├── Dockerfile
-│   ├── Makefile            # Pipeline automation
-│   └── main.py             # FastAPI entry point
+│   ├── main.py                 ← FastAPI entry point + static file serving
+│   ├── scheduler.py            ← daily NBA data ingestion scheduler
+│   ├── requirements.txt
+│   ├── .env.example            ← copy to .env and fill in your keys
+│   └── src/
+│       ├── api/                ← route handlers (teams, chat, scribble, …)
+│       ├── data/               ← ingestion, feature store, DB helpers
+│       ├── models/             ← ML trainer, predictor, SHAP, bet sizing
+│       ├── intelligence/       ← RAG + chatbot + Langfuse observability
+│       └── config.py           ← centralised configuration
 ├── frontend/
-│   ├── index.html          # Multi-tab NBA operations dashboard
-│   ├── css/style.css
-│   └── js/dashboard.js
+│   ├── src/                    ← React + TypeScript source
+│   ├── dist/                   ← production build output (gitignored)
+│   ├── package.json
+│   └── vite.config.ts
 ├── docs/
-│   ├── architecture/       # System design, DB schema, pipeline docs
-│   ├── decisions/          # Decision log (23+ architectural decisions)
-│   └── learning-notes/     # Interview-ready concept explanations
-├── docker-compose.yml      # PostgreSQL + pgAdmin
-└── .env.example
+│   ├── architecture/           ← system design, DB schema, runbooks
+│   ├── decisions/              ← architectural decision log
+│   └── learning-notes/         ← concept deep-dives
+└── docker-compose.yml          ← PostgreSQL + pgAdmin
 ```
+
+---
 
 ## Phases
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 0. Data Foundation | ✅ Complete | NBA ingestion, schema design, incremental sync, feature store groundwork |
-| 0.5 Resilience/Observability | ✅ Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
-| 1. Prediction Engine | ✅ Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
-| 2. Prediction Operations | ✅ Complete (Backend) | Today feed, prediction persistence, performance analytics, bets ledger APIs |
-| 3. Frontend Integration | ✅ Complete | Tab-based NBA console: Home, Raw Data Explorer, Data Quality, Analysis |
-| 4. Intelligence Layer | ✅ Baseline + 4B Hardening Batch 1 | RAG context APIs + citation guardrails + source-quality scoring + intelligence UX filters |
-| 5. Dashboard Enhancements & MLOps | ✅ Foundation + 5B Batch 2 | Monitoring API + trend/escalation + retrain queue + worker lifecycle |
-| 6. Delivery Hardening | ✅ Completed Baseline | CI regression gate + DB-backed invariant tests + runtime parity stabilization |
+| 0. Data Foundation | Complete | NBA ingestion, schema design, incremental sync, feature store |
+| 0.5 Resilience | Complete | Jittered rate limiting, dual logging, audit trail, health dashboard |
+| 1. Prediction Engine | Complete | XGBoost/LightGBM ensemble, SHAP explainability, Kelly Criterion |
+| 2. Prediction Operations | Complete | Today feed, prediction persistence, performance analytics, bets ledger |
+| 3. Frontend Integration | Complete | Tab-based NBA console |
+| 4. Intelligence Layer | Complete | RAG context APIs + citation guardrails + source-quality scoring |
+| 5. MLOps | Complete | Monitoring API + trend/escalation + retrain queue + worker lifecycle |
+| 6. Delivery Hardening | Complete | CI regression gate + DB-backed invariant tests |
+| 7. UI Redesign + Features | Active | React + Vite redesign, chatbot, Scribble SQL playground, Langfuse |
 
-## Phase 0 Definition Of Done
-
-Phase 0 is considered production-ready only when all checks below pass:
-
-1. Ingestion completes successfully (`make ingest`) with no runtime errors.
-2. Data integrity audit passes (`team_stats_violations=0`, `player_stats_missing_games=0`, `null_score_matches=0`).
-3. Test suite includes and passes Phase 0 reliability + integrity tests (`pytest backend/tests` or targeted subset).
-4. `/api/v1/system/status` exposes latest pipeline health and audit-violation summary.
+---
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/health` | GET | Health check |
 | `/api/v1/teams` | GET | All NBA teams |
 | `/api/v1/matches` | GET | Recent matches with filters |
 | `/api/v1/standings` | GET | Team standings by season |
 | `/api/v1/predictions/game/{id}` | GET | ML prediction + SHAP explanation |
-| `/api/v1/predictions/today` | GET | Predictions for today with optional persistence |
-| `/api/v1/predictions/performance` | GET | Historical model performance metrics |
+| `/api/v1/predictions/today` | GET | Today's predictions |
+| `/api/v1/predictions/performance` | GET | Historical model performance |
 | `/api/v1/predictions/bet-sizing` | GET | Kelly Criterion stake sizing |
-| `/api/v1/raw/tables` | GET | Raw-table catalog for explorer tab |
+| `/api/v1/raw/tables` | GET | Raw-table catalog |
 | `/api/v1/raw/{table_name}` | GET | Paginated raw table rows |
-| `/api/v1/quality/overview` | GET | Data quality + timing + team metrics snapshot |
-| `/api/v1/intelligence/game/{game_id}` | GET | Citation-grounded game context brief |
+| `/api/v1/quality/overview` | GET | Data quality snapshot |
 | `/api/v1/intelligence/brief` | GET | Daily intelligence digest |
-| `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring + action-ready escalations |
-| `/api/v1/mlops/monitoring/trend` | GET | Monitoring snapshot trend points for charting |
-| `/api/v1/mlops/retrain/policy` | GET | Deterministic retrain-policy evaluation (dry-run supported) |
-| `/api/v1/mlops/retrain/jobs` | GET | Retrain queue audit view (recent jobs by season) |
-| `/api/v1/mlops/retrain/worker/run-next` | POST | Process next queued retrain job (simulate or execute mode) |
-| `/api/v1/bets` | POST | Create bet ledger entry |
-| `/api/v1/bets` | GET | List bet ledger entries |
-| `/api/v1/bets/{id}/settle` | POST | Settle bet and compute PnL |
+| `/api/v1/mlops/monitoring` | GET | Model/data freshness monitoring |
+| `/api/v1/mlops/retrain/policy` | GET | Retrain-policy evaluation |
+| `/api/v1/bets` | POST/GET | Create / list bet ledger entries |
 | `/api/v1/bets/summary` | GET | Bankroll KPI summary |
-| `/api/v1/features/{game_id}` | GET | Computed features for a game |
 | `/api/v1/system/status` | GET | Pipeline health + audit history |
+| `/api/v1/chat` | POST | AI chatbot (NBA natural-language queries) |
+| `/api/v1/chat/health` | GET | Chatbot readiness (LLM + DB + schema) |
+| `/api/v1/scribble/execute` | POST | Execute SQL in the playground |
+| `/api/v1/scribble/notebooks` | GET/POST | List / create saved notebooks |
+| `/docs` | GET | Interactive Swagger API docs |
+
+---
 
 ## Testing
 
@@ -129,13 +208,17 @@ PYTHONPATH=. venv/bin/pytest tests/test_ingestion_retry.py tests/test_routes.py 
 PYTHONPATH=. venv/bin/pytest tests/test_ingestion_db_invariants.py -q
 ```
 
+---
+
 ## Documentation
 
 - [System Architecture](docs/architecture/system-design.md)
 - [Database Schema](docs/architecture/database-schema.md)
-- [Phase Execution Runbook](docs/architecture/phase-execution-runbook.md) — Step-by-step phase delivery plan with validation gates
-- [Decision Log](docs/decisions/decision-log.md) — documented architectural decisions with interview framing
-- [Learning Notes](docs/learning-notes/) — Interview-ready concept deep dives
+- [Phase Execution Runbook](docs/architecture/phase-execution-runbook.md)
+- [Decision Log](docs/decisions/decision-log.md)
+- [Learning Notes](docs/learning-notes/)
+
+---
 
 ## License
 

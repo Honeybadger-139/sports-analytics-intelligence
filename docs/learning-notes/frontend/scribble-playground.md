@@ -8,7 +8,7 @@
 
 ## What Is Scribble?
 
-A three-tab raw data playground embedded in `frontend-v2`. It lets analysts explore database tables and run custom SQL queries without leaving the dashboard.
+A three-tab raw data playground embedded in `frontend`. It lets analysts explore database tables and run custom SQL queries without leaving the dashboard.
 
 ```
 Scribble
