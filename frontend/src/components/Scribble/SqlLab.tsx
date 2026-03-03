@@ -6,6 +6,7 @@ import PgCheatSheet from './PgCheatSheet'
 import PgTableRef from './PgTableRef'
 import CreateViewModal from './CreateViewModal'
 import ViewListPanel from './ViewListPanel'
+import SqlAiChat from './SqlAiChat'
 
 const ACCENT = '#10B981'
 
@@ -108,6 +109,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   const [tableRefOpen, setTableRefOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [viewListOpen, setViewListOpen] = useState(false)
+  const [aiChatOpen, setAiChatOpen] = useState(false)
   const { result, loading, error, run, clear } = useSqlQuery()
   const { create: createView, refresh: refreshViews } = useViews()
 
@@ -156,6 +158,11 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
         />
       )}
       <ViewListPanel open={viewListOpen} onClose={() => setViewListOpen(false)} />
+      <SqlAiChat
+        open={aiChatOpen}
+        onClose={() => setAiChatOpen(false)}
+        onLoadSql={(sql) => { setSql(sql); clear(); setAiChatOpen(false) }}
+      />
 
       <div className="sql-lab-layout">
         {/* Editor pane */}
@@ -263,6 +270,20 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
                 <path d="M7.5 2v3M6 3.5h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
               </svg>
               + Create View
+            </button>
+
+            {/* AI SQL chat — visually separated on the far right */}
+            <button
+              className={`sql-ref-btn sql-ref-btn--ai${aiChatOpen ? ' active' : ''}`}
+              onClick={() => { setAiChatOpen(v => !v); setCheatSheetOpen(false); setTableRefOpen(false); setViewListOpen(false) }}
+              title="AI SQL Assistant — describe what you need in plain English"
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M4.5 6.5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5c0 1-.6 1.87-1.5 2.26V10h-2V8.76A2.5 2.5 0 014.5 6.5z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" fill="none" />
+                <circle cx="7" cy="11.5" r=".7" fill="currentColor" />
+              </svg>
+              AI Help
             </button>
           </div>
 

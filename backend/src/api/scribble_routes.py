@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from src.data.db import get_db
+from src.intelligence.chat_service import LLMClient, _fetch_schema_context, _extract_sql
 
 logger = logging.getLogger(__name__)
 
@@ -448,3 +449,119 @@ async def drop_view(view_name: str, db: Session = Depends(get_db)):
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to drop view: {exc}") from exc
+
+
+# ── AI SQL Assistant ───────────────────────────────────────────────────────────
+
+_ai_llm: Optional[LLMClient] = None
+
+
+def _get_ai_llm() -> LLMClient:
+    global _ai_llm
+    if _ai_llm is None:
+        _ai_llm = LLMClient()
+    return _ai_llm
+
+
+_AI_SQL_SYSTEM = """
+You are an expert PostgreSQL query writer for a live NBA sports analytics database.
+
+Your ONLY job is to write a single, correct, read-only SELECT query that answers the user's question.
+
+RULES:
+1. Output ONLY the SQL query — no prose, no explanations, no markdown text outside the code block.
+2. Wrap the query in a ```sql ... ``` code block.
+3. Use ONLY the tables and columns listed in the schema below. Never invent columns.
+4. Always use table aliases (e.g. `m` for matches, `t` for teams, `p` for players).
+5. Default to the current season ('2025-26') unless the user specifies otherwise.
+6. Do NOT use LIMIT unless the user asks for a specific number; the execution layer caps at 500 rows automatically.
+7. Only write SELECT / WITH queries. Never write INSERT, UPDATE, DELETE, DROP, or any DDL.
+8. If the question is ambiguous, pick the most sensible interpretation and add a short SQL comment (--) explaining the assumption.
+
+CRITICAL RULES — ALWAYS FOLLOW:
+
+PLAYER NAME MATCHING:
+- Player names in the database contain unicode accented characters (e.g. "Nikola Jokić", "Luka Dončić").
+- NEVER use ILIKE '%LastName%' to match a player by name — it will fail for any name with accented characters.
+- ALWAYS match players via their player_id using a subquery:
+    WHERE pgs.player_id = (SELECT player_id FROM players WHERE full_name ILIKE '%Joki%' LIMIT 1)
+- Use a short unambiguous fragment of the name (e.g. '%Joki%' for Jokić, '%Don%' for Dončić, '%Anteto%' for Antetokounmpo).
+- NEVER reference the accented spelling directly in a string literal.
+
+OPPONENT TEAM PATTERN:
+- To find the opponent team for a player in a game, use CASE WHEN on the match's home/away columns:
+    JOIN teams opp ON opp.team_id = CASE
+        WHEN pgs.team_id = m.home_team_id THEN m.away_team_id
+        ELSE m.home_team_id
+    END
+- NEVER use OR conditions with != to find opponent team — that pattern is incorrect and returns 0 rows.
+
+SCHEMA:
+{schema}
+"""
+
+
+class AiSqlRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class AiSqlResponse(BaseModel):
+    sql: str
+    explanation: str
+
+
+@router.post("/ai-sql", response_model=AiSqlResponse)
+async def generate_sql(
+    payload: AiSqlRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Natural-language → SQL query generator.
+
+    - Injects the live database schema into the system prompt so the LLM always
+      uses real table and column names.
+    - Extracts the SQL block from the LLM's response.
+    - Returns both the clean SQL and a brief plain-English explanation.
+    - Only SELECT / WITH queries are generated; the response is never executed here.
+    """
+    llm = _get_ai_llm()
+    if not llm.available:
+        raise HTTPException(
+            status_code=503,
+            detail="AI SQL assistant is unavailable — GEMINI_API_KEY is not configured.",
+        )
+
+    schema = _fetch_schema_context(db)
+
+    # Build conversation history for multi-turn context
+    history_text = ""
+    for turn in (payload.history or [])[-6:]:  # last 3 user+assistant pairs
+        role = turn.get("role", "")
+        content = turn.get("content", "")
+        if role == "user":
+            history_text += f"\nUser: {content}"
+        elif role == "assistant":
+            history_text += f"\nAssistant: {content}"
+
+    prompt = (
+        _AI_SQL_SYSTEM.format(schema=schema)
+        + (f"\n\nCONVERSATION HISTORY:{history_text}" if history_text else "")
+        + f"\n\nUser request: {payload.message}"
+        + "\n\nRespond with ONLY the SQL query in a ```sql ... ``` block."
+    )
+
+    raw = llm.generate(prompt, max_tokens=800, _span_name="scribble.ai_sql")
+    if not raw:
+        raise HTTPException(status_code=500, detail="AI did not return a response. Please try again.")
+
+    sql = _extract_sql(raw)
+
+    # Generate a short explanation of what the query does
+    explain_prompt = (
+        f"In one short sentence (max 25 words), explain what this SQL query retrieves:\n\n{sql}"
+    )
+    explanation = llm.generate(explain_prompt, max_tokens=60, _span_name="scribble.ai_sql_explain") or ""
+    explanation = explanation.strip().strip('"')
+
+    return AiSqlResponse(sql=sql, explanation=explanation)

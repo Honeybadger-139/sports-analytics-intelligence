@@ -303,3 +303,70 @@ export function useViews() {
 
   return { views, loading, error, create, drop, refresh }
 }
+
+// ── AI SQL Assistant ───────────────────────────────────────────────────────────
+
+export interface AiMessage {
+  id: string
+  role: 'user' | 'assistant' | 'error'
+  content: string     // user text  OR  explanation text
+  sql?: string        // only present on assistant messages that produced SQL
+}
+
+export function useAiSql() {
+  const [messages, setMessages] = useState<AiMessage[]>([])
+  const [loading, setLoading] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const send = useCallback(async (message: string) => {
+    if (!message.trim() || loading) return
+
+    if (abortRef.current) abortRef.current.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
+    const userMsg: AiMessage = { id: crypto.randomUUID(), role: 'user', content: message }
+    setMessages(prev => [...prev, userMsg])
+    setLoading(true)
+
+    // Build history for multi-turn context (last 6 messages)
+    const historySnapshot = [...messages].slice(-6).map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.sql ? `${m.content}\n\`\`\`sql\n${m.sql}\n\`\`\`` : m.content,
+    }))
+
+    try {
+      const res = await apiFetch<{ sql: string; explanation: string }>('/scribble/ai-sql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: historySnapshot }),
+        signal: ctrl.signal,
+      })
+      const assistantMsg: AiMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: res.explanation || 'Here is the query:',
+        sql: res.sql,
+      }
+      setMessages(prev => [...prev, assistantMsg])
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      const errMsg: AiMessage = {
+        id: crypto.randomUUID(),
+        role: 'error',
+        content: (err as Error).message,
+      }
+      setMessages(prev => [...prev, errMsg])
+    } finally {
+      setLoading(false)
+    }
+  }, [loading, messages])
+
+  const clear = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort()
+    setMessages([])
+    setLoading(false)
+  }, [])
+
+  return { messages, loading, send, clear }
+}

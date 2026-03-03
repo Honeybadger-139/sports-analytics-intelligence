@@ -126,3 +126,108 @@ export interface ViewCreateRequest {
   description: string
   sql: string
 }
+
+// ── Lab — Data Quality ────────────────────────────────────────────────────────
+
+export interface PipelineRun {
+  sync_time: string
+  module: string
+  status: string
+  records_processed: number
+  records_inserted: number
+  errors: string | null
+  elapsed_seconds: number | null
+}
+
+export interface TopTeam {
+  abbreviation: string
+  games_played: number
+  wins: number
+  losses: number
+  win_pct: number
+}
+
+export interface QualityOverview {
+  season: string
+  row_counts: {
+    matches: number
+    teams: number
+    players: number
+    team_game_stats: number
+    player_game_stats: number
+  }
+  quality_checks: Record<string, unknown>
+  pipeline_timing: {
+    avg_ingestion_seconds: number | null
+    avg_feature_seconds: number | null
+    latest_ingestion_seconds: number | null
+    latest_feature_seconds: number | null
+  }
+  top_teams: TopTeam[]
+  recent_runs: PipelineRun[]
+}
+
+// ── Lab — MLOps ───────────────────────────────────────────────────────────────
+
+export interface MLOpsAlert {
+  type: string
+  message: string
+  level: string
+}
+
+export interface MLOpsMonitoringOverview {
+  season: string
+  evaluated_predictions: number
+  accuracy: number | null
+  brier_score: number | null
+  accuracy_threshold: number
+  brier_threshold: number
+  game_data_freshness_days: number | null
+  pipeline_freshness_days: number | null
+  alerts: MLOpsAlert[]
+  alert_count: number
+  escalation_level: string
+  recommended_action: string
+  breach_streak: number
+}
+
+export interface MLOpsTrendPoint {
+  snapshot_time: string
+  accuracy: number | null
+  brier_score: number | null
+  alert_count: number
+}
+
+export interface MLOpsMonitoringTrend {
+  season: string
+  days: number
+  points: MLOpsTrendPoint[]
+}
+
+export interface RetrainPolicyResult {
+  season: string
+  dry_run: boolean
+  should_retrain: boolean
+  reasons: string[]
+  accuracy: number | null
+  brier_score: number | null
+  new_labels_since_last_train: number
+  thresholds: Record<string, unknown>
+}
+
+export interface RetrainJob {
+  id: number
+  season: string
+  status: string
+  trigger_source: string
+  reasons: string[] | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  error: string | null
+}
+
+export interface RetrainJobsResponse {
+  season: string
+  jobs: RetrainJob[]
+}
