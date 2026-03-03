@@ -62,12 +62,18 @@ _DB_KEYWORDS = frozenset([
 ])
 
 # Keywords that signal the question is about news / game context / injuries
+# Also includes forward-looking schedule keywords — upcoming games are NOT in
+# the Postgres DB (only completed games are stored), so RAG (ESPN/CBS news)
+# is the only source that can answer questions about tomorrow's fixtures.
 _RAG_KEYWORDS = frozenset([
     "injur", "injury", "hurt", "lineup", "available", "playing", "out",
     "questionable", "doubtful", "news", "report", "update", "latest",
     "preview", "context", "matchup", "game", "tonight", "today",
     "back-to-back", "travel", "rest", "fatigue", "trade", "sign",
     "rumour", "rumor", "headline", "article",
+    # Forward-looking / schedule keywords → route to RAG not DB
+    "tomorrow", "upcoming", "fixture", "fixtures", "schedule", "scheduled",
+    "next game", "next match", "this week", "weekend", "tonight's",
 ])
 
 # Patterns that signal off-topic questions
@@ -380,6 +386,18 @@ class ChatService:
             docs = []
 
         if not docs:
+            lower_msg = message.lower()
+            is_schedule_q = any(w in lower_msg for w in (
+                "tomorrow", "tonight", "fixture", "schedule", "upcoming", "next game", "this week"
+            ))
+            if is_schedule_q:
+                return (
+                    "I don't have today's or tomorrow's schedule indexed yet — the news feeds "
+                    "may not have published the matchup previews. The database only stores "
+                    "completed games, so future fixtures aren't queryable directly. "
+                    "Try checking NBA.com for today's schedule, or ask me about "
+                    "recent results, standings, or player stats."
+                )
             return (
                 "I don't have recent news or context documents indexed for that topic. "
                 "The context store may be empty or the RSS feeds haven't been fetched yet. "
@@ -507,14 +525,25 @@ class ChatService:
 
         if not rows:
             logger.info("ChatService._db_reply: 0 rows returned. SQL was:\n%s", sql)
-            # Check if the query touched an empty table (predictions/bets)
-            empty_hint = ""
+            lower_msg = message.lower()
+            # Specific hints based on what the query was about
+            if any(w in lower_msg for w in ("tomorrow", "tonight", "fixture", "schedule", "upcoming", "next game")):
+                return (
+                    "The database only stores **completed** games — upcoming fixtures and schedules "
+                    "aren't stored yet. The ingestion pipeline runs daily and only records results "
+                    "after games finish. Try asking about recent results or standings instead, "
+                    "for example: \"Which team has the best win rate this season?\""
+                )
             if "predictions" in sql.lower():
-                empty_hint = " The predictions table is currently empty — no model predictions have been stored yet."
-            elif "bets" in sql.lower():
-                empty_hint = " The bets table has very limited data so far."
+                return (
+                    "The predictions table is currently empty — model predictions are stored here "
+                    "once the ML pipeline runs against scheduled games. No predictions have been "
+                    "generated yet for upcoming matches."
+                )
+            if "bets" in sql.lower():
+                return "The bets table has very limited data so far — only 1 bet has been recorded."
             return (
-                f"I ran the query but found no results for that question.{empty_hint} "
+                "I ran the query but found no results for that question. "
                 "Try rephrasing — for example: \"Which team has the best win rate this season?\" "
                 "or \"Who are the top 5 scorers in 2025-26?\""
             )
