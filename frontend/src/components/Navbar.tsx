@@ -21,7 +21,7 @@ const NAV_ITEMS: NavItem[] = [
     id: 'arena',
     label: 'Arena',
     path: '/arena',
-    description: 'Predictions & bankroll analysis',
+    description: 'Predictions & model analysis',
     color: '#06C5F8',
     subItems: [
       { label: "Today's Picks",   path: '/arena/predictions', description: "Model consensus for today's games" },

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import type React from 'react'
 import { motion } from 'framer-motion'
 import { useMatches, useTodaysPredictions } from '../../hooks/useApi'
 import type { MatchRow, TodayGamePrediction } from '../../types'
@@ -168,16 +169,43 @@ function MatchRow({ match, index, onSelect }: {
 
 // ── Date filter controls ─────────────────────────────────────────────────────
 
+type FilterMode = 'single' | 'range'
+
 interface DateFilters {
   season: string
   dateFrom: string
   dateTo: string
 }
 
+function yesterday(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function DateFilterBar({ filters, onChange }: {
   filters: DateFilters
   onChange: (f: Partial<DateFilters>) => void
 }) {
+  const [mode, setMode] = useState<FilterMode>('single')
+
+  function switchMode(next: FilterMode) {
+    setMode(next)
+    if (next === 'single') {
+      const d = yesterday()
+      onChange({ dateFrom: d, dateTo: d })
+    } else {
+      onChange({ dateFrom: '', dateTo: '' })
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--bg-base)', border: '1px solid var(--border)',
+    borderRadius: 'var(--r-sm)', padding: '4px 8px',
+    color: 'var(--text-1)', fontSize: '0.8rem',
+    fontFamily: 'var(--font-mono)', cursor: 'pointer',
+  }
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
@@ -200,39 +228,65 @@ function DateFilterBar({ filters, onChange }: {
 
       <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
 
-      {/* Date from */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>From</span>
-        <input
-          type="date"
-          value={filters.dateFrom}
-          onChange={e => onChange({ dateFrom: e.target.value })}
-          style={{
-            background: 'var(--bg-base)', border: '1px solid var(--border)',
-            borderRadius: 'var(--r-sm)', padding: '4px 8px',
-            color: 'var(--text-1)', fontSize: '0.8rem',
-            fontFamily: 'var(--font-mono)',
-            cursor: 'pointer',
-          }}
-        />
+      {/* Mode toggle pill */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        background: 'var(--bg-base)', border: '1px solid var(--border)',
+        borderRadius: 20, padding: 3, gap: 2,
+      }}>
+        {(['single', 'range'] as FilterMode[]).map(m => (
+          <button
+            key={m}
+            onClick={() => switchMode(m)}
+            style={{
+              padding: '3px 12px', borderRadius: 16,
+              border: 'none', cursor: 'pointer',
+              fontSize: '0.72rem', fontWeight: 600,
+              background: mode === m ? ACCENT : 'transparent',
+              color: mode === m ? '#fff' : 'var(--text-3)',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+          >
+            {m === 'single' ? 'Single Date' : 'Date Range'}
+          </button>
+        ))}
       </div>
 
-      {/* Date to */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>To</span>
-        <input
-          type="date"
-          value={filters.dateTo}
-          onChange={e => onChange({ dateTo: e.target.value })}
-          style={{
-            background: 'var(--bg-base)', border: '1px solid var(--border)',
-            borderRadius: 'var(--r-sm)', padding: '4px 8px',
-            color: 'var(--text-1)', fontSize: '0.8rem',
-            fontFamily: 'var(--font-mono)',
-            cursor: 'pointer',
-          }}
-        />
-      </div>
+      <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
+
+      {/* Date inputs */}
+      {mode === 'single' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>Date</span>
+          <input
+            type="date"
+            value={filters.dateFrom}
+            onChange={e => onChange({ dateFrom: e.target.value, dateTo: e.target.value })}
+            style={inputStyle}
+          />
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>From</span>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={e => onChange({ dateFrom: e.target.value })}
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>To</span>
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={e => onChange({ dateTo: e.target.value })}
+              style={inputStyle}
+            />
+          </div>
+        </>
+      )}
 
       {/* Clear dates */}
       {(filters.dateFrom || filters.dateTo) && (
@@ -240,11 +294,11 @@ function DateFilterBar({ filters, onChange }: {
           onClick={() => onChange({ dateFrom: '', dateTo: '' })}
           style={{
             padding: '4px 10px', background: 'transparent',
-            border: `1px solid var(--border)`, borderRadius: 'var(--r-sm)',
+            border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
             color: 'var(--text-3)', fontSize: '0.72rem', cursor: 'pointer',
           }}
         >
-          Clear dates
+          Clear
         </button>
       )}
 
@@ -255,7 +309,7 @@ function DateFilterBar({ filters, onChange }: {
           background: `${ACCENT}18`, color: ACCENT,
           fontSize: '0.68rem', fontWeight: 600,
         }}>
-          Date filter active
+          {mode === 'single' ? `${filters.dateFrom}` : 'Date filter active'}
         </span>
       )}
     </div>
