@@ -12,6 +12,7 @@ import type {
   TodayPredictionsResponse,
   GamePredictionResponse,
   ModelPerformanceResponse,
+  GameStatsResponse,
 } from '../types'
 
 const API_BASE = '/api/v1'
@@ -272,23 +273,50 @@ export function useTodaysPredictions() {
   return { data, loading, error, refresh: load }
 }
 
-export function useMatches(season = '2025-26', limit = 20) {
+export function useMatches(
+  season = '2025-26',
+  limit = 20,
+  dateFrom?: string,
+  dateTo?: string,
+) {
   const [data, setData] = useState<MatchesResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const ctrl = new AbortController()
-    fetchJSON<MatchesResponse>(
-      `/matches?season=${encodeURIComponent(season)}&limit=${limit}`,
-      ctrl.signal,
-    )
+    let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
+    if (dateFrom) url += `&date_from=${dateFrom}`
+    if (dateTo)   url += `&date_to=${dateTo}`
+    fetchJSON<MatchesResponse>(url, ctrl.signal)
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [season, limit])
+  }, [season, limit, dateFrom, dateTo])
 
   return { data, loading }
+}
+
+export function useGameStats(gameId: string | null) {
+  const [data, setData] = useState<GameStatsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!gameId) { setData(null); return }
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    fetchJSON<GameStatsResponse>(`/matches/${gameId}/stats`, ctrl.signal)
+      .then(setData)
+      .catch(err => {
+        if ((err as Error).name !== 'AbortError') setError('Failed to load game stats')
+      })
+      .finally(() => setLoading(false))
+    return () => ctrl.abort()
+  }, [gameId])
+
+  return { data, loading, error }
 }
 
 // ── Arena hooks ───────────────────────────────────────────────────────────────

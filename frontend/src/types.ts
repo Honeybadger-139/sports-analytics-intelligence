@@ -284,6 +284,75 @@ export interface TodayPredictionsResponse {
   games: TodayGamePrediction[]
 }
 
+// ── Pulse — Game Stats (Box Score Modal) ─────────────────────────────────────
+
+export interface TeamBoxScore {
+  team_id: number
+  team: string
+  team_name: string
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  turnovers: number
+  field_goal_pct: number | null
+  three_point_pct: number | null
+  free_throw_pct: number | null
+  offensive_rating: number | null
+  defensive_rating: number | null
+  pace: number | null
+  effective_fg_pct: number | null
+  true_shooting_pct: number | null
+}
+
+export interface PlayerBoxScore {
+  player_id: number
+  player_name: string
+  team: string
+  team_id: number
+  minutes: string | null
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  turnovers: number
+  personal_fouls: number
+  field_goals_made: number
+  field_goals_attempted: number
+  field_goal_pct: number | null
+  three_points_made: number
+  three_points_attempted: number
+  three_point_pct: number | null
+  free_throws_made: number
+  free_throws_attempted: number
+  free_throw_pct: number | null
+  plus_minus: number | null
+  fantasy_points: string | null
+}
+
+export interface GameStatsResponse {
+  game_id: string
+  game_date: string
+  season: string
+  home_team: string
+  home_team_name: string
+  away_team: string
+  away_team_name: string
+  home_score: number | null
+  away_score: number | null
+  winner_team_id: number | null
+  team_stats: {
+    home: TeamBoxScore | null
+    away: TeamBoxScore | null
+  }
+  player_stats: {
+    home: PlayerBoxScore[]
+    away: PlayerBoxScore[]
+  }
+}
+
 // ── Arena ─────────────────────────────────────────────────────────────────────
 
 export interface ModelPrediction {

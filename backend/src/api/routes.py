@@ -537,16 +537,119 @@ async def get_teams(db: Session = Depends(get_db)):
     return {"teams": teams, "count": len(teams)}
 
 
+@router.get("/matches/{game_id}/stats")
+async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
+    """
+    Get full box score (team stats + player stats) for a specific game.
+    Returns both team-level and individual player-level statistics.
+    """
+    # ── Match metadata ──────────────────────────────────────────────────────
+    match_row = db.execute(
+        text("""
+            SELECT
+                m.game_id, m.game_date, m.season,
+                ht.team_id  AS home_team_id,  ht.abbreviation AS home_team,  ht.full_name AS home_team_name,
+                at.team_id  AS away_team_id,  at.abbreviation AS away_team,  at.full_name AS away_team_name,
+                m.winner_team_id,
+                ht_stats.points  AS home_score, at_stats.points  AS away_score,
+                ht_stats.rebounds AS home_reb,  at_stats.rebounds AS away_reb,
+                ht_stats.assists  AS home_ast,  at_stats.assists  AS away_ast
+            FROM matches m
+            JOIN teams ht ON m.home_team_id = ht.team_id
+            JOIN teams at ON m.away_team_id = at.team_id
+            LEFT JOIN team_game_stats ht_stats ON m.game_id = ht_stats.game_id AND m.home_team_id = ht_stats.team_id
+            LEFT JOIN team_game_stats at_stats ON m.game_id = at_stats.game_id AND m.away_team_id = at_stats.team_id
+            WHERE m.game_id = :game_id
+        """),
+        {"game_id": game_id},
+    ).fetchone()
+
+    if not match_row:
+        raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
+
+    match_data = dict(match_row._mapping)
+
+    # ── Team box scores ─────────────────────────────────────────────────────
+    team_stats_rows = db.execute(
+        text("""
+            SELECT
+                tgs.team_id, t.abbreviation AS team, t.full_name AS team_name,
+                tgs.points, tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
+                tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
+                tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
+                tgs.effective_fg_pct, tgs.true_shooting_pct
+            FROM team_game_stats tgs
+            JOIN teams t ON tgs.team_id = t.team_id
+            WHERE tgs.game_id = :game_id
+        """),
+        {"game_id": game_id},
+    ).fetchall()
+    team_stats = [dict(r._mapping) for r in team_stats_rows]
+
+    # ── Player box scores ───────────────────────────────────────────────────
+    player_stats_rows = db.execute(
+        text("""
+            SELECT
+                pgs.player_id, p.full_name AS player_name,
+                t.abbreviation AS team, t.team_id,
+                pgs.minutes, pgs.points, pgs.rebounds, pgs.assists,
+                pgs.steals, pgs.blocks, pgs.turnovers, pgs.personal_fouls,
+                pgs.field_goals_made, pgs.field_goals_attempted, pgs.field_goal_pct,
+                pgs.three_points_made, pgs.three_points_attempted, pgs.three_point_pct,
+                pgs.free_throws_made, pgs.free_throws_attempted, pgs.free_throw_pct,
+                pgs.plus_minus, pgs.fantasy_points
+            FROM player_game_stats pgs
+            JOIN players p ON pgs.player_id = p.player_id
+            JOIN teams t ON pgs.team_id = t.team_id
+            WHERE pgs.game_id = :game_id
+            ORDER BY pgs.points DESC, pgs.fantasy_points DESC
+        """),
+        {"game_id": game_id},
+    ).fetchall()
+    player_stats = [dict(r._mapping) for r in player_stats_rows]
+
+    # Split players by home/away team
+    home_players = [p for p in player_stats if p["team_id"] == match_data["home_team_id"]]
+    away_players = [p for p in player_stats if p["team_id"] == match_data["away_team_id"]]
+
+    # Get team stats split
+    home_team_stats = next((t for t in team_stats if t["team_id"] == match_data["home_team_id"]), None)
+    away_team_stats = next((t for t in team_stats if t["team_id"] == match_data["away_team_id"]), None)
+
+    return {
+        "game_id": game_id,
+        "game_date": str(match_data["game_date"]),
+        "season": match_data["season"],
+        "home_team": match_data["home_team"],
+        "home_team_name": match_data["home_team_name"],
+        "away_team": match_data["away_team"],
+        "away_team_name": match_data["away_team_name"],
+        "home_score": match_data["home_score"],
+        "away_score": match_data["away_score"],
+        "winner_team_id": match_data["winner_team_id"],
+        "team_stats": {
+            "home": home_team_stats,
+            "away": away_team_stats,
+        },
+        "player_stats": {
+            "home": home_players,
+            "away": away_players,
+        },
+    }
+
+
 @router.get("/matches")
-async def get_matches(
+async def get_matches_by_date(
     season: str = Query(default="2025-26"),
     team: Optional[str] = Query(default=None, description="Team abbreviation"),
     limit: int = Query(default=20, le=100),
+    date_from: Optional[str] = Query(default=None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(default=None, description="End date YYYY-MM-DD"),
     db: Session = Depends(get_db),
 ):
-    """Get recent matches with results."""
+    """Get recent matches with optional date range filter."""
     query = """
-        SELECT 
+        SELECT
             m.game_id, m.game_date, m.season,
             ht.abbreviation as home_team,
             at.abbreviation as away_team,
@@ -560,14 +663,20 @@ async def get_matches(
         LEFT JOIN team_game_stats at_stats ON m.game_id = at_stats.game_id AND m.away_team_id = at_stats.team_id
         WHERE m.season = :season
     """
-    params = {"season": season, "limit": limit}
-    
+    params: dict = {"season": season, "limit": limit}
+
     if team:
         query += " AND (ht.abbreviation = :team OR at.abbreviation = :team)"
         params["team"] = team.upper()
-    
+    if date_from:
+        query += " AND m.game_date >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        query += " AND m.game_date <= :date_to"
+        params["date_to"] = date_to
+
     query += " ORDER BY m.game_date DESC LIMIT :limit"
-    
+
     result = db.execute(text(query), params)
     matches = [dict(row._mapping) for row in result]
     return {"matches": matches, "count": len(matches)}
@@ -577,7 +686,7 @@ async def get_matches(
 async def predict_game(game_id: str, db: Session = Depends(get_db)):
     """Get AI prediction for a specific game with SHAP explanations."""
     predictor = get_predictor()
-    
+
     # Load features for this game
     query = text("""
         SELECT 
