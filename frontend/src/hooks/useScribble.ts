@@ -5,6 +5,8 @@ import type {
   SqlQueryRequest,
   SqlQueryResponse,
   SavedNotebook,
+  ScribbleView,
+  ViewCreateRequest,
 } from '../types'
 
 const API_BASE = '/api/v1'
@@ -251,4 +253,53 @@ export function useNotebooks() {
   )
 
   return { notebooks, loading, error, save, remove, update, refresh }
+}
+
+// ── Saved Views (PostgreSQL) ───────────────────────────────────────────────────
+//
+// Views are real PostgreSQL VIEWs in the public schema.  The hook exposes:
+//  - views: current list
+//  - create(name, description, sql): calls POST /scribble/views
+//  - drop(name): calls DELETE /scribble/views/:name
+//  - refresh(): re-fetches the list
+
+export function useViews() {
+  const [views, setViews] = useState<ScribbleView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const list = await apiFetch<ScribbleView[]>('/scribble/views')
+      setViews(list)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const create = useCallback(
+    async (payload: ViewCreateRequest): Promise<ScribbleView> => {
+      const view = await apiFetch<ScribbleView>('/scribble/views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      setViews(prev => [...prev.filter(v => v.name !== view.name), view].sort((a, b) => a.name.localeCompare(b.name)))
+      return view
+    },
+    []
+  )
+
+  const drop = useCallback(async (name: string) => {
+    await apiFetch<void>(`/scribble/views/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    setViews(prev => prev.filter(v => v.name !== name))
+  }, [])
+
+  return { views, loading, error, create, drop, refresh }
 }

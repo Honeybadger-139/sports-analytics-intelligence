@@ -113,3 +113,16 @@ export interface SavedNotebook {
   savedAt: string
   updatedAt?: string
 }
+
+export interface ScribbleView {
+  name: string
+  description: string
+  sql: string
+  created_at: string
+}
+
+export interface ViewCreateRequest {
+  name: string
+  description: string
+  sql: string
+}

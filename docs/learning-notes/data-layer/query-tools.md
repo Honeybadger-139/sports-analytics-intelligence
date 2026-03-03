@@ -186,3 +186,67 @@ docker-compose up -d
 > **"How do you explore and validate your data during development?"**
 >
 > "I integrated pgAdmin as a Docker Compose service alongside PostgreSQL. It gave me a browser-based SQL editor to prototype feature engineering queries, validate data quality after ingestion runs, and inspect execution plans. Having the query tool as part of the development environment — not a separate install — meant any teammate could explore the data immediately after `docker-compose up`."
+
+---
+
+## Complete PostgreSQL Table Inventory
+
+> Last updated: 2026-03-03. Database: `sports_analytics` · Schema: `public`
+
+### Raw / Source Tables (exposed in Scribble Explorer)
+
+| Table | Rows | Season Filter | Description |
+|---|---|---|---|
+| `matches` | 906 | ✅ | Raw NBA game schedule + completed results. One row per game. |
+| `teams` | 30 | ❌ | NBA team dimension. Static — 30 teams, rarely changes. |
+| `players` | 674 | ❌ | Player master + roster mapping. Updated during ingestion. |
+| `team_game_stats` | 1,812 | ✅ | Per-game team box score stats (pts, ast, reb, fg_pct, etc). |
+| `player_game_stats` | 19,664 | ✅ | Per-game player stats. The most voluminous table in the system. |
+| `player_season_stats` | 543 | ✅ | Seasonal aggregates per player (pts_per_game, ast_per_game, etc). |
+
+### Derived / Feature Tables (accessible via SQL Lab only)
+
+| Table | Description |
+|---|---|
+| `match_features` | ML-ready feature vectors per game (rolling averages, win rates, home/away differentials). Built by the feature engineering pipeline. |
+| `predictions` | Model output — predicted winner, confidence, model version per game. |
+| `bets` | Bet tracker — linked to predictions, tracks expected value and settlement. |
+
+### System / Audit Tables
+
+| Table | Description |
+|---|---|
+| `intelligence_audit` | Audit log for the AI intelligence layer calls. |
+| `pipeline_audit` | Logs from each ingestion/feature pipeline run — used for debugging and monitoring. |
+| `mlops_monitoring_snapshot` | Model performance snapshots captured by the MLOps monitoring layer. |
+| `retrain_jobs` | Retraining job queue and history — tracks when models were last retrained and why. |
+| `scribble_notebooks` | User-saved SQL notebooks from the Scribble SQL Lab. Auto-created on first use. |
+
+### Key Relationships
+
+```
+teams ──< matches (home_team_id, away_team_id)
+teams ──< players (team_id)
+matches ──< team_game_stats (game_id)
+matches ──< player_game_stats (game_id)
+matches ──< match_features (game_id)
+matches ──< predictions (game_id)
+predictions ──< bets (prediction_id)
+players ──< player_game_stats (player_id)
+players ──< player_season_stats (player_id)
+```
+
+### SQL to explore schema in SQL Lab
+
+```sql
+-- All tables + row counts
+SELECT relname AS table, n_live_tup AS approx_rows
+FROM pg_stat_user_tables
+ORDER BY n_live_tup DESC;
+
+-- Columns for a specific table
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_name = 'player_game_stats'
+ORDER BY ordinal_position;
+```

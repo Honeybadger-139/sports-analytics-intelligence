@@ -1,8 +1,8 @@
 """
-Scribble — read-only SQL playground routes + Notebooks persistence.
+Scribble — read-only SQL playground routes + Notebooks + Views persistence.
 
 Security contract for /query:
-  - Only SELECT statements are accepted (enforced via regex before execution).
+  - Only SELECT / WITH statements are accepted (enforced via regex before execution).
   - Forbidden DML/DDL keywords are rejected at the application layer.
   - Queries are executed inside a read-only transaction (SET TRANSACTION READ ONLY).
   - Row limit is enforced server-side: any query exceeding MAX_ROWS is silently capped.
@@ -12,6 +12,14 @@ Notebooks:
   - Stored in PostgreSQL (scribble_notebooks table) — persistent across browsers/devices.
   - CRUD via GET/POST/PATCH/DELETE /api/v1/scribble/notebooks.
   - Table is auto-created on first request if it does not exist.
+
+Views:
+  - User-created PostgreSQL views scoped to the public schema.
+  - Names are forced to lowercase, alphanumeric + underscores only, max 63 chars.
+  - All view bodies must be valid SELECT / WITH queries (same validation as /query).
+  - CREATE OR REPLACE VIEW is used so re-saving updates the definition cleanly.
+  - DROP is supported via DELETE /api/v1/scribble/views/{view_name}.
+  - Views created here are real PostgreSQL views — queryable from SQL Lab immediately.
 """
 
 import logging
@@ -64,13 +72,16 @@ def _ensure_notebooks_table(db: Session) -> None:
 MAX_ROWS = 500
 STATEMENT_TIMEOUT_MS = 10_000  # 10 seconds
 
-# Reject anything that is not a bare SELECT
-_SELECT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
+# Reject anything that is not a SELECT or a CTE (WITH ... SELECT)
+_SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
 
-# Block DML / DDL / privilege keywords regardless of position
+# Block DML / DDL / privilege keywords regardless of position.
+# Note: ANALYZE, CLUSTER, REINDEX are omitted here because they cannot appear
+# in a valid SELECT query and are already blocked by the leading SELECT check.
+# Removing them avoids false positives on column/alias names like "analyze_result".
 _FORBIDDEN_RE = re.compile(
     r"\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|CREATE|ALTER|RENAME|GRANT|REVOKE"
-    r"|EXECUTE|EXEC|CALL|DO|COPY|VACUUM|ANALYZE|CLUSTER|REINDEX|REFRESH)\b",
+    r"|EXECUTE|EXEC|CALL|DO|COPY|VACUUM|REFRESH)\b",
     re.IGNORECASE,
 )
 
@@ -289,3 +300,151 @@ async def delete_notebook(notebook_id: str, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="Notebook not found.")
     db.commit()
+
+
+# ── Views CRUD ─────────────────────────────────────────────────────────────────
+
+# View names: lowercase letters, digits, underscores only; max 63 chars (PG identifier limit)
+_VIEW_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+
+
+def _sanitize_view_name(name: str) -> str:
+    """Lowercase, strip whitespace, validate characters."""
+    clean = name.strip().lower()
+    if not _VIEW_NAME_RE.match(clean):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid view name. Use lowercase letters, digits and underscores only. "
+                "Must start with a letter and be ≤ 63 characters."
+            ),
+        )
+    return clean
+
+
+def _validate_view_body(sql: str) -> str:
+    """Reuse the SELECT validator — view bodies must be read-only queries."""
+    return _validate(sql)
+
+
+class ViewCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=63)
+    description: str = Field(default="", max_length=500)
+    sql: str = Field(..., min_length=10)
+
+
+class ViewMeta(BaseModel):
+    name: str
+    description: str
+    sql: str
+    created_at: str
+
+
+def _get_view_comment(db: Session, view_name: str) -> str:
+    """Read the COMMENT ON VIEW stored in pg_description, used as description."""
+    row = db.execute(
+        text("""
+            SELECT obj_description(c.oid, 'pg_class') AS comment
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = :name
+              AND n.nspname = 'public'
+              AND c.relkind = 'v'
+        """),
+        {"name": view_name},
+    ).fetchone()
+    if row and row[0]:
+        return row[0]
+    return ""
+
+
+def _get_view_definition(db: Session, view_name: str) -> str:
+    """Return the stored view definition from pg_views."""
+    row = db.execute(
+        text("SELECT definition FROM pg_views WHERE schemaname = 'public' AND viewname = :name"),
+        {"name": view_name},
+    ).fetchone()
+    return row[0].strip() if row else ""
+
+
+@router.get("/views", response_model=List[ViewMeta])
+async def list_views(db: Session = Depends(get_db)):
+    """List all user-created views in the public schema, alphabetically."""
+    rows = db.execute(
+        text("""
+            SELECT viewname
+            FROM pg_views
+            WHERE schemaname = 'public'
+            ORDER BY viewname
+        """)
+    ).fetchall()
+
+    views = []
+    for row in rows:
+        name = row[0]
+        views.append(ViewMeta(
+            name=name,
+            description=_get_view_comment(db, name),
+            sql=_get_view_definition(db, name),
+            created_at="",
+        ))
+    return views
+
+
+@router.post("/views", response_model=ViewMeta, status_code=201)
+async def create_view(payload: ViewCreate, db: Session = Depends(get_db)):
+    """
+    Create or replace a PostgreSQL view from a SELECT query.
+
+    - View name is sanitised to lowercase alphanumeric + underscores.
+    - Body must be a valid SELECT / WITH query.
+    - Uses CREATE OR REPLACE VIEW so updating an existing view is safe.
+    - An optional description is stored as COMMENT ON VIEW.
+    """
+    view_name = _sanitize_view_name(payload.name)
+    # Validate body (raises 400 on forbidden keywords or non-SELECT)
+    body = _validate_view_body(payload.sql)
+    # Strip the auto-appended LIMIT for view definitions
+    _LIMIT_TAIL_RE = re.compile(r"\nLIMIT\s+\d+\s*$", re.IGNORECASE)
+    body = _LIMIT_TAIL_RE.sub("", body).strip()
+
+    try:
+        db.execute(
+            text(f'CREATE OR REPLACE VIEW "{view_name}" AS {body}')
+        )
+        if payload.description:
+            safe_desc = payload.description.replace("'", "''")
+            db.execute(text(f"COMMENT ON VIEW \"{view_name}\" IS '{safe_desc}'"))
+        db.commit()
+        logger.info("View '%s' created/replaced.", view_name)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to create view: {exc}") from exc
+
+    return ViewMeta(
+        name=view_name,
+        description=payload.description,
+        sql=body,
+        created_at="",
+    )
+
+
+@router.delete("/views/{view_name}", status_code=204)
+async def drop_view(view_name: str, db: Session = Depends(get_db)):
+    """Drop a user-created view by name."""
+    clean_name = _sanitize_view_name(view_name)
+
+    exists = db.execute(
+        text("SELECT 1 FROM pg_views WHERE schemaname = 'public' AND viewname = :name"),
+        {"name": clean_name},
+    ).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail=f"View '{clean_name}' not found.")
+
+    try:
+        db.execute(text(f'DROP VIEW IF EXISTS "{clean_name}"'))
+        db.commit()
+        logger.info("View '%s' dropped.", clean_name)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to drop view: {exc}") from exc

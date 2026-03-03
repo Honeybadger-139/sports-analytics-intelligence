@@ -8,6 +8,34 @@ const SEASONS = ['2025-26', '2024-25', '2023-24']
 const PAGE_SIZES = [25, 50, 100]
 const ACCENT = '#10B981'
 
+interface DerivedTableMeta {
+  table: string
+  label: string
+  description: string
+  hint: string
+}
+
+const DERIVED_TABLES: DerivedTableMeta[] = [
+  {
+    table: 'match_features',
+    label: 'Match Features',
+    description: 'ML-ready feature vectors per game — rolling averages, win rates, home/away differentials.',
+    hint: 'SELECT * FROM match_features LIMIT 20',
+  },
+  {
+    table: 'predictions',
+    label: 'Predictions',
+    description: 'Model output — predicted winner, confidence score and model version per game.',
+    hint: 'SELECT * FROM predictions ORDER BY created_at DESC LIMIT 20',
+  },
+  {
+    table: 'bets',
+    label: 'Bets',
+    description: 'Bet tracker linked to predictions — tracks expected value, stake and settlement.',
+    hint: 'SELECT * FROM bets ORDER BY placed_at DESC LIMIT 20',
+  },
+]
+
 export default function TableBrowser() {
   const [season, setSeason] = useState('2025-26')
   const [selected, setSelected] = useState<string | null>(null)
@@ -39,7 +67,15 @@ export default function TableBrowser() {
           </select>
         </div>
 
-        <p className="scribble-label" style={{ marginTop: 16 }}>Tables</p>
+        {/* ── Section 1: Ingestion Source Tables ── */}
+        <div className="explorer-section-header">
+          <span className="explorer-section-dot explorer-section-dot--source" />
+          <span className="explorer-section-title">Ingestion Sources</span>
+          <span className="explorer-section-count">
+            {listLoading ? '…' : (tableList?.tables.length ?? 0)}
+          </span>
+        </div>
+        <p className="explorer-section-desc">Live data loaded directly from the NBA API pipeline.</p>
 
         {listLoading ? (
           <div className="explorer-table-loading">
@@ -67,6 +103,32 @@ export default function TableBrowser() {
             ))}
           </div>
         )}
+
+        {/* ── Section 2: Derived Feature Tables ── */}
+        <div className="explorer-section-header" style={{ marginTop: 20 }}>
+          <span className="explorer-section-dot explorer-section-dot--derived" />
+          <span className="explorer-section-title">Derived &amp; Features</span>
+          <span className="explorer-section-count">{DERIVED_TABLES.length}</span>
+        </div>
+        <p className="explorer-section-desc">Computed by the ML pipeline from ingestion sources. Query via SQL Lab.</p>
+
+        <div className="explorer-table-list">
+          {DERIVED_TABLES.map(t => (
+            <div key={t.table} className="explorer-derived-card" title={`Open SQL Lab and run:\n${t.hint}`}>
+              <div className="explorer-table-btn-top">
+                <span className="explorer-table-name">{t.label}</span>
+                <span className="explorer-derived-badge">
+                  <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
+                    <path d="M1 8L8 1M8 1H3.5M8 1V5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  SQL Lab
+                </span>
+              </div>
+              <p className="explorer-table-desc">{t.description}</p>
+              <code className="explorer-derived-hint">{t.hint}</code>
+            </div>
+          ))}
+        </div>
       </aside>
 
       {/* Main — rows */}
@@ -80,7 +142,8 @@ export default function TableBrowser() {
             <div className="explorer-empty-icon">🗄️</div>
             <p className="explorer-empty-title">Select a table</p>
             <p className="explorer-empty-desc">
-              Choose any of the 6 raw Postgres tables on the left to browse its rows.
+              Pick an <strong>Ingestion Source</strong> on the left to browse its rows live.<br />
+              <strong>Derived &amp; Feature</strong> tables are query-only — use the SQL Lab tab.
             </p>
           </motion.div>
         ) : (
