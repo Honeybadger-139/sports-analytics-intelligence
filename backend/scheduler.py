@@ -2,25 +2,49 @@
 Daily pipeline scheduler — Sports Analytics Intelligence Platform
 =================================================================
 
-Runs the full NBA data ingestion pipeline on a daily cron schedule so that
-raw tables never go stale.
+Three job classes run automatically when the FastAPI server starts:
+
+  1. daily_nba_pipeline  — raw NBA data ingestion (06:30 UTC = 12:00 PM IST)
+                           immediately followed by feature-engineering so that
+                           match_features is never stale after an ingestion run.
+
+  2. daily_feature_engineering — standalone feature rebuild (07:30 UTC) as a
+                           safety net in case the pipeline job's chained run
+                           was skipped (e.g. partial ingestion failure).
+
+  3. rag_refresh_<HH>    — RAG vector-store refresh 4× daily (every 6 hours:
+                           00:00, 06:00, 12:00, 18:00 UTC = 05:30, 11:30,
+                           17:30, 23:30 IST).  The 06:00 UTC slot fires
+                           30 minutes BEFORE the data pipeline so that news /
+                           injury context is fresh when the brief is generated.
+
+IST time mapping (IST = UTC + 5:30)
+  06:30 UTC → 12:00 PM IST  raw ingestion + features
+  07:30 UTC → 13:00 PM IST  feature safety-net
+  00:00 UTC → 05:30 IST     RAG refresh
+  06:00 UTC → 11:30 IST     RAG refresh (just before data pipeline)
+  12:00 UTC → 17:30 IST     RAG refresh
+  18:00 UTC → 23:30 IST     RAG refresh
 
 Usage
 -----
 1. Embedded (automatic): the FastAPI app starts this scheduler via its
    lifespan context manager.  No manual action needed.
 
-2. Catch-up / one-shot run (manual):
+2. Immediate catch-up run:
        cd backend
        python scheduler.py --run-now
 
-   Use this to immediately backfill both the 2024-25 historical season and
-   the current 2025-26 season from the last watermark date.
+   Runs ingestion + features immediately, then exits.
 
-3. Standalone daemon (alternative deployment without FastAPI):
-       cd backend
+3. Features-only catch-up:
+       python scheduler.py --run-now-features
+
+4. RAG-only immediate refresh:
+       python scheduler.py --run-now-rag
+
+5. Standalone daemon (without FastAPI):
        python scheduler.py
-   Runs forever, firing at PIPELINE_SCHEDULE_HOUR:PIPELINE_SCHEDULE_MINUTE UTC.
 
 Design notes
 ------------
@@ -28,8 +52,8 @@ Design notes
   block the FastAPI async event loop.
 - misfire_grace_time=3600 means if the server was down at the scheduled
   time, the job fires as soon as it comes back up (within 1 hour).
-- All run outcomes are recorded to the existing pipeline_audit table via
-  record_audit() so /api/v1/system/status reflects the last run.
+- All outcomes are written to pipeline_audit / intelligence_audit tables
+  so /api/v1/system/status and /api/v1/mlops/monitoring reflect them.
 """
 
 from __future__ import annotations
@@ -55,15 +79,20 @@ def _setup_standalone_logging() -> None:
     )
 
 
+# ── Job 1: Raw ingestion + chained feature engineering ──────────────────────
+
 def run_pipeline_job() -> None:
     """
-    Scheduled job entry point.
+    Scheduled job: full NBA data ingestion followed immediately by feature
+    engineering.
 
-    Calls run_full_ingestion for every season in config.PIPELINE_SEASONS.
-    Failures are caught and logged so the scheduler thread never crashes.
+    Chaining features here (rather than scheduling them separately) ensures
+    match_features is always rebuilt with the freshest raw data.  A separate
+    safety-net job (daily_feature_engineering at 07:30 UTC) handles the rare
+    case where ingestion succeeds but this chained call fails.
+
+    Fires at: 06:30 UTC = 12:00 PM IST daily.
     """
-    # Import inside the function to avoid circular imports when this module
-    # is imported by main.py before the rest of the app is initialised.
     from src import config
     from src.data.ingestion import run_full_ingestion
 
@@ -75,26 +104,73 @@ def run_pipeline_job() -> None:
     )
     try:
         run_full_ingestion(seasons=config.PIPELINE_SEASONS)
-        logger.info("✅ [scheduler] Daily pipeline completed successfully.")
+        logger.info("✅ [scheduler] Raw ingestion completed — starting feature engineering.")
     except Exception as exc:
         logger.error(
-            "❌ [scheduler] Daily pipeline failed: %s",
+            "❌ [scheduler] Raw ingestion failed: %s — feature engineering will be skipped for this run.",
+            exc,
+            exc_info=True,
+        )
+        return  # do not run features on stale/partial data
+
+    # Chain feature engineering immediately so match_features is fresh.
+    run_feature_engineering_job(context="chained-after-ingestion")
+
+
+# ── Job 2: Feature engineering (standalone / safety-net) ────────────────────
+
+def run_feature_engineering_job(context: str = "scheduled") -> None:
+    """
+    Rebuild all feature-store tables (match_features) from current raw data.
+
+    Called in two ways:
+      • Chained from run_pipeline_job() after ingestion succeeds.
+      • As a standalone scheduled safety-net at 07:30 UTC (daily_feature_engineering).
+
+    Fires standalone at: 07:30 UTC = 13:00 IST daily.
+    """
+    from src import config
+    from src.data.feature_store import run_feature_engineering
+
+    started_at = datetime.now(timezone.utc)
+    logger.info(
+        "🔧 [scheduler] Feature engineering triggered at %s UTC [%s] for seasons: %s",
+        started_at.isoformat(timespec="seconds"),
+        context,
+        config.PIPELINE_SEASONS,
+    )
+    try:
+        run_feature_engineering(seasons=config.PIPELINE_SEASONS)
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+        logger.info(
+            "✅ [scheduler] Feature engineering completed in %.1fs [%s].",
+            elapsed,
+            context,
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ [scheduler] Feature engineering failed [%s]: %s",
+            context,
             exc,
             exc_info=True,
         )
 
+
+# ── Job 3: RAG / Intelligence vector-store refresh ──────────────────────────
 
 def run_rag_ingestion_job() -> None:
     """
     Force-refresh the RAG vector store from live RSS feeds.
 
     Unlike IntelligenceService._refresh_index_if_needed() which skips
-    re-fetching when ChromaDB already has documents, this job ALWAYS
-    fetches fresh articles and upserts them — ensuring the vector store
-    never goes stale regardless of its current size.
+    re-fetching when ChromaDB already has documents, this job ALWAYS fetches
+    fresh articles and upserts them so injury reports / game previews never
+    go stale.
 
-    Schedule: 3× daily (07:00, 15:00, 23:00 UTC) so sports news, injury
-    reports, and game previews are never more than ~8 hours old.
+    Fires at: 00:00, 06:00, 12:00, 18:00 UTC (every 6 hours).
+    IST equivalents: 05:30, 11:30, 17:30, 23:30.
+    The 06:00 UTC slot fires 30 minutes before the data pipeline ensuring
+    intelligence context is fresh when the daily brief is generated.
     """
     from src import config
     from src.data.db import SessionLocal
@@ -177,23 +253,35 @@ def run_rag_ingestion_job() -> None:
         db.close()
 
 
+# ── Scheduler factory ────────────────────────────────────────────────────────
+
 def create_scheduler() -> BackgroundScheduler:
     """
     Build and return a configured BackgroundScheduler.
 
-    Jobs registered:
-      1. daily_nba_pipeline   — full NBA data ingestion once per day
-      2. rag_ingestion_*      — RSS feed → ChromaDB refresh 3× per day
-                                (07:00, 15:00, 23:00 UTC)
+    Jobs registered
+    ───────────────
+    daily_nba_pipeline         Raw ingestion + chained features
+                               06:30 UTC (12:00 PM IST)  — configurable via
+                               PIPELINE_SCHEDULE_HOUR / PIPELINE_SCHEDULE_MINUTE
 
-    The scheduler is NOT started here — call .start() after FastAPI has
-    finished its own startup, or call it from the lifespan context manager.
+    daily_feature_engineering  Feature safety-net (standalone rebuild)
+                               07:30 UTC (13:00 IST)
+
+    rag_refresh_00, _06, _12, _18
+                               RAG vector-store refresh every 6 hours
+                               00:00, 06:00, 12:00, 18:00 UTC
+                               (05:30, 11:30, 17:30, 23:30 IST)
+                               Configurable via RAG_SCHEDULE_HOURS env var.
+
+    The scheduler is NOT started here — call .start() from the lifespan
+    context manager or from standalone daemon mode.
     """
     from src import config
 
     scheduler = BackgroundScheduler(timezone="UTC")
 
-    # ── Job 1: Daily NBA data ingestion ─────────────────────────────────────
+    # ── Job 1: Daily NBA raw ingestion + chained feature engineering ─────────
     scheduler.add_job(
         func=run_pipeline_job,
         trigger=CronTrigger(
@@ -202,69 +290,141 @@ def create_scheduler() -> BackgroundScheduler:
             timezone="UTC",
         ),
         id="daily_nba_pipeline",
-        name=f"Daily NBA ingestion ({', '.join(config.PIPELINE_SEASONS)})",
+        name=(
+            f"Daily NBA ingestion + features "
+            f"({config.PIPELINE_SCHEDULE_HOUR:02d}:{config.PIPELINE_SCHEDULE_MINUTE:02d} UTC"
+            f" = {(config.PIPELINE_SCHEDULE_HOUR + 5) % 24:02d}:{(config.PIPELINE_SCHEDULE_MINUTE + 30) % 60:02d} IST"
+            f" | {', '.join(config.PIPELINE_SEASONS)})"
+        ),
         replace_existing=True,
         misfire_grace_time=3600,
     )
     logger.info(
-        "🗓️  [scheduler] Configured: daily NBA pipeline at %02d:%02d UTC | seasons: %s",
+        "🗓️  [scheduler] daily_nba_pipeline: %02d:%02d UTC = %02d:%02d IST | seasons: %s",
         config.PIPELINE_SCHEDULE_HOUR,
         config.PIPELINE_SCHEDULE_MINUTE,
+        (config.PIPELINE_SCHEDULE_HOUR + 5) % 24,
+        (config.PIPELINE_SCHEDULE_MINUTE + 30) % 60,
         config.PIPELINE_SEASONS,
     )
 
-    # ── Job 2: RAG ingestion — 3× daily (07:00, 15:00, 23:00 UTC) ──────────
-    # Runs every ~8 hours so injury reports and news are never stale.
-    # Force-upserts into ChromaDB regardless of current store size (fixes the
-    # one-time-only initialisation limitation in _refresh_index_if_needed).
-    for hour, label in [(7, "morning"), (15, "afternoon"), (23, "evening")]:
+    # ── Job 2: Standalone feature engineering safety-net (07:30 UTC) ─────────
+    # Fires 60 minutes after the default ingestion time.  If ingestion ran
+    # fine the chained call already rebuilt features; this job is a no-op in
+    # the happy path but ensures features are current even after a partial run.
+    feature_hour   = config.PIPELINE_SCHEDULE_HOUR
+    feature_minute = config.PIPELINE_SCHEDULE_MINUTE + 60  # shift by 60 min
+    if feature_minute >= 60:
+        feature_hour   = (feature_hour + feature_minute // 60) % 24
+        feature_minute = feature_minute % 60
+
+    scheduler.add_job(
+        func=run_feature_engineering_job,
+        trigger=CronTrigger(
+            hour=feature_hour,
+            minute=feature_minute,
+            timezone="UTC",
+        ),
+        id="daily_feature_engineering",
+        name=(
+            f"Feature engineering safety-net "
+            f"({feature_hour:02d}:{feature_minute:02d} UTC)"
+        ),
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(
+        "🔧 [scheduler] daily_feature_engineering (safety-net): %02d:%02d UTC",
+        feature_hour,
+        feature_minute,
+    )
+
+    # ── Job 3: RAG vector-store refresh — every 6 hours ──────────────────────
+    rag_hours = config.RAG_SCHEDULE_HOURS  # default: [0, 6, 12, 18]
+    slot_labels = {0: "midnight", 6: "morning", 12: "noon", 18: "evening"}
+
+    for hour in rag_hours:
+        label = slot_labels.get(hour, f"{hour:02d}h")
+        ist_hour   = (hour + 5) % 24
+        ist_minute = 30  # IST = UTC + 5:30
         scheduler.add_job(
             func=run_rag_ingestion_job,
             trigger=CronTrigger(hour=hour, minute=0, timezone="UTC"),
-            id=f"rag_ingestion_{label}",
-            name=f"RAG feed refresh — {label} ({hour:02d}:00 UTC)",
+            id=f"rag_refresh_{hour:02d}",
+            name=f"RAG refresh — {label} ({hour:02d}:00 UTC = {ist_hour:02d}:{ist_minute:02d} IST)",
             replace_existing=True,
             misfire_grace_time=1800,
         )
+
+    ist_slots = [f"{(h + 5) % 24:02d}:30 IST" for h in rag_hours]
     logger.info(
-        "📰 [scheduler] Configured: RAG ingestion at 07:00, 15:00, 23:00 UTC (3× daily)"
+        "📰 [scheduler] rag_refresh: %s UTC  (%s)  — every 6 hours",
+        ", ".join(f"{h:02d}:00" for h in rag_hours),
+        ", ".join(ist_slots),
     )
 
     return scheduler
 
 
-# ── Standalone entry point ──────────────────────────────────────────────────
+# ── Standalone entry point ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
     _setup_standalone_logging()
 
-    # Ensure src package is importable when run from the backend/ directory.
     import os
     sys.path.insert(0, os.path.dirname(__file__))
 
     parser = argparse.ArgumentParser(
-        description="SAI daily pipeline scheduler",
+        description="SAI pipeline scheduler",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Immediate catch-up run for all PIPELINE_SEASONS, then exit
+  # Immediate ingestion + features catch-up run, then exit
   python scheduler.py --run-now
 
-  # Start daemon that fires every day at PIPELINE_SCHEDULE_HOUR UTC
+  # Features-only rebuild (skip ingestion)
+  python scheduler.py --run-now-features
+
+  # RAG vector-store refresh only, then exit
+  python scheduler.py --run-now-rag
+
+  # Start daemon (all jobs fire on their cron schedule)
   python scheduler.py
         """,
     )
     parser.add_argument(
         "--run-now",
         action="store_true",
-        help="Trigger the pipeline immediately (catch-up run) then exit.",
+        help="Trigger ingestion + feature engineering immediately, then exit.",
+    )
+    parser.add_argument(
+        "--run-now-features",
+        action="store_true",
+        help="Trigger feature engineering immediately (no ingestion), then exit.",
+    )
+    parser.add_argument(
+        "--run-now-rag",
+        action="store_true",
+        help="Trigger RAG vector-store refresh immediately, then exit.",
     )
     args = parser.parse_args()
 
     if args.run_now:
-        logger.info("🚀 [scheduler] --run-now: triggering immediate catch-up ingestion...")
+        logger.info("🚀 [scheduler] --run-now: triggering immediate ingestion + features...")
         run_pipeline_job()
         logger.info("✅ [scheduler] Catch-up run complete. Exiting.")
+        sys.exit(0)
+
+    if args.run_now_features:
+        logger.info("🔧 [scheduler] --run-now-features: rebuilding features only...")
+        run_feature_engineering_job(context="manual-run-now-features")
+        logger.info("✅ [scheduler] Feature rebuild complete. Exiting.")
+        sys.exit(0)
+
+    if args.run_now_rag:
+        logger.info("📰 [scheduler] --run-now-rag: triggering immediate RAG refresh...")
+        run_rag_ingestion_job()
+        logger.info("✅ [scheduler] RAG refresh complete. Exiting.")
         sys.exit(0)
 
     # ── Daemon mode ──

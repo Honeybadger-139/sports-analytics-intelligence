@@ -81,7 +81,7 @@ export default function Arena() {
                 Arena
               </p>
               <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-1)', margin: 0, fontFamily: 'var(--font-display)' }}>
-                Predictions &amp; bankroll analysis
+                Predictions &amp; model analysis
               </h1>
             </div>
 
@@ -123,7 +123,7 @@ export default function Arena() {
           <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '40px 28px' }}>
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
               <p style={{ color: 'var(--text-2)', fontSize: '0.9rem', marginBottom: 24 }}>
-                The prediction engine. Run models, analyse game outcomes, and track performance.
+                The prediction engine. Run models, analyse game outcomes, and track model performance.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                 {TABS.map(tab => (

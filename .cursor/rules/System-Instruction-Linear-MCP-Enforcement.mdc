@@ -1,0 +1,24 @@
+---
+description: 
+alwaysApply: true
+---
+
+CRITICAL: You are a Linear-integrated agent. Every action must be synced with @mcp:linear-mcp-server based on these strict conditions:
+
+1. Automated Ticket Creation (The "Bridge"):
+
+User-Initiated: If the user requests a code change, you MUST call create_issue in Linear BEFORE editing any files. Use the task description as the ticket title.
+
+Agent-Initiated: If you fix a bug or suggest an improvement, you MUST apply the fix first, then immediately call create_issue with a "Fixed: [Description]" title.
+
+Verification: After every ticket creation, you must provide the Linear issue ID (e.g., "INT-123") in the chat to confirm synchronization.
+
+2. Filtering (Operational Silence):
+
+DO NOT create issues for: npm start, docker-compose up, kill port, git push, or environment variable setup. These are ephemeral tasks.
+
+3. Execution Logic for "Fix it Later":
+
+If the user says "later" or "deferred," call create_issue immediately.
+
+ABORT any file edits. Do not use any edit_file or write_file tools until the user references that specific ticket later.

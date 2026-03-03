@@ -81,15 +81,33 @@ INJURY_SOURCES = _env_csv(
 
 # Scheduler — daily pipeline settings (Phase 8)
 # Seasons loaded by the daily scheduled pipeline.
-# First entry = historical season (cold load on first run if absent).
-# Second entry = current season (incremental watermark sync daily).
-# Override via env: PIPELINE_SEASONS="2024-25,2025-26"
-PIPELINE_SEASONS: list[str] = _env_csv("PIPELINE_SEASONS", ["2024-25", "2025-26"])
+# Defaults to the current season only — historical seasons do not change and
+# do not need a daily refresh.  Set PIPELINE_SEASONS="2024-25,2025-26" in
+# your .env for a one-off full backfill, then revert to just the current season.
+PIPELINE_SEASONS: list[str] = _env_csv("PIPELINE_SEASONS", [CURRENT_SEASON])
 
-# UTC hour/minute at which the daily pipeline fires (default: 09:00 UTC —
-# after NBA game results are finalised overnight US time).
-PIPELINE_SCHEDULE_HOUR: int = int(os.getenv("PIPELINE_SCHEDULE_HOUR", "9"))
-PIPELINE_SCHEDULE_MINUTE: int = int(os.getenv("PIPELINE_SCHEDULE_MINUTE", "0"))
+# UTC hour/minute at which the daily raw-ingestion + feature-engineering
+# pipeline fires.  Default: 06:30 UTC = 12:00 PM IST (UTC+5:30).
+# After US overnight games are finalised and before mid-day analysis runs.
+PIPELINE_SCHEDULE_HOUR: int = int(os.getenv("PIPELINE_SCHEDULE_HOUR", "6"))
+PIPELINE_SCHEDULE_MINUTE: int = int(os.getenv("PIPELINE_SCHEDULE_MINUTE", "30"))
+
+# UTC hours at which the RAG feed refresh runs (comma-separated integers).
+# Default: 00:00, 06:00, 12:00, 18:00 UTC — every 6 hours.
+# 06:00 UTC fires just before the data pipeline so news is fresh when
+# game intelligence is generated.
+def _env_int_list(name: str, default: list[int]) -> list[int]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return [int(h.strip()) for h in raw.split(",") if h.strip()]
+    except ValueError:
+        return default
+
+RAG_SCHEDULE_HOURS: list[int] = _env_int_list(
+    "RAG_SCHEDULE_HOURS", [0, 6, 12, 18]
+)
 
 # ── Langfuse (Phase 8 — chatbot observability) ──────────────────────────────
 # Sign up at https://cloud.langfuse.com to get keys (free tier available).
