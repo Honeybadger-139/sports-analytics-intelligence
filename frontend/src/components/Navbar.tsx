@@ -24,10 +24,9 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Predictions & bankroll analysis',
     color: '#06C5F8',
     subItems: [
-      { label: "Today's Picks",  path: '/arena/predictions', description: "Model consensus for today's games" },
-      { label: 'Match Deep Dive',path: '/arena/deep-dive',   description: 'SHAP explainability + feature snapshots' },
-      { label: 'Model Performance',path:'/arena/performance',description: 'Accuracy, Brier score, confidence' },
-      { label: 'Bankroll',       path: '/arena/bankroll',    description: 'Bet history, PnL and ROI tracking' },
+      { label: "Today's Picks",   path: '/arena/predictions', description: "Model consensus for today's games" },
+      { label: 'Match Deep Dive', path: '/arena/deep-dive',   description: 'SHAP explainability + feature snapshots' },
+      { label: 'Model Performance',path:'/arena/performance', description: 'Accuracy, Brier score, confidence' },
     ],
   },
   {
@@ -37,7 +36,6 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Data exploration & monitoring',
     color: '#8B5CF6',
     subItems: [
-      { label: 'Raw Explorer',  path: '/lab/raw',      description: 'Browse all raw database tables' },
       { label: 'Data Quality',  path: '/lab/quality',  description: 'Row counts, checks and team metrics' },
       { label: 'Pipeline Runs', path: '/lab/pipeline', description: 'Recent ingestion and feature runs' },
       { label: 'MLOps Monitor', path: '/lab/mlops',    description: 'Drift alerts and retrain policy' },

@@ -231,3 +231,98 @@ export interface RetrainJobsResponse {
   season: string
   jobs: RetrainJob[]
 }
+
+// ── Pulse — Intelligence / Brief ─────────────────────────────────────────────
+
+export interface BriefItem {
+  game_id: string
+  matchup: string
+  summary: string
+  risk_level: 'low' | 'medium' | 'high'
+  citation_count: number
+}
+
+export interface DailyBriefResponse {
+  date: string
+  season: string
+  items: BriefItem[]
+}
+
+// ── Pulse — Match Previews ────────────────────────────────────────────────────
+
+export interface MatchRow {
+  game_id: string
+  game_date: string
+  season: string
+  home_team: string
+  away_team: string
+  home_score: number | null
+  away_score: number | null
+  winner_team_id: number | null
+}
+
+export interface MatchesResponse {
+  matches: MatchRow[]
+  count: number
+}
+
+export interface TodayGamePrediction {
+  game_id: string
+  home_team: string
+  away_team: string
+  home_team_name?: string
+  away_team_name?: string
+  game_date?: string
+  predictions?: Record<string, { home_win_prob: number; away_win_prob: number; confidence: number }>
+  [key: string]: unknown
+}
+
+export interface TodayPredictionsResponse {
+  date: string
+  count: number
+  persisted_rows: number
+  games: TodayGamePrediction[]
+}
+
+// ── Arena ─────────────────────────────────────────────────────────────────────
+
+export interface ModelPrediction {
+  home_win_prob: number
+  away_win_prob: number
+  confidence: number
+}
+
+export interface ShapFactor {
+  feature: string
+  shap_value: number
+  display_name?: string
+}
+
+export interface GamePredictionResponse {
+  game_id: string
+  home_team: string
+  away_team: string
+  home_team_name: string
+  away_team_name: string
+  predictions: Record<string, ModelPrediction>
+  explanation: Record<string, ShapFactor[]>
+}
+
+export interface ModelPerformanceItem {
+  model_name: string
+  evaluated_games: number
+  correct_games: number
+  accuracy: number
+  avg_confidence: number
+  brier_score: number
+  first_prediction_at: string | null
+  last_prediction_at: string | null
+}
+
+export interface ModelPerformanceResponse {
+  season: string
+  model_filter: string | null
+  pending_games: number
+  evaluated_models: number
+  performance: ModelPerformanceItem[]
+}

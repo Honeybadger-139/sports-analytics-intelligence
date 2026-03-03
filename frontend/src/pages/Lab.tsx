@@ -2,27 +2,13 @@ import { lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-const LabRawExplorer = lazy(() => import('../components/Lab/LabRawExplorer'))
-const DataQuality    = lazy(() => import('../components/Lab/DataQuality'))
-const PipelineRuns   = lazy(() => import('../components/Lab/PipelineRuns'))
-const MLOpsMonitor   = lazy(() => import('../components/Lab/MLOpsMonitor'))
+const DataQuality  = lazy(() => import('../components/Lab/DataQuality'))
+const PipelineRuns = lazy(() => import('../components/Lab/PipelineRuns'))
+const MLOpsMonitor = lazy(() => import('../components/Lab/MLOpsMonitor'))
 
 const ACCENT = '#8B5CF6'
 
 const TABS = [
-  {
-    id: 'raw',
-    path: '/lab/raw',
-    label: 'Raw Explorer',
-    desc: 'Browse raw Postgres tables with pagination',
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-        <rect x="1" y="1" width="13" height="3" rx="1" stroke="currentColor" strokeWidth="1.3"/>
-        <rect x="1" y="6" width="13" height="3" rx="1" stroke="currentColor" strokeWidth="1.3"/>
-        <rect x="1" y="11" width="13" height="3" rx="1" stroke="currentColor" strokeWidth="1.3"/>
-      </svg>
-    ),
-  },
   {
     id: 'quality',
     path: '/lab/quality',
@@ -177,7 +163,6 @@ export default function Lab() {
             style={{ height: '100%' }}
           >
             <Suspense fallback={<LoadingFallback />}>
-              {activeTab.id === 'raw'      && <LabRawExplorer />}
               {activeTab.id === 'quality'  && <DataQuality />}
               {activeTab.id === 'pipeline' && <PipelineRuns />}
               {activeTab.id === 'mlops'    && <MLOpsMonitor />}
