@@ -224,7 +224,7 @@ export default function NotebooksPanel({ pendingSql, onClearPending, onLoad }: N
             </div>
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
