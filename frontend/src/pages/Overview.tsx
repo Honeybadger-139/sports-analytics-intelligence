@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
-import { useSystemStatus, useBankrollSummary } from '../hooks/useApi'
+import { useSystemStatus } from '../hooks/useApi'
 import { NAV_ITEMS } from '../components/Navbar'
 
 const SEASON = '2025-26'
@@ -8,14 +8,6 @@ const SEASON = '2025-26'
 function fmt(n: number | undefined | null, decimals = 0) {
   if (n == null) return '--'
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: decimals })
-}
-function fmtMoney(n: number | undefined | null) {
-  if (n == null) return '--'
-  return `$${Number(n).toFixed(2)}`
-}
-function fmtPct(n: number | undefined | null) {
-  if (n == null) return '--'
-  return `${(Number(n) * 100).toFixed(2)}%`
 }
 
 const stagger: Variants = {
@@ -30,7 +22,6 @@ const fadeUp: Variants = {
 export default function Overview() {
   const navigate = useNavigate()
   const { data: sys, loading: sysLoading } = useSystemStatus()
-  const { data: bank } = useBankrollSummary(SEASON)
 
   const statusClass =
     sys?.status === 'healthy'  ? 'status-healthy'  :
@@ -74,27 +65,6 @@ export default function Overview() {
       accent: '#06C5F8',
       mono: true,
     },
-    {
-      label: 'Bankroll',
-      value: fmtMoney(bank?.current_bankroll),
-      meta: 'Current capital',
-      accent: '#10B981',
-      mono: true,
-    },
-    {
-      label: 'ROI',
-      value: fmtPct(bank?.roi),
-      meta: 'Settled bets',
-      accent: bank?.roi != null && bank.roi >= 0 ? '#00D68F' : '#FF4C6A',
-      mono: true,
-    },
-    {
-      label: 'Open Bets',
-      value: bank?.open_bets != null ? String(bank.open_bets) : '--',
-      meta: 'Pending settlement',
-      accent: '#F59E0B',
-      mono: true,
-    },
   ]
 
   const today = new Date().toLocaleDateString('en-US', {
@@ -119,7 +89,7 @@ export default function Overview() {
             Sports Analytics<br />Intelligence
           </motion.h1>
           <motion.p className="overview-subtitle" variants={fadeUp}>
-            NBA prediction engine · Data quality monitor · Bankroll tracker · AI intelligence layer
+            NBA prediction engine · Feature engineering · ML model monitoring · Statistical deep-dive · AI intelligence layer
           </motion.p>
         </motion.div>
 
@@ -192,7 +162,7 @@ function DirectoryCard({ item, onNavigate, liveIds = [] }: DirectoryCardProps) {
 
   const descriptions: Record<string, string> = {
     pulse:   'Daily game intelligence, sports news, injury reports, and pre-game context grounded in cited sources.',
-    arena:   'Run model predictions for today\'s games, deep-dive into SHAP explainability, track model performance, and manage your bankroll.',
+    arena:   'Run model predictions for today\'s games, deep-dive into SHAP explainability, and track ensemble model performance across the season.',
     lab:     'Browse raw Postgres tables, monitor data quality metrics, inspect ingestion pipeline runs, and track MLOps health.',
     scribble:'Compose new analytics metrics and features from raw data. Build, test and save custom notebooks — no code required.',
     chatbot: 'Ask plain-English questions about any game, team, player, or model outcome and get AI-summarised answers from your live data.',

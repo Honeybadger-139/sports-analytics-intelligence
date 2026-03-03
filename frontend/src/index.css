@@ -408,7 +408,7 @@ img, svg { display: block; }
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
 }
 
@@ -3679,7 +3679,7 @@ img, svg { display: block; }
 
 /* ─── Responsive ─────────────────────────────────────────── */
 @media (max-width: 1280px) {
-  .metrics-grid { grid-template-columns: repeat(4, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(5, 1fr); }
 }
 @media (max-width: 960px) {
   .metrics-grid { grid-template-columns: repeat(2, 1fr); }
