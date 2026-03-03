@@ -3,13 +3,13 @@ import { motion } from 'framer-motion'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
 import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
 
-const ACCENT   = '#06C5F8'
-const SEASONS  = ['2025-26', '2024-25', '2023-24']
+const ACCENT = '#06C5F8'
+const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 const MODEL_LABELS: Record<string, string> = {
-  ensemble:            'Ensemble',
-  xgboost:             'XGBoost',
-  lgbm:                'LightGBM',
+  ensemble: 'Ensemble',
+  xgboost: 'XGBoost',
+  lgbm: 'LightGBM',
   logistic_regression: 'Logistic',
 }
 
@@ -75,10 +75,24 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
 }
 
 export default function MatchDeepDive() {
-  const [season,     setSeason]     = useState('2025-26')
+  const [season, setSeason] = useState('2025-26')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const { data: matchData, loading: matchLoading } = useMatches(season, 50)
+  // Filters
+  const [teamSearch, setTeamSearch] = useState('')
+  const [dateMode, setDateMode] = useState<'exact' | 'range' | 'all'>('all')
+  const [exactDate, setExactDate] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
+  const { data: matchData, loading: matchLoading } = useMatches(
+    season,
+    50,
+    teamSearch,
+    dateMode === 'exact' ? exactDate : undefined,
+    dateMode === 'range' ? startDate : undefined,
+    dateMode === 'range' ? endDate : undefined
+  )
   const { data: pred, loading: predLoading, error: predError } = useGamePrediction(selectedId)
 
   const matches = matchData?.matches ?? []
@@ -107,10 +121,74 @@ export default function MatchDeepDive() {
             className="scribble-select"
             value={season}
             onChange={e => { setSeason(e.target.value); setSelectedId(null) }}
-            style={{ width: '100%' }}
+            style={{ width: '100%', marginBottom: 12 }}
           >
             {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+
+          <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-2)', marginBottom: 8 }}>Search Team</p>
+          <div style={{ position: 'relative', marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="Team name or city..."
+              value={teamSearch}
+              onChange={e => setTeamSearch(e.target.value)}
+              className="scribble-input"
+              style={{ width: '100%', paddingLeft: 30, fontSize: '0.8rem' }}
+            />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </div>
+
+          <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-2)', marginBottom: 8 }}>Date Filter</p>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+            {(['all', 'exact', 'range'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setDateMode(m)}
+                style={{
+                  flex: 1, padding: '4px 0', fontSize: '0.65rem', fontWeight: 700,
+                  borderRadius: 4, cursor: 'pointer',
+                  background: dateMode === m ? `${ACCENT}20` : 'transparent',
+                  border: `1px solid ${dateMode === m ? ACCENT : 'var(--border)'}`,
+                  color: dateMode === m ? ACCENT : 'var(--text-3)',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          {dateMode === 'exact' && (
+            <input
+              type="date"
+              className="scribble-input"
+              value={exactDate}
+              onChange={e => setExactDate(e.target.value)}
+              style={{ width: '100%', fontSize: '0.8rem' }}
+            />
+          )}
+
+          {dateMode === 'range' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <input
+                type="date"
+                className="scribble-input"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                style={{ width: '100%', fontSize: '0.8rem' }}
+              />
+              <input
+                type="date"
+                className="scribble-input"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                style={{ width: '100%', fontSize: '0.8rem' }}
+              />
+            </div>
+          )}
         </div>
 
         <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid var(--border)' }}>
@@ -145,8 +223,8 @@ export default function MatchDeepDive() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12, textAlign: 'center' }}>
             <div style={{ width: 48, height: 48, borderRadius: '50%', background: `${ACCENT}10`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: ACCENT }}>
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-                <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.4"/>
-                <path d="M16 16L20 20" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M16 16L20 20" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
               </svg>
             </div>
             <p style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '1rem' }}>Select a game</p>
@@ -159,7 +237,7 @@ export default function MatchDeepDive() {
         {selectedId && predLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-2)', fontSize: '0.85rem' }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="10"/>
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="10" />
             </svg>
             Loading game data…
           </div>

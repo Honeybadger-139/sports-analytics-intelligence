@@ -395,3 +395,92 @@ export interface ModelPerformanceResponse {
   evaluated_models: number
   performance: ModelPerformanceItem[]
 }
+
+// ── Deep Dive — Player & Team Stats ──────────────────────────────────────────
+
+export interface PlayerListItem {
+  player_id: number
+  full_name: string
+  is_active: boolean
+  team_abbreviation: string | null
+  team_name: string | null
+}
+
+export interface PlayersListResponse {
+  players: PlayerListItem[]
+  count: number
+}
+
+export interface PlayerGameLogEntry {
+  game_id: string
+  game_date: string
+  season: string
+  team: string
+  opponent: string
+  location: string
+  result: string | null
+  minutes: string | null
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  turnovers: number
+  personal_fouls: number
+  field_goals_made: number
+  field_goals_attempted: number
+  field_goal_pct: number | null
+  three_points_made: number
+  three_points_attempted: number
+  three_point_pct: number | null
+  free_throws_made: number
+  free_throws_attempted: number
+  free_throw_pct: number | null
+  plus_minus: number | null
+  fantasy_points: string | null
+}
+
+export interface PlayerGameLogResponse {
+  player: PlayerListItem
+  season: string
+  averages: Record<string, number>
+  games: PlayerGameLogEntry[]
+}
+
+export interface TeamInfo {
+  team_id: number
+  abbreviation: string
+  full_name: string
+  city: string
+}
+
+export interface TeamGameLogEntry {
+  game_id: string
+  game_date: string
+  season: string
+  opponent: string
+  location: string
+  result: string | null
+  points: number
+  opponent_points: number | null
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  turnovers: number
+  field_goal_pct: number | null
+  three_point_pct: number | null
+  free_throw_pct: number | null
+  offensive_rating: number | null
+  defensive_rating: number | null
+  pace: number | null
+  effective_fg_pct: number | null
+  true_shooting_pct: number | null
+}
+
+export interface TeamGameLogResponse {
+  team: TeamInfo
+  season: string
+  record: { wins: number; losses: number; games: number }
+  games: TeamGameLogEntry[]
+}

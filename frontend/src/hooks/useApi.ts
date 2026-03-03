@@ -67,7 +67,7 @@ export function useBankrollSummary(season = '2025-26') {
       ctrl.signal
     )
       .then(res => setData(res.summary))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
   }, [season])
@@ -148,7 +148,7 @@ export function useMLOpsMonitoringTrend(season = '2025-26', days = 14) {
       ctrl.signal,
     )
       .then(setData)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
   }, [season, days])
@@ -197,7 +197,7 @@ export function useMLOpsRetrainJobs(season = '2025-26') {
       ctrl.signal,
     )
       .then(setData)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
   }, [season])
@@ -276,6 +276,8 @@ export function useTodaysPredictions() {
 export function useMatches(
   season = '2025-26',
   limit = 20,
+  teamSearch?: string,
+  date?: string,
   dateFrom?: string,
   dateTo?: string,
 ) {
@@ -285,14 +287,16 @@ export function useMatches(
   useEffect(() => {
     const ctrl = new AbortController()
     let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
-    if (dateFrom) url += `&date_from=${dateFrom}`
-    if (dateTo)   url += `&date_to=${dateTo}`
+    if (teamSearch) url += `&team_search=${encodeURIComponent(teamSearch)}`
+    if (date) url += `&date=${encodeURIComponent(date)}`
+    if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
+    if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
     fetchJSON<MatchesResponse>(url, ctrl.signal)
       .then(setData)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [season, limit, dateFrom, dateTo])
+  }, [season, limit, teamSearch, date, dateFrom, dateTo])
 
   return { data, loading }
 }
@@ -371,6 +375,100 @@ export function useModelPerformance(season = '2025-26') {
   }, [load])
 
   return { data, loading, error, refresh: load }
+}
+
+// ── Deep Dive hooks ──────────────────────────────────────────────────────────
+
+import type {
+  PlayersListResponse,
+  PlayerGameLogResponse,
+  TeamGameLogResponse,
+} from '../types'
+
+export function usePlayers(search: string, team?: string, limit = 50) {
+  const [data, setData] = useState<PlayersListResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!search || search.length < 2) { setData(null); return }
+    const ctrl = new AbortController()
+    setLoading(true)
+    let url = `/players?search=${encodeURIComponent(search)}&limit=${limit}`
+    if (team) url += `&team=${encodeURIComponent(team)}`
+    fetchJSON<PlayersListResponse>(url, ctrl.signal)
+      .then(setData)
+      .catch(() => { })
+      .finally(() => setLoading(false))
+    return () => ctrl.abort()
+  }, [search, team, limit])
+
+  return { data, loading }
+}
+
+export function usePlayerGameStats(playerId: number | null, season = '2025-26', limit = 50) {
+  const [data, setData] = useState<PlayerGameLogResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!playerId) { setData(null); return }
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    fetchJSON<PlayerGameLogResponse>(
+      `/players/${playerId}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`,
+      ctrl.signal,
+    )
+      .then(setData)
+      .catch(err => {
+        if ((err as Error).name !== 'AbortError') setError('Failed to load player stats')
+      })
+      .finally(() => setLoading(false))
+    return () => ctrl.abort()
+  }, [playerId, season, limit])
+
+  return { data, loading, error }
+}
+
+export function useTeamGameStats(abbreviation: string | null, season = '2025-26', limit = 50) {
+  const [data, setData] = useState<TeamGameLogResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!abbreviation) { setData(null); return }
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    fetchJSON<TeamGameLogResponse>(
+      `/teams/${encodeURIComponent(abbreviation)}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`,
+      ctrl.signal,
+    )
+      .then(setData)
+      .catch(err => {
+        if ((err as Error).name !== 'AbortError') setError('Failed to load team stats')
+      })
+      .finally(() => setLoading(false))
+    return () => ctrl.abort()
+  }, [abbreviation, season, limit])
+
+  return { data, loading, error }
+}
+
+export function useTeamsList() {
+  const [data, setData] = useState<{ teams: Array<{ team_id: number; abbreviation: string; full_name: string; city: string }>; count: number } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    fetchJSON<typeof data>('/teams', ctrl.signal)
+      .then(setData)
+      .catch(() => { })
+      .finally(() => setLoading(false))
+    return () => ctrl.abort()
+  }, [])
+
+  return { data, loading }
 }
 
 export { fetchJSON }

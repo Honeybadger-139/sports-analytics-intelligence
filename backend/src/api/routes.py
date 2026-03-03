@@ -641,8 +641,10 @@ async def get_game_stats(game_id: str, db: Session = Depends(get_db)):
 @router.get("/matches")
 async def get_matches_by_date(
     season: str = Query(default="2025-26"),
-    team: Optional[str] = Query(default=None, description="Team abbreviation"),
+    team: Optional[str] = Query(default=None, description="Exact team abbreviation"),
+    team_search: Optional[str] = Query(default=None, description="Team name/city search"),
     limit: int = Query(default=20, le=100),
+    date: Optional[str] = Query(default=None, description="Exact date YYYY-MM-DD"),
     date_from: Optional[str] = Query(default=None, description="Start date YYYY-MM-DD"),
     date_to: Optional[str] = Query(default=None, description="End date YYYY-MM-DD"),
     db: Session = Depends(get_db),
@@ -668,6 +670,15 @@ async def get_matches_by_date(
     if team:
         query += " AND (ht.abbreviation = :team OR at.abbreviation = :team)"
         params["team"] = team.upper()
+    if team_search:
+        query += """ AND (
+            ht.abbreviation ILIKE :ts OR ht.full_name ILIKE :ts OR ht.city ILIKE :ts OR
+            at.abbreviation ILIKE :ts OR at.full_name ILIKE :ts OR at.city ILIKE :ts
+        )"""
+        params["ts"] = f"%{team_search}%"
+    if date:
+        query += " AND m.game_date = :date"
+        params["date"] = date
     if date_from:
         query += " AND m.game_date >= :date_from"
         params["date_from"] = date_from
@@ -972,6 +983,213 @@ async def get_features(game_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Features not found for game {game_id}")
     
     return {"game_id": game_id, "features": features}
+
+
+# ==========================================
+# DEEP DIVE — PLAYER & TEAM STATS ROUTES
+# ==========================================
+
+@router.get("/players")
+async def list_players(
+    search: Optional[str] = Query(default=None, description="Search by player name (substring match)"),
+    team: Optional[str] = Query(default=None, description="Filter by team abbreviation"),
+    active_only: bool = Query(default=True, description="Only include active players"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """List or search NBA players with optional team and active filters."""
+    query = """
+        SELECT p.player_id, p.full_name, p.is_active,
+               t.abbreviation AS team_abbreviation, t.full_name AS team_name
+        FROM players p
+        LEFT JOIN teams t ON p.team_id = t.team_id
+        WHERE 1=1
+    """
+    params: dict = {"limit": limit}
+
+    if active_only:
+        query += " AND p.is_active = TRUE"
+    if search:
+        query += " AND LOWER(p.full_name) LIKE LOWER(:search)"
+        params["search"] = f"%{search}%"
+    if team:
+        query += " AND t.abbreviation = :team"
+        params["team"] = team.upper()
+
+    query += " ORDER BY p.full_name LIMIT :limit"
+
+    rows = db.execute(text(query), params).fetchall()
+    players = [dict(r._mapping) for r in rows]
+    return {"players": players, "count": len(players)}
+
+
+@router.get("/players/{player_id}/game-stats")
+async def get_player_game_stats(
+    player_id: int,
+    season: str = Query(default=config.CURRENT_SEASON),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a player's game-by-game stat line for a given season.
+    Returns the player's info plus their game log.
+    """
+    # Player info
+    player_row = db.execute(
+        text("""
+            SELECT p.player_id, p.full_name, p.is_active,
+                   t.abbreviation AS team_abbreviation, t.full_name AS team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.player_id = :player_id
+        """),
+        {"player_id": player_id},
+    ).fetchone()
+
+    if not player_row:
+        raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    player_info = dict(player_row._mapping)
+
+    # Game log
+    game_rows = db.execute(
+        text("""
+            SELECT
+                pgs.game_id, m.game_date, m.season,
+                pgs_team.abbreviation AS team,
+                CASE
+                    WHEN pgs.team_id = m.home_team_id THEN opp.abbreviation
+                    ELSE opp_h.abbreviation
+                END AS opponent,
+                CASE
+                    WHEN pgs.team_id = m.home_team_id THEN 'vs'
+                    ELSE '@'
+                END AS location,
+                CASE
+                    WHEN m.winner_team_id IS NULL THEN NULL
+                    WHEN m.winner_team_id = pgs.team_id THEN 'W'
+                    ELSE 'L'
+                END AS result,
+                pgs.minutes, pgs.points, pgs.rebounds, pgs.assists,
+                pgs.steals, pgs.blocks, pgs.turnovers, pgs.personal_fouls,
+                pgs.field_goals_made, pgs.field_goals_attempted, pgs.field_goal_pct,
+                pgs.three_points_made, pgs.three_points_attempted, pgs.three_point_pct,
+                pgs.free_throws_made, pgs.free_throws_attempted, pgs.free_throw_pct,
+                pgs.plus_minus, pgs.fantasy_points
+            FROM player_game_stats pgs
+            JOIN matches m ON pgs.game_id = m.game_id
+            JOIN teams pgs_team ON pgs.team_id = pgs_team.team_id
+            LEFT JOIN teams opp ON m.away_team_id = opp.team_id
+            LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
+            WHERE pgs.player_id = :player_id
+              AND m.season = :season
+            ORDER BY m.game_date DESC
+            LIMIT :limit
+        """),
+        {"player_id": player_id, "season": season, "limit": limit},
+    ).fetchall()
+
+    games = [dict(r._mapping) for r in game_rows]
+
+    # Compute season averages
+    if games:
+        stat_keys = ["points", "rebounds", "assists", "steals", "blocks", "turnovers"]
+        n = len(games)
+        averages = {k: round(sum(g.get(k, 0) or 0 for g in games) / n, 1) for k in stat_keys}
+        averages["games_played"] = n
+    else:
+        averages = {}
+
+    return {
+        "player": player_info,
+        "season": season,
+        "averages": averages,
+        "games": games,
+    }
+
+
+@router.get("/teams/{abbreviation}/game-stats")
+async def get_team_game_stats(
+    abbreviation: str,
+    season: str = Query(default=config.CURRENT_SEASON),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a team's game-by-game stats for a given season.
+    Returns the team info plus their game log.
+    """
+    abbr = abbreviation.upper()
+
+    team_row = db.execute(
+        text("SELECT team_id, abbreviation, full_name, city FROM teams WHERE abbreviation = :abbr"),
+        {"abbr": abbr},
+    ).fetchone()
+
+    if not team_row:
+        raise HTTPException(status_code=404, detail=f"Team {abbr} not found")
+
+    team_info = dict(team_row._mapping)
+    tid = team_info["team_id"]
+
+    game_rows = db.execute(
+        text("""
+            SELECT
+                tgs.game_id, m.game_date, m.season,
+                CASE
+                    WHEN tgs.team_id = m.home_team_id THEN opp.abbreviation
+                    ELSE opp_h.abbreviation
+                END AS opponent,
+                CASE
+                    WHEN tgs.team_id = m.home_team_id THEN 'vs'
+                    ELSE '@'
+                END AS location,
+                CASE
+                    WHEN m.winner_team_id IS NULL THEN NULL
+                    WHEN m.winner_team_id = tgs.team_id THEN 'W'
+                    ELSE 'L'
+                END AS result,
+                tgs.points,
+                CASE
+                    WHEN tgs.team_id = m.home_team_id THEN opp_stats.points
+                    ELSE home_stats.points
+                END AS opponent_points,
+                tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
+                tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
+                tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
+                tgs.effective_fg_pct, tgs.true_shooting_pct
+            FROM team_game_stats tgs
+            JOIN matches m ON tgs.game_id = m.game_id
+            LEFT JOIN teams opp ON m.away_team_id = opp.team_id
+            LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
+            LEFT JOIN team_game_stats opp_stats
+                ON m.game_id = opp_stats.game_id AND opp_stats.team_id = m.away_team_id
+                AND tgs.team_id = m.home_team_id
+            LEFT JOIN team_game_stats home_stats
+                ON m.game_id = home_stats.game_id AND home_stats.team_id = m.home_team_id
+                AND tgs.team_id = m.away_team_id
+            WHERE tgs.team_id = :tid
+              AND m.season = :season
+            ORDER BY m.game_date DESC
+            LIMIT :limit
+        """),
+        {"tid": tid, "season": season, "limit": limit},
+    ).fetchall()
+
+    games = [dict(r._mapping) for r in game_rows]
+
+    # Record summary
+    wins = sum(1 for g in games if g.get("result") == "W")
+    losses = sum(1 for g in games if g.get("result") == "L")
+
+    return {
+        "team": team_info,
+        "season": season,
+        "record": {"wins": wins, "losses": losses, "games": len(games)},
+        "games": games,
+    }
+
+
 # ==========================================
 # SYSTEM STATUS & AUDIT ROUTES
 # ==========================================

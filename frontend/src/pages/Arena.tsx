@@ -2,8 +2,8 @@ import { lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-const TodaysPicks    = lazy(() => import('../components/Arena/TodaysPicks'))
-const MatchDeepDive  = lazy(() => import('../components/Arena/MatchDeepDive'))
+const TodaysPicks = lazy(() => import('../components/Arena/TodaysPicks'))
+const DeepDive = lazy(() => import('../components/Arena/DeepDive'))
 const ModelPerformance = lazy(() => import('../components/Arena/ModelPerformance'))
 
 const ACCENT = '#06C5F8'
@@ -16,20 +16,20 @@ const TABS = [
     desc: "Model ensemble consensus for today's NBA matchups with confidence scores",
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-        <circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.3"/>
-        <path d="M5 7.5L7 9.5L10.5 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M5 7.5L7 9.5L10.5 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
   {
     id: 'deep-dive',
     path: '/arena/deep-dive',
-    label: 'Match Deep Dive',
-    desc: 'SHAP factor explainability, feature snapshots, and citation-grounded context for any game',
+    label: 'Deep Dive',
+    desc: 'Explore match predictions, player stats, and team analytics in depth',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-        <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.3"/>
-        <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -40,8 +40,8 @@ const TABS = [
     desc: 'Track accuracy, Brier score, and average confidence across all models for the season',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-        <path d="M2 11L5 7L8 9L11 4L13 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx="13" cy="6" r="1.2" fill="currentColor"/>
+        <path d="M2 11L5 7L8 9L11 4L13 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="13" cy="6" r="1.2" fill="currentColor" />
       </svg>
     ),
   },
@@ -51,7 +51,7 @@ function LoadingFallback() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--text-2)', gap: 10, fontSize: '0.85rem' }}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="10"/>
+        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="10" />
       </svg>
       Loading…
     </div>
@@ -63,7 +63,7 @@ export default function Arena() {
   const location = useLocation()
 
   const activePath = location.pathname
-  const activeTab  = TABS.find(t => activePath.startsWith(t.path))
+  const activeTab = TABS.find(t => activePath.startsWith(t.path))
 
   return (
     <div className="page-shell" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -158,7 +158,7 @@ export default function Arena() {
           >
             <Suspense fallback={<LoadingFallback />}>
               {activeTab.id === 'predictions' && <TodaysPicks />}
-              {activeTab.id === 'deep-dive'   && <MatchDeepDive />}
+              {activeTab.id === 'deep-dive' && <DeepDive />}
               {activeTab.id === 'performance' && <ModelPerformance />}
             </Suspense>
           </motion.div>
