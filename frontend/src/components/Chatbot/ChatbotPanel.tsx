@@ -90,12 +90,12 @@ export default function ChatbotPanel() {
         )}
 
         <div className="chatbot-sidebar-footer">
-          <span className="chatbot-wip-badge">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1" />
-              <path d="M5 2.5v2.5l1.5 1" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+          <span className="chatbot-live-badge">
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+              <circle cx="4" cy="4" r="3.5" fill="#10B981" opacity="0.3" />
+              <circle cx="4" cy="4" r="2" fill="#10B981" />
             </svg>
-            Backend in progress
+            Live · Gemini + Postgres
           </span>
         </div>
       </aside>

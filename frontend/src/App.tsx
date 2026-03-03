@@ -19,7 +19,7 @@ function AppShell() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
 
-  const { data: sys, loading } = useSystemStatus()
+  const { data: sys, loading, error: sysError } = useSystemStatus()
 
   useEffect(() => {
     document.body.classList.toggle('theme-light', theme === 'light')
@@ -27,10 +27,11 @@ function AppShell() {
   }, [theme])
 
   const sysStatus: 'healthy' | 'degraded' | 'error' | 'loading' =
-    loading         ? 'loading'  :
+    loading                    ? 'loading'  :
+    sysError && !sys           ? 'error'    :
     sys?.status === 'healthy'  ? 'healthy'  :
-    sys?.status === 'error'    ? 'error'    :
-    sys?.status === 'degraded' ? 'degraded' : 'loading'
+    sys?.status === 'degraded' ? 'degraded' :
+    sys?.status === 'error'    ? 'error'    : 'error'
 
   return (
     <>

@@ -84,9 +84,107 @@ def run_pipeline_job() -> None:
         )
 
 
+def run_rag_ingestion_job() -> None:
+    """
+    Force-refresh the RAG vector store from live RSS feeds.
+
+    Unlike IntelligenceService._refresh_index_if_needed() which skips
+    re-fetching when ChromaDB already has documents, this job ALWAYS
+    fetches fresh articles and upserts them — ensuring the vector store
+    never goes stale regardless of its current size.
+
+    Schedule: 3× daily (07:00, 15:00, 23:00 UTC) so sports news, injury
+    reports, and game previews are never more than ~8 hours old.
+    """
+    from src import config
+    from src.data.db import SessionLocal
+    from src.data.intelligence_audit_store import record_intelligence_audit
+    from src.intelligence.embeddings import EmbeddingClient
+    from src.intelligence.news_agent import chunk_context_document, fetch_context_documents_with_health
+    from src.intelligence.vector_store import VectorStore
+
+    started_at = datetime.now(timezone.utc)
+    logger.info(
+        "📰 [rag-scheduler] RAG ingestion triggered at %s UTC",
+        started_at.isoformat(timespec="seconds"),
+    )
+
+    sources = config.INTELLIGENCE_SOURCES + config.INJURY_SOURCES
+    db = SessionLocal()
+    try:
+        docs, health = fetch_context_documents_with_health(
+            sources=sources,
+            timeout_seconds=config.RAG_REQUEST_TIMEOUT_SECONDS,
+            max_items_per_feed=40,
+        )
+        logger.info(
+            "📰 [rag-scheduler] Fetched %d raw documents from %d sources",
+            len(docs), len(sources),
+        )
+
+        if not docs:
+            logger.warning("📰 [rag-scheduler] No documents fetched — feeds may be unreachable.")
+            record_intelligence_audit(
+                db.get_bind(),
+                module="rag_scheduler",
+                status="degraded",
+                records_processed=0,
+                errors="No context documents fetched from RSS sources",
+                details={"sources": sources, "feed_health": health},
+            )
+            return
+
+        embedding_client = EmbeddingClient()
+        vector_store = VectorStore()
+
+        payload = []
+        for doc in docs:
+            for chunk in chunk_context_document(doc):
+                content = f"{chunk.title}. {chunk.content}".strip()
+                payload.append({
+                    "doc_id": chunk.doc_id,
+                    "source": chunk.source,
+                    "title": chunk.title,
+                    "url": chunk.url,
+                    "published_at": chunk.published_at.isoformat(),
+                    "team_tags": chunk.team_tags,
+                    "player_tags": chunk.player_tags,
+                    "content": content,
+                    "embedding": embedding_client.embed_document(content),
+                })
+
+        inserted = vector_store.upsert(payload)
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+        logger.info(
+            "✅ [rag-scheduler] Upserted %d chunks into ChromaDB in %.1fs | store total: %d",
+            inserted, elapsed, vector_store.count(),
+        )
+        record_intelligence_audit(
+            db.get_bind(),
+            module="rag_scheduler",
+            status="success",
+            records_processed=inserted,
+            details={
+                "sources": sources,
+                "store_count": vector_store.count(),
+                "feed_health": health,
+                "elapsed_seconds": round(elapsed, 2),
+            },
+        )
+    except Exception as exc:
+        logger.error("❌ [rag-scheduler] RAG ingestion failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def create_scheduler() -> BackgroundScheduler:
     """
     Build and return a configured BackgroundScheduler.
+
+    Jobs registered:
+      1. daily_nba_pipeline   — full NBA data ingestion once per day
+      2. rag_ingestion_*      — RSS feed → ChromaDB refresh 3× per day
+                                (07:00, 15:00, 23:00 UTC)
 
     The scheduler is NOT started here — call .start() after FastAPI has
     finished its own startup, or call it from the lifespan context manager.
@@ -94,6 +192,8 @@ def create_scheduler() -> BackgroundScheduler:
     from src import config
 
     scheduler = BackgroundScheduler(timezone="UTC")
+
+    # ── Job 1: Daily NBA data ingestion ─────────────────────────────────────
     scheduler.add_job(
         func=run_pipeline_job,
         trigger=CronTrigger(
@@ -107,11 +207,29 @@ def create_scheduler() -> BackgroundScheduler:
         misfire_grace_time=3600,
     )
     logger.info(
-        "🗓️  [scheduler] Configured: daily pipeline at %02d:%02d UTC | seasons: %s",
+        "🗓️  [scheduler] Configured: daily NBA pipeline at %02d:%02d UTC | seasons: %s",
         config.PIPELINE_SCHEDULE_HOUR,
         config.PIPELINE_SCHEDULE_MINUTE,
         config.PIPELINE_SEASONS,
     )
+
+    # ── Job 2: RAG ingestion — 3× daily (07:00, 15:00, 23:00 UTC) ──────────
+    # Runs every ~8 hours so injury reports and news are never stale.
+    # Force-upserts into ChromaDB regardless of current store size (fixes the
+    # one-time-only initialisation limitation in _refresh_index_if_needed).
+    for hour, label in [(7, "morning"), (15, "afternoon"), (23, "evening")]:
+        scheduler.add_job(
+            func=run_rag_ingestion_job,
+            trigger=CronTrigger(hour=hour, minute=0, timezone="UTC"),
+            id=f"rag_ingestion_{label}",
+            name=f"RAG feed refresh — {label} ({hour:02d}:00 UTC)",
+            replace_existing=True,
+            misfire_grace_time=1800,
+        )
+    logger.info(
+        "📰 [scheduler] Configured: RAG ingestion at 07:00, 15:00, 23:00 UTC (3× daily)"
+    )
+
     return scheduler
 
 

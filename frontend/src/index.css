@@ -795,6 +795,20 @@ img, svg { display: block; }
   font-weight: 600;
 }
 
+.chatbot-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #10B981;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
 /* Main chat area */
 .chatbot-main {
   flex: 1;

@@ -210,7 +210,7 @@ def chunk_context_document(
 
 def fetch_context_documents(
     sources: List[str],
-    timeout_seconds: int = 8,
+    timeout_seconds: int = 10,
     max_items_per_feed: int = 40,
 ) -> List[ContextDocument]:
     """
@@ -222,6 +222,16 @@ def fetch_context_documents(
         max_items_per_feed=max_items_per_feed,
     )
     return docs
+
+
+_FEED_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+}
 
 
 def fetch_context_documents_with_health(
@@ -237,7 +247,7 @@ def fetch_context_documents_with_health(
     for source in sources:
         started = time.monotonic()
         try:
-            response = requests.get(source, timeout=timeout_seconds)
+            response = requests.get(source, timeout=timeout_seconds, headers=_FEED_HEADERS)
             response.raise_for_status()
         except Exception as exc:
             logger.warning("Skipping source %s due to fetch error: %s", source, exc)

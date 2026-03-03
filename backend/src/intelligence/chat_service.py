@@ -84,6 +84,49 @@ _SQL_SAFE_TABLES = (
     "match_features", "bets", "predictions",
 )
 
+# Relationship hints injected into the schema prompt so the LLM writes correct JOINs
+_SCHEMA_RELATIONSHIP_NOTES = """
+KEY RELATIONSHIPS (always use these to JOIN correctly):
+  matches.home_team_id   → teams.team_id
+  matches.away_team_id   → teams.team_id
+  matches.winner_team_id → teams.team_id
+  team_game_stats.game_id → matches.game_id     (use this to filter team stats by season)
+  team_game_stats.team_id → teams.team_id
+  player_game_stats.game_id  → matches.game_id  (use this to filter player game stats by season)
+  player_game_stats.player_id → players.player_id
+  player_season_stats.player_id → players.player_id
+  player_season_stats.team_id  → teams.team_id
+  match_features.game_id → matches.game_id
+  predictions.game_id → matches.game_id
+  bets.game_id → matches.game_id
+
+IMPORTANT COLUMN NOTES:
+  - Season is stored in matches.season (e.g. '2025-26'). team_game_stats and player_game_stats do NOT have a season column — always JOIN via matches to filter by season.
+  - To get a team's win rate: JOIN teams → matches (home_team_id or away_team_id), filter by season, count wins where winner_team_id = team_id.
+  - Available seasons: '2025-26' (current), '2024-25' (previous). Default to '2025-26'.
+  - matches.is_completed = true means the game has been played.
+  - players.player_id and teams.team_id are the canonical FK columns (not 'id').
+
+PROVEN QUERY PATTERNS:
+  Team win rates this season:
+    SELECT t.full_name, t.abbreviation,
+           SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::float / NULLIF(COUNT(m.id),0) AS win_rate,
+           COUNT(m.id) AS games_played
+    FROM teams t
+    JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id
+    WHERE m.season = '2025-26' AND m.is_completed = true
+    GROUP BY t.full_name, t.abbreviation
+    ORDER BY win_rate DESC;
+
+  Top scorers this season (player_season_stats):
+    SELECT p.full_name, t.abbreviation, pss.points, pss.games_played
+    FROM player_season_stats pss
+    JOIN players p ON p.player_id = pss.player_id
+    JOIN teams t   ON t.team_id   = pss.team_id
+    WHERE pss.season = '2025-26'
+    ORDER BY pss.points DESC;
+"""
+
 _SQL_FORBIDDEN = re.compile(
     r"\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|CREATE|ALTER|RENAME|GRANT|REVOKE"
     r"|EXECUTE|EXEC|CALL|DO|COPY|VACUUM|ANALYZE|CLUSTER|REINDEX|REFRESH)\b",
@@ -201,9 +244,10 @@ class IntentRouter:
 def _fetch_schema_context(db: Session) -> str:
     """
     Fetch actual column names from information_schema for whitelisted tables.
-    Gives the LLM an accurate schema to generate valid SQL.
+    Appends FK relationship notes so the LLM generates correct JOINs.
     """
     parts: List[str] = []
+    empty_tables: List[str] = []
     for table in _SQL_SAFE_TABLES:
         try:
             rows = db.execute(
@@ -217,12 +261,21 @@ def _fetch_schema_context(db: Session) -> str:
             ).fetchall()
             if rows:
                 cols = ", ".join(f"{r[0]}" for r in rows)
-                parts.append(f"  {table}({cols})")
+                # Check if the table actually has data
+                count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+                if count == 0:
+                    empty_tables.append(table)
+                    parts.append(f"  {table}({cols})  -- EMPTY: no rows yet")
+                else:
+                    parts.append(f"  {table}({cols})")
         except Exception as exc:
             logger.warning("_fetch_schema_context: could not fetch schema for table %s — %s", table, exc)
     schema = "\n".join(parts)
+    if empty_tables:
+        logger.info("_fetch_schema_context: tables with 0 rows: %s", empty_tables)
     if schema:
         logger.debug("_fetch_schema_context: fetched schema for %d tables", len(parts))
+        schema = schema + "\n" + _SCHEMA_RELATIONSHIP_NOTES
     else:
         logger.warning(
             "_fetch_schema_context: schema is empty — DB may be unreachable or "
@@ -395,22 +448,25 @@ class ChatService:
         # ── Step 1: Generate SQL ──────────────────────────────────────────
         if self.llm.available:
             sql_prompt = (
-                f"You are a PostgreSQL expert for a sports analytics platform (currently NBA, "
-                f"may include other sports in future).\n"
-                f"Generate ONE valid SELECT query to answer the user's question.\n"
-                f"Rules:\n"
-                f"- Only use tables and columns from the schema below.\n"
+                f"You are a PostgreSQL expert for a sports analytics platform (NBA data).\n"
+                f"Generate ONE valid SELECT query to answer the user's question.\n\n"
+                f"STRICT RULES:\n"
+                f"- Use ONLY the tables and exact column names listed in the schema below.\n"
+                f"- NEVER filter team_game_stats or player_game_stats by season directly — "
+                f"they have no season column. Always JOIN via matches to filter by season.\n"
                 f"- Only SELECT — no INSERT, UPDATE, DELETE, or DDL.\n"
-                f"- Add sensible JOINs for readable output (e.g. team abbreviations).\n"
+                f"- Follow the KEY RELATIONSHIPS section for all JOINs.\n"
+                f"- Follow the PROVEN QUERY PATTERNS as templates where applicable.\n"
                 f"- Default to season '2025-26' unless the user specifies otherwise.\n"
-                f"- Include ORDER BY and LIMIT clauses for large tables.\n"
-                f"- Return ONLY the SQL, no explanation.\n\n"
-                f"Schema:\n{schema}\n\n"
-                f"{'Context:' + chr(10) + history_str + chr(10) if history_str else ''}"
+                f"- If a table is marked EMPTY, do not query it — say so instead.\n"
+                f"- Include ORDER BY and LIMIT for readability.\n"
+                f"- Return ONLY the raw SQL with no markdown, no explanation.\n\n"
+                f"Schema and relationships:\n{schema}\n\n"
+                f"{'Conversation context:' + chr(10) + history_str + chr(10) if history_str else ''}"
                 f"Question: {message}\n"
                 f"SQL:"
             )
-            raw_sql = self.llm.generate(sql_prompt, max_tokens=300)
+            raw_sql = self.llm.generate(sql_prompt, max_tokens=400)
         else:
             raw_sql = None
 
@@ -450,11 +506,17 @@ class ChatService:
             )
 
         if not rows:
-            logger.info("ChatService._db_reply: 0 rows returned — no matching data.")
+            logger.info("ChatService._db_reply: 0 rows returned. SQL was:\n%s", sql)
+            # Check if the query touched an empty table (predictions/bets)
+            empty_hint = ""
+            if "predictions" in sql.lower():
+                empty_hint = " The predictions table is currently empty — no model predictions have been stored yet."
+            elif "bets" in sql.lower():
+                empty_hint = " The bets table has very limited data so far."
             return (
-                "I ran the query but found no matching data for that question. "
-                "The tables may not have data for the requested season yet — "
-                "try asking about the 2025-26 or 2024-25 season specifically."
+                f"I ran the query but found no results for that question.{empty_hint} "
+                "Try rephrasing — for example: \"Which team has the best win rate this season?\" "
+                "or \"Who are the top 5 scorers in 2025-26?\""
             )
 
         # ── Step 3: Narrate ───────────────────────────────────────────────
