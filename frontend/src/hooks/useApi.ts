@@ -381,7 +381,9 @@ export function useModelPerformance(season = '2025-26') {
 
 import type {
   PlayersListResponse,
+  PlayerGameLogEntry,
   PlayerGameLogResponse,
+  TeamGameLogEntry,
   TeamGameLogResponse,
 } from '../types'
 
@@ -414,7 +416,7 @@ export interface PlayerGameStatsFilters {
 
 export function usePlayerGameStats(
   playerId: number | null,
-  season = '2025-26',
+  seasons: string[] = ['2025-26'],
   filters: PlayerGameStatsFilters = {},
 ) {
   const [data, setData] = useState<PlayerGameLogResponse | null>(null)
@@ -427,50 +429,103 @@ export function usePlayerGameStats(
 
   useEffect(() => {
     if (!playerId) { setData(null); return }
+    if (!seasons.length) { setData(null); return }
     const ctrl = new AbortController()
     setLoading(true)
     setError(null)
-    let url = `/players/${playerId}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`
-    if (opponent) url += `&opponent=${encodeURIComponent(opponent)}`
-    if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
-    if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
-
-    fetchJSON<PlayerGameLogResponse>(
-      url,
-      ctrl.signal,
+    Promise.all(
+      seasons.map(async (seasonValue) => {
+        let url = `/players/${playerId}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`
+        if (opponent) url += `&opponent=${encodeURIComponent(opponent)}`
+        if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
+        if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
+        return fetchJSON<PlayerGameLogResponse>(url, ctrl.signal)
+      }),
     )
-      .then(setData)
+      .then((responses) => {
+        if (!responses.length) {
+          setData(null)
+          return
+        }
+
+        const games = responses
+          .flatMap(r => r.games)
+          .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
+
+        const averages = (() => {
+          if (!games.length) return {}
+          const keys: Array<keyof PlayerGameLogEntry> = ['points', 'rebounds', 'assists', 'steals', 'blocks', 'turnovers']
+          const round1 = (value: number) => Math.round(value * 10) / 10
+          const acc: Record<string, number> = { games_played: games.length }
+          for (const key of keys) {
+            const sum = games.reduce((total, g) => total + Number(g[key] ?? 0), 0)
+            acc[String(key)] = round1(sum / games.length)
+          }
+          return acc
+        })()
+
+        setData({
+          player: responses[0].player,
+          season: seasons.length === 1 ? seasons[0] : seasons.join(','),
+          averages,
+          games,
+        })
+      })
       .catch(err => {
         if ((err as Error).name !== 'AbortError') setError('Failed to load player stats')
       })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [playerId, season, limit, opponent, dateFrom, dateTo])
+  }, [playerId, seasons, limit, opponent, dateFrom, dateTo])
 
   return { data, loading, error }
 }
 
-export function useTeamGameStats(abbreviation: string | null, season = '2025-26', limit = 50) {
+export function useTeamGameStats(abbreviation: string | null, seasons: string[] = ['2025-26'], limit = 50) {
   const [data, setData] = useState<TeamGameLogResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!abbreviation) { setData(null); return }
+    if (!seasons.length) { setData(null); return }
     const ctrl = new AbortController()
     setLoading(true)
     setError(null)
-    fetchJSON<TeamGameLogResponse>(
-      `/teams/${encodeURIComponent(abbreviation)}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`,
-      ctrl.signal,
+    Promise.all(
+      seasons.map((seasonValue) =>
+        fetchJSON<TeamGameLogResponse>(
+          `/teams/${encodeURIComponent(abbreviation)}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`,
+          ctrl.signal,
+        ),
+      ),
     )
-      .then(setData)
+      .then((responses) => {
+        if (!responses.length) {
+          setData(null)
+          return
+        }
+
+        const games = responses
+          .flatMap(r => r.games)
+          .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
+
+        const wins = games.filter(g => g.result === 'W').length
+        const losses = games.filter(g => g.result === 'L').length
+
+        setData({
+          team: responses[0].team,
+          season: seasons.length === 1 ? seasons[0] : seasons.join(','),
+          record: { wins, losses, games: games.length },
+          games: games as TeamGameLogEntry[],
+        })
+      })
       .catch(err => {
         if ((err as Error).name !== 'AbortError') setError('Failed to load team stats')
       })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [abbreviation, season, limit])
+  }, [abbreviation, seasons, limit])
 
   return { data, loading, error }
 }

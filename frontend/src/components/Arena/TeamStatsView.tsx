@@ -43,7 +43,7 @@ function TeamRow({ team, isSelected, onClick }: {
                 {team.abbreviation}
             </span>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', margin: '2px 0 0', fontFamily: 'var(--font-mono)' }}>
-                {team.city} {team.full_name}
+                {team.full_name}
             </p>
         </button>
     )
@@ -67,14 +67,14 @@ function RecordCard({ label, value, sub }: { label: string; value: string | numb
 }
 
 export default function TeamStatsView() {
-    const [season, setSeason] = useState('2025-26')
+    const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [selectedAbbr, setSelectedAbbr] = useState<string | null>(null)
     const [opponent, setOpponent] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
 
     const { data: teamsData, loading: teamsLoading } = useTeamsList()
-    const { data: statsData, loading: statsLoading, error: statsError } = useTeamGameStats(selectedAbbr, season, 200)
+    const { data: statsData, loading: statsLoading, error: statsError } = useTeamGameStats(selectedAbbr, selectedSeasons, 200)
 
     const teams = teamsData?.teams ?? []
     const opponentOptions = useMemo(
@@ -106,6 +106,24 @@ export default function TeamStatsView() {
         const losses = source.filter(g => g.result === 'L').length
         return { wins, losses, games: source.length }
     }, [hasActiveFilters, filteredGames, allGames])
+    const allSeasonsSelected = selectedSeasons.length === SEASONS.length
+    const seasonLabel = allSeasonsSelected ? 'All seasons' : selectedSeasons.join(', ')
+    const hasSeasonScopeFilter = !(selectedSeasons.length === 1 && selectedSeasons[0] === '2025-26')
+
+    function toggleSeason(season: string) {
+        setSelectedSeasons(prev => {
+            if (prev.includes(season)) {
+                if (prev.length === 1) return prev
+                return prev.filter(s => s !== season)
+            }
+            const next = [...prev, season]
+            return SEASONS.filter(s => next.includes(s))
+        })
+    }
+
+    function toggleAllSeasons() {
+        setSelectedSeasons(prev => (prev.length === SEASONS.length ? ['2025-26'] : [...SEASONS]))
+    }
 
     return (
         <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -115,21 +133,9 @@ export default function TeamStatsView() {
                 display: 'flex', flexDirection: 'column', overflow: 'hidden',
             }}>
                 <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--border)' }}>
-                    <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-2)', marginBottom: 8 }}>Season</p>
-                    <select
-                        className="scribble-select"
-                        value={season}
-                        onChange={e => {
-                            setSeason(e.target.value)
-                            setSelectedAbbr(null)
-                            setOpponent('')
-                            setDateFrom('')
-                            setDateTo('')
-                        }}
-                        style={{ width: '100%' }}
-                    >
-                        {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                        Select a team to view game logs.
+                    </p>
                 </div>
 
                 <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid var(--border)' }}>
@@ -197,10 +203,10 @@ export default function TeamStatsView() {
                         {/* Team header */}
                         <div style={{ marginBottom: 24 }}>
                             <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', marginBottom: 4 }}>
-                                {statsData.team.city} {statsData.team.full_name}
+                                {statsData.team.full_name}
                             </p>
                             <p style={{ fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>
-                                {statsData.team.abbreviation} · {statsData.season}
+                                {statsData.team.abbreviation} · {seasonLabel}
                             </p>
                         </div>
 
@@ -211,6 +217,39 @@ export default function TeamStatsView() {
                             background: 'var(--bg-panel)', border: '1px solid var(--border)',
                             borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 20,
                         }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>Seasons</span>
+                                <button
+                                    onClick={toggleAllSeasons}
+                                    style={{
+                                        padding: '5px 10px', borderRadius: 16, cursor: 'pointer',
+                                        border: `1px solid ${allSeasonsSelected ? ACCENT : 'var(--border)'}`,
+                                        background: allSeasonsSelected ? `${ACCENT}20` : 'var(--bg-base)',
+                                        color: allSeasonsSelected ? ACCENT : 'var(--text-2)',
+                                        fontSize: '0.72rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
+                                    }}
+                                >
+                                    All seasons
+                                </button>
+                                {SEASONS.map(s => {
+                                    const active = selectedSeasons.includes(s)
+                                    return (
+                                        <button
+                                            key={s}
+                                            onClick={() => toggleSeason(s)}
+                                            style={{
+                                                padding: '5px 10px', borderRadius: 16, cursor: 'pointer',
+                                                border: `1px solid ${active ? ACCENT : 'var(--border)'}`,
+                                                background: active ? `${ACCENT}20` : 'var(--bg-base)',
+                                                color: active ? ACCENT : 'var(--text-2)',
+                                                fontSize: '0.72rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
+                                            }}
+                                        >
+                                            {s}
+                                        </button>
+                                    )
+                                })}
+                            </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>Opponent</span>
                                 <select
@@ -283,7 +322,7 @@ export default function TeamStatsView() {
 
                         {/* Record cards */}
                         <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>
-                            {hasActiveFilters ? 'Filtered Record' : 'Season Record'}
+                            {(hasActiveFilters || hasSeasonScopeFilter) ? 'Filtered Record' : 'Season Record'}
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10, marginBottom: 28 }}>
                             <RecordCard label="Record" value={`${displayedRecord.wins}-${displayedRecord.losses}`} />
@@ -352,8 +391,8 @@ export default function TeamStatsView() {
                             <div style={{ padding: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginTop: 12 }}>
                                 <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
                                     {hasActiveFilters
-                                        ? `No games found for the selected filters in ${season}.`
-                                        : `No games found for this team in ${season}.`}
+                                        ? `No games found for the selected filters in ${seasonLabel}.`
+                                        : `No games found for this team in ${seasonLabel}.`}
                                 </p>
                             </div>
                         )}
