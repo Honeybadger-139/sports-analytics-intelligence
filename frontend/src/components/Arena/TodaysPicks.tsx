@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useDashboard } from '../../hooks/useDashboard'
 import { useTodaysPredictions } from '../../hooks/useApi'
 import type { TodayGamePrediction, ModelPrediction } from '../../types'
 
@@ -37,7 +39,17 @@ function ProbBar({ homeProb, color = ACCENT }: { homeProb: number; color?: strin
   )
 }
 
-function GameCard({ game, index }: { game: TodayGamePrediction; index: number }) {
+function GameCard({
+  game,
+  index,
+  onSave,
+  justSaved,
+}: {
+  game: TodayGamePrediction
+  index: number
+  onSave: (game: TodayGamePrediction) => void
+  justSaved: boolean
+}) {
   const preds = game.predictions ?? {}
   const models = MODEL_ORDER.filter(m => m in preds)
 
@@ -78,6 +90,26 @@ function GameCard({ game, index }: { game: TodayGamePrediction; index: number })
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onSave(game)
+            }}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 20,
+              border: `1px solid ${justSaved ? 'var(--success)' : 'var(--border)'}`,
+              background: justSaved ? 'rgba(0,214,143,0.10)' : 'var(--bg-elevated)',
+              color: justSaved ? 'var(--success)' : 'var(--text-2)',
+              fontSize: '0.68rem',
+              fontWeight: 700,
+              fontFamily: 'var(--font-mono)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {justSaved ? 'Saved' : 'Save to Dashboard'}
+          </button>
           {bestPick && (
             <span style={{
               padding: '3px 10px', borderRadius: 20,
@@ -140,9 +172,38 @@ function GameCard({ game, index }: { game: TodayGamePrediction; index: number })
 
 export default function TodaysPicks() {
   const { data, loading, error, refresh } = useTodaysPredictions()
+  const { addItem } = useDashboard()
+  const [savedGameId, setSavedGameId] = useState<string | null>(null)
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const games  = data?.games ?? []
+
+  function saveGame(game: TodayGamePrediction) {
+    const ensemble = game.predictions?.ensemble ?? Object.values(game.predictions ?? {})[0]
+    const homeProb = ensemble?.home_win_prob
+    const awayProb = ensemble?.away_win_prob
+    const confidence = ensemble?.confidence
+    const hasHomeEdge = (homeProb ?? 0) >= (awayProb ?? 0)
+    const pickTeam = hasHomeEdge ? game.home_team : game.away_team
+    const pickProb = hasHomeEdge ? homeProb : awayProb
+
+    addItem({
+      source: 'arena/todays-picks',
+      route: '/arena/predictions',
+      title: `${game.home_team} vs ${game.away_team}`,
+      note: `Saved from Today's Picks for quick recall.`,
+      tags: [game.home_team, game.away_team, 'today'],
+      stats: [
+        { label: 'Pick', value: pickTeam },
+        { label: 'Win Prob', value: pickProb != null ? `${(pickProb * 100).toFixed(1)}%` : '—' },
+        { label: 'Confidence', value: confidence != null ? `${(confidence * 100).toFixed(1)}%` : '—' },
+      ],
+    })
+    setSavedGameId(game.game_id)
+    window.setTimeout(() => {
+      setSavedGameId(prev => (prev === game.game_id ? null : prev))
+    }, 1400)
+  }
 
   return (
     <div style={{ padding: '28px 28px', maxWidth: 'var(--content-w)', margin: '0 auto' }}>
@@ -216,7 +277,15 @@ export default function TodaysPicks() {
       {/* Game cards */}
       {!loading && games.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-          {games.map((g, i) => <GameCard key={g.game_id} game={g} index={i} />)}
+          {games.map((g, i) => (
+            <GameCard
+              key={g.game_id}
+              game={g}
+              index={i}
+              onSave={saveGame}
+              justSaved={savedGameId === g.game_id}
+            />
+          ))}
         </div>
       )}
     </div>

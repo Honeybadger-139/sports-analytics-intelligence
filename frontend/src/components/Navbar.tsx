@@ -42,6 +42,14 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    id: 'dashboard',
+    label: 'Dashboard',
+    path: '/dashboard',
+    description: 'Saved Arena snapshots and chart views',
+    color: '#F97316',
+    subItems: [],
+  },
+  {
     id: 'scribble',
     label: 'Scribble',
     path: '/scribble',

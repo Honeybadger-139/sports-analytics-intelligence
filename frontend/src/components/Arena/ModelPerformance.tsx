@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useDashboard } from '../../hooks/useDashboard'
 import { useModelPerformance } from '../../hooks/useApi'
 import type { ModelPerformanceItem } from '../../types'
 
@@ -72,11 +73,30 @@ function SummaryCard({ label, value, sub, color = 'var(--text-1)' }: { label: st
 
 export default function ModelPerformance() {
   const [season, setSeason] = useState('2025-26')
+  const [justSaved, setJustSaved] = useState(false)
+  const { addItem } = useDashboard()
   const { data, loading, error, refresh } = useModelPerformance(season)
 
   const perf: ModelPerformanceItem[] = data?.performance ?? []
   const ensemble = perf.find(m => m.model_name === 'ensemble')
   const bestAccuracy = perf.length ? Math.max(...perf.map(m => m.accuracy ?? 0)) : null
+
+  function saveSnapshot() {
+    addItem({
+      source: 'arena/model-performance',
+      route: '/arena/performance',
+      title: `Model Performance · ${season}`,
+      note: 'Season-level model comparison snapshot from Arena.',
+      tags: [season, 'models'],
+      stats: [
+        { label: 'Evaluated Models', value: String(data?.evaluated_models ?? 0) },
+        { label: 'Best Accuracy', value: bestAccuracy != null ? `${(bestAccuracy * 100).toFixed(1)}%` : '—' },
+        { label: 'Ensemble Brier', value: ensemble?.brier_score != null ? ensemble.brier_score.toFixed(4) : '—' },
+      ],
+    })
+    setJustSaved(true)
+    window.setTimeout(() => setJustSaved(false), 1400)
+  }
 
   return (
     <div style={{ padding: '28px 28px', maxWidth: 'var(--content-w)', margin: '0 auto' }}>
@@ -101,6 +121,20 @@ export default function ModelPerformance() {
             <path d="M10 2v2.5H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           Refresh
+        </button>
+        <button
+          onClick={saveSnapshot}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '7px 14px',
+            background: justSaved ? 'rgba(0,214,143,0.10)' : `${ACCENT}12`,
+            border: `1px solid ${justSaved ? 'var(--success)' : ACCENT}`,
+            borderRadius: 'var(--r-sm)',
+            color: justSaved ? 'var(--success)' : ACCENT,
+            fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          {justSaved ? 'Saved' : 'Save to Dashboard'}
         </button>
       </div>
 

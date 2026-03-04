@@ -164,6 +164,7 @@ function DirectoryCard({ item, onNavigate, liveIds = [] }: DirectoryCardProps) {
     pulse:   'Daily game intelligence, sports news, injury reports, and pre-game context grounded in cited sources.',
     arena:   'Run model predictions for today\'s games, deep-dive into SHAP explainability, and track ensemble model performance across the season.',
     lab:     'Browse raw Postgres tables, monitor data quality metrics, inspect ingestion pipeline runs, and track MLOps health.',
+    dashboard: 'Review and manage saved Arena dashboards and chart snapshots from prediction, player, and team analysis views.',
     scribble:'Compose new analytics metrics and features from raw data. Build, test and save custom notebooks — no code required.',
     chatbot: 'Ask plain-English questions about any game, team, player, or model outcome and get AI-summarised answers from your live data.',
   }

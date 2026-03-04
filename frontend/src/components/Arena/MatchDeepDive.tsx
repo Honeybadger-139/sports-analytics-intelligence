@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useDashboard } from '../../hooks/useDashboard'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
 import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
 
@@ -77,6 +78,8 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
 export default function MatchDeepDive() {
   const [season, setSeason] = useState('2025-26')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [justSaved, setJustSaved] = useState(false)
+  const { addItem } = useDashboard()
 
   // Filters
   const [teamSearch, setTeamSearch] = useState('')
@@ -96,6 +99,7 @@ export default function MatchDeepDive() {
   const { data: pred, loading: predLoading, error: predError } = useGamePrediction(selectedId)
 
   const matches = matchData?.matches ?? []
+  const selectedMatch = matches.find(m => m.game_id === selectedId) ?? null
 
   // SHAP factors: flatten per model
   const shapModels = pred ? Object.keys(pred.explanation ?? {}) : []
@@ -107,6 +111,32 @@ export default function MatchDeepDive() {
     : 1
 
   const predModels = pred ? Object.keys(pred.predictions ?? {}) : []
+
+  function saveCurrentView() {
+    if (!pred) return
+
+    const ensemble = pred.predictions?.ensemble ?? Object.values(pred.predictions ?? {})[0]
+    const homeProb = ensemble?.home_win_prob
+    const awayProb = ensemble?.away_win_prob
+    const winnerTeam = (homeProb ?? 0) >= (awayProb ?? 0) ? pred.home_team : pred.away_team
+    const winnerProb = (homeProb ?? 0) >= (awayProb ?? 0) ? homeProb : awayProb
+
+    addItem({
+      source: 'arena/match-deep-dive',
+      route: '/arena/deep-dive',
+      title: `${pred.home_team} vs ${pred.away_team}`,
+      note: `Saved from Match Deep Dive (${season})${teamSearch ? ` · team search: ${teamSearch}` : ''}.`,
+      tags: [pred.home_team, pred.away_team, season],
+      stats: [
+        { label: 'Season', value: season },
+        { label: 'Predicted Winner', value: winnerTeam },
+        { label: 'Win Prob', value: winnerProb != null ? `${(winnerProb * 100).toFixed(1)}%` : '—' },
+        { label: 'Date', value: selectedMatch ? fmtDate(selectedMatch.game_date) : '—' },
+      ],
+    })
+    setJustSaved(true)
+    window.setTimeout(() => setJustSaved(false), 1400)
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -253,14 +283,32 @@ export default function MatchDeepDive() {
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
             {/* Matchup header */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
-                  {pred.home_team}
-                </span>
-                <span style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>vs</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
-                  {pred.away_team}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+                    {pred.home_team}
+                  </span>
+                  <span style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>vs</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+                    {pred.away_team}
+                  </span>
+                </div>
+                <button
+                  onClick={saveCurrentView}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 'var(--r-sm)',
+                    border: `1px solid ${justSaved ? 'var(--success)' : ACCENT}`,
+                    background: justSaved ? 'rgba(0,214,143,0.10)' : `${ACCENT}12`,
+                    color: justSaved ? 'var(--success)' : ACCENT,
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {justSaved ? 'Saved' : 'Save to Dashboard'}
+                </button>
               </div>
               <p style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>{pred.game_id}</p>
             </div>

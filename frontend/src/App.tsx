@@ -6,6 +6,7 @@ import Overview from './pages/Overview'
 import Pulse    from './pages/Pulse'
 import Arena    from './pages/Arena'
 import Lab      from './pages/Lab'
+import Dashboard from './pages/Dashboard'
 import Scribble from './pages/Scribble'
 import Chatbot  from './pages/Chatbot'
 import { useSystemStatus } from './hooks/useApi'
@@ -46,6 +47,7 @@ function AppShell() {
           <Route path="/pulse/*"  element={<Pulse />} />
           <Route path="/arena/*"  element={<Arena />} />
           <Route path="/lab/*"    element={<Lab />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/scribble" element={<Scribble />} />
           <Route path="/chatbot"  element={<Chatbot />} />
           <Route path="*"         element={<Navigate to="/" replace />} />

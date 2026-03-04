@@ -69,6 +69,32 @@ export interface ChatResponse {
   reply: string
 }
 
+// ── Dashboard ────────────────────────────────────────────────────────────────
+
+export type DashboardSource =
+  | 'arena/todays-picks'
+  | 'arena/match-deep-dive'
+  | 'arena/model-performance'
+  | 'arena/player-stats'
+  | 'arena/team-stats'
+
+export interface DashboardStat {
+  label: string
+  value: string
+  color?: string
+}
+
+export interface DashboardItem {
+  id: string
+  title: string
+  source: DashboardSource
+  route: string
+  savedAt: string
+  note?: string
+  tags?: string[]
+  stats?: DashboardStat[]
+}
+
 // ── Scribble ─────────────────────────────────────────────────────────────────
 
 export interface RawTableMeta {

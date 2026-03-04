@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useDashboard } from '../../hooks/useDashboard'
 import { usePlayers, usePlayerGameStats, useTeamsList } from '../../hooks/useApi'
 import type { PlayerListItem, PlayerGameLogEntry } from '../../types'
 
@@ -70,6 +71,8 @@ export default function PlayerStatsView() {
     const [opponent, setOpponent] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
+    const [justSaved, setJustSaved] = useState(false)
+    const { addItem } = useDashboard()
 
     const { data: playerData, loading: searchLoading } = usePlayers(search)
     const { data: teamsData } = useTeamsList()
@@ -137,6 +140,25 @@ export default function PlayerStatsView() {
 
     function toggleAllSeasons() {
         setSelectedSeasons(prev => (prev.length === SEASONS.length ? ['2025-26'] : [...SEASONS]))
+    }
+
+    function saveCurrentView() {
+        if (!statsData) return
+        addItem({
+            source: 'arena/player-stats',
+            route: '/arena/deep-dive',
+            title: `${statsData.player.full_name} · Player Stats`,
+            note: `Saved player game-log view${hasActiveFilters ? ' with active opponent/date filters' : ''}.`,
+            tags: [statsData.player.team_abbreviation ?? '', ...selectedSeasons].filter(Boolean),
+            stats: [
+                { label: 'Seasons', value: seasonLabel },
+                { label: 'Games', value: String(filteredGames.length) },
+                { label: 'Opponent', value: opponent || 'All teams' },
+                { label: 'Date Range', value: normalizedDateFrom || normalizedDateTo ? `${normalizedDateFrom || '—'} → ${normalizedDateTo || '—'}` : 'All dates' },
+            ],
+        })
+        setJustSaved(true)
+        window.setTimeout(() => setJustSaved(false), 1400)
     }
 
     return (
@@ -227,9 +249,27 @@ export default function PlayerStatsView() {
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                         {/* Player header */}
                         <div style={{ marginBottom: 24 }}>
-                            <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', marginBottom: 4 }}>
-                                {statsData.player.full_name}
-                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', marginBottom: 4 }}>
+                                    {statsData.player.full_name}
+                                </p>
+                                <button
+                                    onClick={saveCurrentView}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: 'var(--r-sm)',
+                                        border: `1px solid ${justSaved ? 'var(--success)' : ACCENT}`,
+                                        background: justSaved ? 'rgba(0,214,143,0.10)' : `${ACCENT}12`,
+                                        color: justSaved ? 'var(--success)' : ACCENT,
+                                        fontSize: '0.74rem',
+                                        fontWeight: 700,
+                                        fontFamily: 'var(--font-mono)',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {justSaved ? 'Saved' : 'Save to Dashboard'}
+                                </button>
+                            </div>
                             <p style={{ fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>
                                 {statsData.player.team_abbreviation} · {seasonLabel}
                             </p>
