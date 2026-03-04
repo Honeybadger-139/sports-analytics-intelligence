@@ -37,7 +37,7 @@ function DashboardCard({
   onOpen: (route: string) => void
   onRemove: (id: string) => void
 }) {
-  const meta = SOURCE_META[item.source]
+  const meta = SOURCE_META[item.source] ?? { label: 'Unknown', color: '#64748B', section: 'Arena' }
 
   return (
     <motion.div

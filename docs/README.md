@@ -37,6 +37,7 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-01-phase-6b-db-integration-tests.md`
 - `changelogs/2026-03-01-phase-6c-runtime-parity.md`
 - `changelogs/2026-03-01-dashboard-smoke-verification.md`
+- `changelogs/2026-03-04-data-rag-dashboard-restart.md`
 
 ## Recommended Start Order
 

@@ -1,8 +1,15 @@
 import { useCallback, useState } from 'react'
-import type { DashboardItem } from '../types'
+import type { DashboardItem, DashboardSource } from '../types'
 
 const DASHBOARD_STORAGE_KEY = 'sai_dashboard_items_v1'
 const MAX_DASHBOARD_ITEMS = 100
+const DASHBOARD_SOURCES = new Set<DashboardSource>([
+  'arena/todays-picks',
+  'arena/match-deep-dive',
+  'arena/model-performance',
+  'arena/player-stats',
+  'arena/team-stats',
+])
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -21,7 +28,14 @@ function readStoredItems(): DashboardItem[] {
     if (!Array.isArray(parsed)) return []
 
     return parsed.filter((item): item is DashboardItem => {
-      return Boolean(item && item.id && item.title && item.source && item.route && item.savedAt)
+      return Boolean(
+        item &&
+        item.id &&
+        item.title &&
+        item.route &&
+        item.savedAt &&
+        DASHBOARD_SOURCES.has(item.source as DashboardSource),
+      )
     })
   } catch {
     return []
