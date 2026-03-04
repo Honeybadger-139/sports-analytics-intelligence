@@ -1,8 +1,7 @@
-import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useDashboard } from '../../hooks/useDashboard'
 import { useTodaysPredictions } from '../../hooks/useApi'
-import type { TodayGamePrediction, ModelPrediction } from '../../types'
+import type { DashboardCreateRouteState, ModelPrediction, TodayGamePrediction } from '../../types'
 
 const ACCENT = '#06C5F8'
 
@@ -43,12 +42,10 @@ function GameCard({
   game,
   index,
   onSave,
-  justSaved,
 }: {
   game: TodayGamePrediction
   index: number
   onSave: (game: TodayGamePrediction) => void
-  justSaved: boolean
 }) {
   const preds = game.predictions ?? {}
   const models = MODEL_ORDER.filter(m => m in preds)
@@ -98,9 +95,9 @@ function GameCard({
             style={{
               padding: '3px 9px',
               borderRadius: 20,
-              border: `1px solid ${justSaved ? 'var(--success)' : 'var(--border)'}`,
-              background: justSaved ? 'rgba(0,214,143,0.10)' : 'var(--bg-elevated)',
-              color: justSaved ? 'var(--success)' : 'var(--text-2)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-2)',
               fontSize: '0.68rem',
               fontWeight: 700,
               fontFamily: 'var(--font-mono)',
@@ -108,7 +105,7 @@ function GameCard({
               whiteSpace: 'nowrap',
             }}
           >
-            {justSaved ? 'Saved' : 'Save to Dashboard'}
+            Create Dashboard
           </button>
           {bestPick && (
             <span style={{
@@ -171,9 +168,8 @@ function GameCard({
 }
 
 export default function TodaysPicks() {
+  const navigate = useNavigate()
   const { data, loading, error, refresh } = useTodaysPredictions()
-  const { addItem } = useDashboard()
-  const [savedGameId, setSavedGameId] = useState<string | null>(null)
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const games  = data?.games ?? []
@@ -187,22 +183,29 @@ export default function TodaysPicks() {
     const pickTeam = hasHomeEdge ? game.home_team : game.away_team
     const pickProb = hasHomeEdge ? homeProb : awayProb
 
-    addItem({
-      source: 'arena/todays-picks',
-      route: '/arena/predictions',
-      title: `${game.home_team} vs ${game.away_team}`,
-      note: `Saved from Today's Picks for quick recall.`,
-      tags: [game.home_team, game.away_team, 'today'],
-      stats: [
-        { label: 'Pick', value: pickTeam },
-        { label: 'Win Prob', value: pickProb != null ? `${(pickProb * 100).toFixed(1)}%` : '—' },
-        { label: 'Confidence', value: confidence != null ? `${(confidence * 100).toFixed(1)}%` : '—' },
-      ],
-    })
-    setSavedGameId(game.game_id)
-    window.setTimeout(() => {
-      setSavedGameId(prev => (prev === game.game_id ? null : prev))
-    }, 1400)
+    const state: DashboardCreateRouteState = {
+      template: {
+        source: 'arena/todays-picks',
+        route: '/arena/predictions',
+        title: `${game.home_team} vs ${game.away_team}`,
+        note: "Created from Today's Picks for quick recall.",
+        tags: [game.home_team, game.away_team, 'today'],
+        stats: [
+          { label: 'Pick', value: pickTeam },
+          { label: 'Win Prob', value: pickProb != null ? `${(pickProb * 100).toFixed(1)}%` : '—' },
+          { label: 'Confidence', value: confidence != null ? `${(confidence * 100).toFixed(1)}%` : '—' },
+        ],
+        builderDefaults: {
+          season: '2025-26',
+          tableName: 'matches',
+          chartType: 'bar',
+          dimensionField: 'home_team',
+          metrics: [{ field: 'game_id', aggregate: 'count' }],
+          filters: [],
+        },
+      },
+    }
+    navigate('/dashboard/create', { state })
   }
 
   return (
@@ -283,7 +286,6 @@ export default function TodaysPicks() {
               game={g}
               index={i}
               onSave={saveGame}
-              justSaved={savedGameId === g.game_id}
             />
           ))}
         </div>

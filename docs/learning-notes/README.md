@@ -47,9 +47,11 @@ Recently completed and documented:
 14. Phase 6A batch 1: GitHub Actions regression gate for ingestion/routes/config contracts.
 15. Phase 6B batch 2: DB-backed integration tests for ingestion integrity invariants.
 16. Phase 6C batch 3: runtime parity hardening (SSL warning removal + Python 3.11 baseline guidance).
-17. Phase 7A UI redesign: React + Vite + TypeScript `frontend` scaffold on `ui-redesign` branch — Nike-style navbar, animated SportsMark SVG logo, Overview home with live metric cards + navigation directory, stub pages for all sections. See `frontend/README.md` and `frontend/ui-redesign.md`.
-18. Phase 7B Chatbot: AI chatbot full-stack implementation — `useChatbot` hook + `ChatbotPanel` + `ChatMessage` components (UI), `chat_service.py` hybrid RAG+DB engine + `chat_routes.py` backend (API). See `frontend/chatbot-ui.md` and `intelligence-layer/README.md`.
-19. Phase 7C Scribble: Raw data playground — `scribble_routes.py` read-only SQL API (backend), `TableBrowser` + `SqlLab` + `NotebooksPanel` + `DataTable` components, `useScribble` hooks, localStorage notebooks (frontend). See `frontend/scribble-playground.md`.
+17. Dashboard UX batch: "Create Dashboard" labels + drag/drop chart builder with multi-aggregate and multi-filter controls.
+18. Dashboard UX hardening: route split (`/dashboard` list + `/dashboard/create` builder), Arena source-context handoff into create page, and custom-dashboard storage metadata.
+19. Phase 7A UI redesign: React + Vite + TypeScript `frontend` scaffold on `ui-redesign` branch — Nike-style navbar, animated SportsMark SVG logo, Overview home with live metric cards + navigation directory, stub pages for all sections. See `frontend/README.md` and `frontend/ui-redesign.md`.
+20. Phase 7B Chatbot: AI chatbot full-stack implementation — `useChatbot` hook + `ChatbotPanel` + `ChatMessage` components (UI), `chat_service.py` hybrid RAG+DB engine + `chat_routes.py` backend (API). See `frontend/chatbot-ui.md` and `intelligence-layer/README.md`.
+21. Phase 7C Scribble: Raw data playground — `scribble_routes.py` read-only SQL API (backend), `TableBrowser` + `SqlLab` + `NotebooksPanel` + `DataTable` components, `useScribble` hooks, localStorage notebooks (frontend). See `frontend/scribble-playground.md`.
 
 ## Suggested Progression
 

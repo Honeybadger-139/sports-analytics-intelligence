@@ -9,6 +9,7 @@ const DASHBOARD_SOURCES = new Set<DashboardSource>([
   'arena/model-performance',
   'arena/player-stats',
   'arena/team-stats',
+  'dashboard/custom',
 ])
 
 function generateId(): string {

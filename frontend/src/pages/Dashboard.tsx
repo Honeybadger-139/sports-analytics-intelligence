@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
-import type { DashboardItem, DashboardSource } from '../types'
+import type { DashboardCreateRouteState, DashboardItem, DashboardSource } from '../types'
 
 const ACCENT = '#F97316'
 
@@ -12,6 +12,7 @@ const SOURCE_META: Record<DashboardSource, { label: string; color: string; secti
   'arena/model-performance': { label: 'Model Performance', color: '#0EA5E9', section: 'Arena' },
   'arena/player-stats': { label: 'Player Stats', color: '#22D3EE', section: 'Arena' },
   'arena/team-stats': { label: 'Team Stats', color: '#0891B2', section: 'Arena' },
+  'dashboard/custom': { label: 'Custom Builder', color: '#F97316', section: 'Dashboard' },
 }
 
 function fmtDateTime(iso: string): string {
@@ -34,10 +35,11 @@ function DashboardCard({
   onRemove,
 }: {
   item: DashboardItem
-  onOpen: (route: string) => void
+  onOpen: (item: DashboardItem) => void
   onRemove: (id: string) => void
 }) {
   const meta = SOURCE_META[item.source] ?? { label: 'Unknown', color: '#64748B', section: 'Arena' }
+  const isCustom = item.source === 'dashboard/custom'
 
   return (
     <motion.div
@@ -104,7 +106,7 @@ function DashboardCard({
 
       <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
         <button
-          onClick={() => onOpen(item.route)}
+          onClick={() => onOpen(item)}
           style={{
             padding: '7px 12px',
             borderRadius: 'var(--r-sm)',
@@ -116,7 +118,7 @@ function DashboardCard({
             cursor: 'pointer',
           }}
         >
-          Open Source
+          {isCustom ? 'Open Builder' : 'Open Source'}
         </button>
         <button
           onClick={() => onRemove(item.id)}
@@ -161,30 +163,47 @@ export default function Dashboard() {
               Dashboard
             </p>
             <h1 style={{ fontSize: '1.42rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 8, fontFamily: 'var(--font-display)' }}>
-              Saved Arena Snapshots
+              Created Dashboards
             </h1>
             <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 720 }}>
-              Save selected Arena views here and reopen them anytime. This section is your single place to review saved prediction, model, player, and team snapshots.
+              Review all previously created dashboards first, then open the dedicated create page to build a new one from Arena context or raw tables.
             </p>
           </div>
 
-          {!!items.length && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
-              onClick={clearAll}
+              onClick={() => navigate('/dashboard/create')}
               style={{
                 padding: '7px 12px',
                 borderRadius: 'var(--r-sm)',
-                border: '1px solid rgba(255,76,106,0.35)',
-                background: 'rgba(255,76,106,0.08)',
-                color: 'var(--error)',
+                border: `1px solid ${ACCENT}`,
+                background: `${ACCENT}15`,
+                color: ACCENT,
                 fontSize: '0.76rem',
-                fontWeight: 700,
+                fontWeight: 800,
                 cursor: 'pointer',
               }}
             >
-              Clear All
+              Create Dashboard
             </button>
-          )}
+            {!!items.length && (
+              <button
+                onClick={clearAll}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 'var(--r-sm)',
+                  border: '1px solid rgba(255,76,106,0.35)',
+                  background: 'rgba(255,76,106,0.08)',
+                  color: 'var(--error)',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
@@ -241,10 +260,10 @@ export default function Dashboard() {
             }}
           >
             <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
-              {items.length === 0 ? 'No dashboards saved yet' : 'No saved items for this filter'}
+              {items.length === 0 ? 'No dashboards created yet' : 'No created items for this filter'}
             </p>
             <p style={{ fontSize: '0.84rem', color: 'var(--text-2)', marginBottom: 14 }}>
-              Open Arena pages and use the <strong>Save to Dashboard</strong> button on any view.
+              Open Arena pages and use the <strong>Create Dashboard</strong> button on any view.
             </p>
             <button
               onClick={() => navigate('/arena/deep-dive')}
@@ -261,6 +280,22 @@ export default function Dashboard() {
             >
               Open Arena
             </button>
+            <button
+              onClick={() => navigate('/dashboard/create')}
+              style={{
+                marginLeft: 8,
+                padding: '8px 14px',
+                borderRadius: 'var(--r-sm)',
+                border: `1px solid ${ACCENT}`,
+                background: `${ACCENT}12`,
+                color: ACCENT,
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Create Dashboard
+            </button>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
@@ -268,7 +303,14 @@ export default function Dashboard() {
               <DashboardCard
                 key={item.id}
                 item={item}
-                onOpen={route => navigate(route)}
+                onOpen={(selectedItem) => {
+                  if (selectedItem.source === 'dashboard/custom') {
+                    const state: DashboardCreateRouteState = { fromItem: selectedItem }
+                    navigate('/dashboard/create', { state })
+                    return
+                  }
+                  navigate(selectedItem.route)
+                }}
                 onRemove={removeItem}
               />
             ))}

@@ -77,6 +77,33 @@ export type DashboardSource =
   | 'arena/model-performance'
   | 'arena/player-stats'
   | 'arena/team-stats'
+  | 'dashboard/custom'
+
+export type DashboardChartType = 'bar' | 'line' | 'area' | 'pie'
+export type DashboardAggregateOp = 'sum' | 'avg' | 'min' | 'max' | 'count'
+export type DashboardFilterOp = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte'
+
+export interface DashboardBuilderMetric {
+  field: string
+  aggregate: DashboardAggregateOp
+}
+
+export interface DashboardBuilderFilter {
+  field: string
+  op: DashboardFilterOp
+  value: string
+}
+
+export interface DashboardBuilderConfig {
+  season: string
+  tableName: string | null
+  chartType: DashboardChartType
+  dimensionField: string
+  metrics: DashboardBuilderMetric[]
+  filters: DashboardBuilderFilter[]
+  filteredRowCount: number
+  groupedRowCount: number
+}
 
 export interface DashboardStat {
   label: string
@@ -93,6 +120,22 @@ export interface DashboardItem {
   note?: string
   tags?: string[]
   stats?: DashboardStat[]
+  builder?: DashboardBuilderConfig
+}
+
+export interface DashboardCreateTemplate {
+  source: DashboardSource
+  route: string
+  title: string
+  note?: string
+  tags?: string[]
+  stats?: DashboardStat[]
+  builderDefaults?: Partial<DashboardBuilderConfig>
+}
+
+export interface DashboardCreateRouteState {
+  template?: DashboardCreateTemplate
+  fromItem?: DashboardItem
 }
 
 // ── Scribble ─────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useDashboard } from '../../hooks/useDashboard'
 import { useModelPerformance } from '../../hooks/useApi'
-import type { ModelPerformanceItem } from '../../types'
+import type { DashboardCreateRouteState, ModelPerformanceItem } from '../../types'
 
 const ACCENT   = '#06C5F8'
 const SEASONS  = ['2025-26', '2024-25', '2023-24']
@@ -72,9 +72,8 @@ function SummaryCard({ label, value, sub, color = 'var(--text-1)' }: { label: st
 }
 
 export default function ModelPerformance() {
+  const navigate = useNavigate()
   const [season, setSeason] = useState('2025-26')
-  const [justSaved, setJustSaved] = useState(false)
-  const { addItem } = useDashboard()
   const { data, loading, error, refresh } = useModelPerformance(season)
 
   const perf: ModelPerformanceItem[] = data?.performance ?? []
@@ -82,20 +81,29 @@ export default function ModelPerformance() {
   const bestAccuracy = perf.length ? Math.max(...perf.map(m => m.accuracy ?? 0)) : null
 
   function saveSnapshot() {
-    addItem({
-      source: 'arena/model-performance',
-      route: '/arena/performance',
-      title: `Model Performance · ${season}`,
-      note: 'Season-level model comparison snapshot from Arena.',
-      tags: [season, 'models'],
-      stats: [
-        { label: 'Evaluated Models', value: String(data?.evaluated_models ?? 0) },
-        { label: 'Best Accuracy', value: bestAccuracy != null ? `${(bestAccuracy * 100).toFixed(1)}%` : '—' },
-        { label: 'Ensemble Brier', value: ensemble?.brier_score != null ? ensemble.brier_score.toFixed(4) : '—' },
-      ],
-    })
-    setJustSaved(true)
-    window.setTimeout(() => setJustSaved(false), 1400)
+    const state: DashboardCreateRouteState = {
+      template: {
+        source: 'arena/model-performance',
+        route: '/arena/performance',
+        title: `Model Performance · ${season}`,
+        note: 'Season-level model comparison snapshot from Arena.',
+        tags: [season, 'models'],
+        stats: [
+          { label: 'Evaluated Models', value: String(data?.evaluated_models ?? 0) },
+          { label: 'Best Accuracy', value: bestAccuracy != null ? `${(bestAccuracy * 100).toFixed(1)}%` : '—' },
+          { label: 'Ensemble Brier', value: ensemble?.brier_score != null ? ensemble.brier_score.toFixed(4) : '—' },
+        ],
+        builderDefaults: {
+          season,
+          tableName: 'matches',
+          chartType: 'bar',
+          dimensionField: 'home_team',
+          metrics: [{ field: 'game_id', aggregate: 'count' }],
+          filters: [],
+        },
+      },
+    }
+    navigate('/dashboard/create', { state })
   }
 
   return (
@@ -127,14 +135,14 @@ export default function ModelPerformance() {
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '7px 14px',
-            background: justSaved ? 'rgba(0,214,143,0.10)' : `${ACCENT}12`,
-            border: `1px solid ${justSaved ? 'var(--success)' : ACCENT}`,
+            background: `${ACCENT}12`,
+            border: `1px solid ${ACCENT}`,
             borderRadius: 'var(--r-sm)',
-            color: justSaved ? 'var(--success)' : ACCENT,
+            color: ACCENT,
             fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
           }}
         >
-          {justSaved ? 'Saved' : 'Save to Dashboard'}
+          Create Dashboard
         </button>
       </div>
 

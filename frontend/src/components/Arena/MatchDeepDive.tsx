@@ -1,8 +1,8 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useDashboard } from '../../hooks/useDashboard'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
-import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
+import type { DashboardCreateRouteState, MatchRow, ModelPrediction, ShapFactor } from '../../types'
 
 const ACCENT = '#06C5F8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -76,10 +76,9 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
 }
 
 export default function MatchDeepDive() {
+  const navigate = useNavigate()
   const [season, setSeason] = useState('2025-26')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [justSaved, setJustSaved] = useState(false)
-  const { addItem } = useDashboard()
 
   // Filters
   const [teamSearch, setTeamSearch] = useState('')
@@ -121,21 +120,30 @@ export default function MatchDeepDive() {
     const winnerTeam = (homeProb ?? 0) >= (awayProb ?? 0) ? pred.home_team : pred.away_team
     const winnerProb = (homeProb ?? 0) >= (awayProb ?? 0) ? homeProb : awayProb
 
-    addItem({
-      source: 'arena/match-deep-dive',
-      route: '/arena/deep-dive',
-      title: `${pred.home_team} vs ${pred.away_team}`,
-      note: `Saved from Match Deep Dive (${season})${teamSearch ? ` · team search: ${teamSearch}` : ''}.`,
-      tags: [pred.home_team, pred.away_team, season],
-      stats: [
-        { label: 'Season', value: season },
-        { label: 'Predicted Winner', value: winnerTeam },
-        { label: 'Win Prob', value: winnerProb != null ? `${(winnerProb * 100).toFixed(1)}%` : '—' },
-        { label: 'Date', value: selectedMatch ? fmtDate(selectedMatch.game_date) : '—' },
-      ],
-    })
-    setJustSaved(true)
-    window.setTimeout(() => setJustSaved(false), 1400)
+    const state: DashboardCreateRouteState = {
+      template: {
+        source: 'arena/match-deep-dive',
+        route: '/arena/deep-dive',
+        title: `${pred.home_team} vs ${pred.away_team}`,
+        note: `Created from Match Deep Dive (${season})${teamSearch ? ` · team search: ${teamSearch}` : ''}.`,
+        tags: [pred.home_team, pred.away_team, season],
+        stats: [
+          { label: 'Season', value: season },
+          { label: 'Predicted Winner', value: winnerTeam },
+          { label: 'Win Prob', value: winnerProb != null ? `${(winnerProb * 100).toFixed(1)}%` : '—' },
+          { label: 'Date', value: selectedMatch ? fmtDate(selectedMatch.game_date) : '—' },
+        ],
+        builderDefaults: {
+          season,
+          tableName: 'team_game_stats',
+          chartType: 'line',
+          dimensionField: 'game_date',
+          metrics: [{ field: 'plus_minus', aggregate: 'avg' }],
+          filters: [],
+        },
+      },
+    }
+    navigate('/dashboard/create', { state })
   }
 
   return (
@@ -298,16 +306,16 @@ export default function MatchDeepDive() {
                   style={{
                     padding: '6px 12px',
                     borderRadius: 'var(--r-sm)',
-                    border: `1px solid ${justSaved ? 'var(--success)' : ACCENT}`,
-                    background: justSaved ? 'rgba(0,214,143,0.10)' : `${ACCENT}12`,
-                    color: justSaved ? 'var(--success)' : ACCENT,
+                    border: `1px solid ${ACCENT}`,
+                    background: `${ACCENT}12`,
+                    color: ACCENT,
                     fontSize: '0.74rem',
                     fontWeight: 700,
                     fontFamily: 'var(--font-mono)',
                     cursor: 'pointer',
                   }}
                 >
-                  {justSaved ? 'Saved' : 'Save to Dashboard'}
+                  Create Dashboard
                 </button>
               </div>
               <p style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>{pred.game_id}</p>
