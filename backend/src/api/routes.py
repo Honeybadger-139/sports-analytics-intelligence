@@ -1027,6 +1027,9 @@ async def list_players(
 async def get_player_game_stats(
     player_id: int,
     season: str = Query(default=config.CURRENT_SEASON),
+    opponent: Optional[str] = Query(default=None, description="Opponent team abbreviation"),
+    date_from: Optional[date] = Query(default=None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[date] = Query(default=None, description="End date YYYY-MM-DD"),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
@@ -1051,7 +1054,14 @@ async def get_player_game_stats(
 
     player_info = dict(player_row._mapping)
 
-    # Game log
+    normalized_from = date_from
+    normalized_to = date_to
+    if normalized_from and normalized_to and normalized_from > normalized_to:
+        normalized_from, normalized_to = normalized_to, normalized_from
+
+    opponent_abbr = opponent.upper().strip() if opponent else None
+
+    # Game log (filtered)
     game_rows = db.execute(
         text("""
             SELECT
@@ -1083,19 +1093,36 @@ async def get_player_game_stats(
             LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
             WHERE pgs.player_id = :player_id
               AND m.season = :season
+              AND (
+                    :opponent IS NULL OR
+                    (
+                        CASE
+                            WHEN pgs.team_id = m.home_team_id THEN opp.abbreviation
+                            ELSE opp_h.abbreviation
+                        END
+                    ) = :opponent
+              )
+              AND (:date_from IS NULL OR m.game_date >= :date_from)
+              AND (:date_to IS NULL OR m.game_date <= :date_to)
             ORDER BY m.game_date DESC
-            LIMIT :limit
         """),
-        {"player_id": player_id, "season": season, "limit": limit},
+        {
+            "player_id": player_id,
+            "season": season,
+            "opponent": opponent_abbr,
+            "date_from": normalized_from,
+            "date_to": normalized_to,
+        },
     ).fetchall()
 
-    games = [dict(r._mapping) for r in game_rows]
+    filtered_games = [dict(r._mapping) for r in game_rows]
+    games = filtered_games[:limit]
 
-    # Compute season averages
-    if games:
+    # Compute averages over the full filtered set (not just the limited table rows)
+    if filtered_games:
         stat_keys = ["points", "rebounds", "assists", "steals", "blocks", "turnovers"]
-        n = len(games)
-        averages = {k: round(sum(g.get(k, 0) or 0 for g in games) / n, 1) for k in stat_keys}
+        n = len(filtered_games)
+        averages = {k: round(sum(g.get(k, 0) or 0 for g in filtered_games) / n, 1) for k in stat_keys}
         averages["games_played"] = n
     else:
         averages = {}

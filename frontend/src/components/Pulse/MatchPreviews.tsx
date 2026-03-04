@@ -327,11 +327,19 @@ export default function MatchPreviews() {
     setFilters(prev => ({ ...prev, ...partial }))
   }, [])
 
+  const rawDateFrom = filters.dateFrom || undefined
+  const rawDateTo = filters.dateTo || undefined
+  const hasInvertedRange = !!(rawDateFrom && rawDateTo && rawDateFrom > rawDateTo)
+  const dateFrom = hasInvertedRange ? rawDateTo : rawDateFrom
+  const dateTo = hasInvertedRange ? rawDateFrom : rawDateTo
+
   const { data: matches, loading: matchLoading } = useMatches(
     filters.season,
     limit,
-    filters.dateFrom || undefined,
-    filters.dateTo || undefined,
+    undefined,
+    undefined,
+    dateFrom,
+    dateTo,
   )
   const { data: todayData, loading: todayLoading, error: todayError, refresh } = useTodaysPredictions()
 
@@ -343,6 +351,11 @@ export default function MatchPreviews() {
 
       {/* ── Date filter bar ── */}
       <DateFilterBar filters={filters} onChange={handleFilterChange} />
+      {hasInvertedRange && (
+        <p style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: -10, marginBottom: 16 }}>
+          Date range was normalized automatically (From/To were reversed).
+        </p>
+      )}
 
       {/* ── Refresh button ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 28 }}>
@@ -408,10 +421,10 @@ export default function MatchPreviews() {
           Recent Match History
           {(filters.dateFrom || filters.dateTo) && (
             <span style={{ fontSize: '0.72rem', fontWeight: 400, color: 'var(--text-3)', marginLeft: 8 }}>
-              {filters.dateFrom && filters.dateTo
-                ? `${filters.dateFrom} → ${filters.dateTo}`
-                : filters.dateFrom ? `from ${filters.dateFrom}`
-                : `to ${filters.dateTo}`}
+              {dateFrom && dateTo
+                ? `${dateFrom} → ${dateTo}`
+                : dateFrom ? `from ${dateFrom}`
+                : `to ${dateTo}`}
             </span>
           )}
         </p>

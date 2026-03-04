@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { usePlayers, usePlayerGameStats } from '../../hooks/useApi'
+import { usePlayers, usePlayerGameStats, useTeamsList } from '../../hooks/useApi'
 import type { PlayerListItem, PlayerGameLogEntry } from '../../types'
 
 const ACCENT = '#06C5F8'
@@ -63,11 +63,32 @@ export default function PlayerStatsView() {
     const [season, setSeason] = useState('2025-26')
     const [search, setSearch] = useState('')
     const [selectedId, setSelectedId] = useState<number | null>(null)
+    const [opponent, setOpponent] = useState('')
+    const [dateFrom, setDateFrom] = useState('')
+    const [dateTo, setDateTo] = useState('')
 
     const { data: playerData, loading: searchLoading } = usePlayers(search)
-    const { data: statsData, loading: statsLoading, error: statsError } = usePlayerGameStats(selectedId, season)
+    const { data: teamsData } = useTeamsList()
+
+    const rawDateFrom = dateFrom || undefined
+    const rawDateTo = dateTo || undefined
+    const hasInvertedRange = !!(rawDateFrom && rawDateTo && rawDateFrom > rawDateTo)
+    const normalizedDateFrom = hasInvertedRange ? rawDateTo : rawDateFrom
+    const normalizedDateTo = hasInvertedRange ? rawDateFrom : rawDateTo
+    const hasActiveFilters = !!(opponent || normalizedDateFrom || normalizedDateTo)
+
+    const { data: statsData, loading: statsLoading, error: statsError } = usePlayerGameStats(selectedId, season, {
+        limit: 200,
+        opponent: opponent || undefined,
+        dateFrom: normalizedDateFrom,
+        dateTo: normalizedDateTo,
+    })
 
     const players = playerData?.players ?? []
+    const opponentOptions = useMemo(
+        () => [...new Set((teamsData?.teams ?? []).map(t => t.abbreviation))].sort(),
+        [teamsData?.teams],
+    )
 
     return (
         <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -81,7 +102,13 @@ export default function PlayerStatsView() {
                     <select
                         className="scribble-select"
                         value={season}
-                        onChange={e => { setSeason(e.target.value); setSelectedId(null) }}
+                        onChange={e => {
+                            setSeason(e.target.value)
+                            setSelectedId(null)
+                            setOpponent('')
+                            setDateFrom('')
+                            setDateTo('')
+                        }}
                         style={{ width: '100%', marginBottom: 10 }}
                     >
                         {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -174,10 +201,89 @@ export default function PlayerStatsView() {
                             </p>
                         </div>
 
+                        {/* Game-log filters */}
+                        <p className="section-label" style={{ color: ACCENT, marginBottom: 10 }}>Game Log Filters</p>
+                        <div style={{
+                            display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
+                            background: 'var(--bg-panel)', border: '1px solid var(--border)',
+                            borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 20,
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>Opponent</span>
+                                <select
+                                    className="scribble-select"
+                                    value={opponent}
+                                    onChange={e => setOpponent(e.target.value)}
+                                    style={{ fontSize: '0.78rem', minWidth: 130 }}
+                                >
+                                    <option value="">All teams</option>
+                                    {opponentOptions
+                                        .filter(abbr => abbr !== statsData.player.team_abbreviation)
+                                        .map(abbr => <option key={abbr} value={abbr}>{abbr}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>From</span>
+                                <input
+                                    type="date"
+                                    value={dateFrom}
+                                    onChange={e => setDateFrom(e.target.value)}
+                                    style={{
+                                        background: 'var(--bg-base)', border: '1px solid var(--border)',
+                                        borderRadius: 'var(--r-sm)', padding: '4px 8px',
+                                        color: 'var(--text-1)', fontSize: '0.78rem', fontFamily: 'var(--font-mono)',
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600 }}>To</span>
+                                <input
+                                    type="date"
+                                    value={dateTo}
+                                    onChange={e => setDateTo(e.target.value)}
+                                    style={{
+                                        background: 'var(--bg-base)', border: '1px solid var(--border)',
+                                        borderRadius: 'var(--r-sm)', padding: '4px 8px',
+                                        color: 'var(--text-1)', fontSize: '0.78rem', fontFamily: 'var(--font-mono)',
+                                    }}
+                                />
+                            </div>
+                            {hasActiveFilters && (
+                                <button
+                                    onClick={() => { setOpponent(''); setDateFrom(''); setDateTo('') }}
+                                    style={{
+                                        padding: '5px 10px', background: 'transparent',
+                                        border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                                        color: 'var(--text-3)', fontSize: '0.72rem', cursor: 'pointer',
+                                    }}
+                                >
+                                    Clear filters
+                                </button>
+                            )}
+                            {hasActiveFilters && (
+                                <span style={{
+                                    marginLeft: 'auto',
+                                    padding: '2px 8px', borderRadius: 20,
+                                    background: `${ACCENT}18`, color: ACCENT,
+                                    fontSize: '0.68rem', fontWeight: 600,
+                                }}>
+                                    Filters active
+                                </span>
+                            )}
+                        </div>
+
+                        {hasInvertedRange && (
+                            <p style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: -10, marginBottom: 16 }}>
+                                Date range was normalized automatically (From/To were reversed).
+                            </p>
+                        )}
+
                         {/* Averages cards */}
                         {Object.keys(statsData.averages).length > 0 && (
                             <>
-                                <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>Season Averages</p>
+                                <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>
+                                    {hasActiveFilters ? 'Filtered Averages' : 'Season Averages'}
+                                </p>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 10, marginBottom: 28 }}>
                                     <StatCard label="GP" value={statsData.averages.games_played ?? 0} />
                                     <StatCard label="PPG" value={statsData.averages.points ?? 0} />
@@ -190,7 +296,21 @@ export default function PlayerStatsView() {
                         )}
 
                         {/* Game log table */}
-                        <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>Game Log</p>
+                        <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>
+                            Game Log
+                            {hasActiveFilters && (
+                                <span style={{ fontSize: '0.72rem', fontWeight: 400, color: 'var(--text-3)', marginLeft: 8 }}>
+                                    {opponent ? `vs ${opponent}` : 'all opponents'}
+                                    {normalizedDateFrom && normalizedDateTo
+                                        ? ` · ${normalizedDateFrom} → ${normalizedDateTo}`
+                                        : normalizedDateFrom
+                                            ? ` · from ${normalizedDateFrom}`
+                                            : normalizedDateTo
+                                                ? ` · to ${normalizedDateTo}`
+                                                : ''}
+                                </span>
+                            )}
+                        </p>
                         <div style={{
                             background: 'var(--bg-panel)', border: '1px solid var(--border)',
                             borderRadius: 'var(--r-md)', overflow: 'hidden',
@@ -238,7 +358,11 @@ export default function PlayerStatsView() {
 
                         {statsData.games.length === 0 && (
                             <div style={{ padding: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginTop: 12 }}>
-                                <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>No games found for this player in {season}.</p>
+                                <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
+                                    {hasActiveFilters
+                                        ? `No games found for the selected filters in ${season}.`
+                                        : `No games found for this player in ${season}.`}
+                                </p>
                             </div>
                         )}
                     </motion.div>

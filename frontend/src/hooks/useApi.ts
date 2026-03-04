@@ -405,18 +405,38 @@ export function usePlayers(search: string, team?: string, limit = 50) {
   return { data, loading }
 }
 
-export function usePlayerGameStats(playerId: number | null, season = '2025-26', limit = 50) {
+export interface PlayerGameStatsFilters {
+  limit?: number
+  opponent?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+export function usePlayerGameStats(
+  playerId: number | null,
+  season = '2025-26',
+  filters: PlayerGameStatsFilters = {},
+) {
   const [data, setData] = useState<PlayerGameLogResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const limit = filters.limit ?? 50
+  const opponent = filters.opponent?.trim()
+  const dateFrom = filters.dateFrom
+  const dateTo = filters.dateTo
 
   useEffect(() => {
     if (!playerId) { setData(null); return }
     const ctrl = new AbortController()
     setLoading(true)
     setError(null)
+    let url = `/players/${playerId}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`
+    if (opponent) url += `&opponent=${encodeURIComponent(opponent)}`
+    if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
+    if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
+
     fetchJSON<PlayerGameLogResponse>(
-      `/players/${playerId}/game-stats?season=${encodeURIComponent(season)}&limit=${limit}`,
+      url,
       ctrl.signal,
     )
       .then(setData)
@@ -425,7 +445,7 @@ export function usePlayerGameStats(playerId: number | null, season = '2025-26', 
       })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [playerId, season, limit])
+  }, [playerId, season, limit, opponent, dateFrom, dateTo])
 
   return { data, loading, error }
 }
