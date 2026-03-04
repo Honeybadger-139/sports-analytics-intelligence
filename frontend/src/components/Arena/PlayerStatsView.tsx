@@ -16,6 +16,10 @@ function pct(v: number | null): string {
     return (v * 100).toFixed(1)
 }
 
+function round1(value: number): number {
+    return Math.round(value * 10) / 10
+}
+
 function PlayerRow({ player, isSelected, onClick }: { player: PlayerListItem; isSelected: boolean; onClick: () => void }) {
     return (
         <button
@@ -89,6 +93,33 @@ export default function PlayerStatsView() {
         () => [...new Set((teamsData?.teams ?? []).map(t => t.abbreviation))].sort(),
         [teamsData?.teams],
     )
+    const allGames = useMemo(
+        () => ((statsData?.games ?? []) as PlayerGameLogEntry[]),
+        [statsData?.games],
+    )
+    const filteredGames = useMemo(() => {
+        return allGames.filter(g => {
+            const gameDate = String(g.game_date).slice(0, 10)
+            const opponentOk = !opponent || g.opponent === opponent
+            const fromOk = !normalizedDateFrom || gameDate >= normalizedDateFrom
+            const toOk = !normalizedDateTo || gameDate <= normalizedDateTo
+            return opponentOk && fromOk && toOk
+        })
+    }, [allGames, opponent, normalizedDateFrom, normalizedDateTo])
+    const displayedAverages = useMemo(() => {
+        const source = hasActiveFilters ? filteredGames : allGames
+        if (!source.length) return {}
+        const avg = (key: keyof PlayerGameLogEntry) =>
+            round1(source.reduce((sum, g) => sum + Number(g[key] ?? 0), 0) / source.length)
+        return {
+            games_played: source.length,
+            points: avg('points'),
+            rebounds: avg('rebounds'),
+            assists: avg('assists'),
+            steals: avg('steals'),
+            blocks: avg('blocks'),
+        }
+    }, [hasActiveFilters, filteredGames, allGames])
 
     return (
         <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -279,18 +310,18 @@ export default function PlayerStatsView() {
                         )}
 
                         {/* Averages cards */}
-                        {Object.keys(statsData.averages).length > 0 && (
+                        {Object.keys(displayedAverages).length > 0 && (
                             <>
                                 <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>
                                     {hasActiveFilters ? 'Filtered Averages' : 'Season Averages'}
                                 </p>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 10, marginBottom: 28 }}>
-                                    <StatCard label="GP" value={statsData.averages.games_played ?? 0} />
-                                    <StatCard label="PPG" value={statsData.averages.points ?? 0} />
-                                    <StatCard label="RPG" value={statsData.averages.rebounds ?? 0} />
-                                    <StatCard label="APG" value={statsData.averages.assists ?? 0} />
-                                    <StatCard label="SPG" value={statsData.averages.steals ?? 0} />
-                                    <StatCard label="BPG" value={statsData.averages.blocks ?? 0} />
+                                    <StatCard label="GP" value={displayedAverages.games_played ?? 0} />
+                                    <StatCard label="PPG" value={displayedAverages.points ?? 0} />
+                                    <StatCard label="RPG" value={displayedAverages.rebounds ?? 0} />
+                                    <StatCard label="APG" value={displayedAverages.assists ?? 0} />
+                                    <StatCard label="SPG" value={displayedAverages.steals ?? 0} />
+                                    <StatCard label="BPG" value={displayedAverages.blocks ?? 0} />
                                 </div>
                             </>
                         )}
@@ -329,8 +360,8 @@ export default function PlayerStatsView() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {(statsData.games as PlayerGameLogEntry[]).map((g, i) => (
-                                            <tr key={g.game_id} style={{ borderBottom: i < statsData.games.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                        {filteredGames.map((g, i) => (
+                                            <tr key={g.game_id} style={{ borderBottom: i < filteredGames.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-2)' }}>{fmtDate(g.game_date)}</td>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600 }}>{g.location} {g.opponent}</td>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: g.result === 'W' ? '#4ADE80' : g.result === 'L' ? 'var(--error)' : 'var(--text-3)', fontWeight: 700 }}>{g.result ?? '—'}</td>
@@ -356,7 +387,7 @@ export default function PlayerStatsView() {
                             </div>
                         </div>
 
-                        {statsData.games.length === 0 && (
+                        {filteredGames.length === 0 && (
                             <div style={{ padding: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginTop: 12 }}>
                                 <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
                                     {hasActiveFilters
