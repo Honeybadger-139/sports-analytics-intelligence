@@ -4,7 +4,7 @@ import { useTableList, useTableRows } from '../../hooks/useScribble'
 import DataTable from '../Scribble/DataTable'
 import type { RawTableMeta } from '../../types'
 
-const ACCENT   = '#8B5CF6'
+const ACCENT = '#7C3AED'
 const SEASONS  = ['2025-26', '2024-25', '2023-24']
 const PAGE_SIZES = [25, 50, 100]
 

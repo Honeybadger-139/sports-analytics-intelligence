@@ -52,6 +52,7 @@ Recently completed and documented:
 19. Phase 7A UI redesign: React + Vite + TypeScript `frontend` scaffold on `ui-redesign` branch — Nike-style navbar, animated SportsMark SVG logo, Overview home with live metric cards + navigation directory, stub pages for all sections. See `frontend/README.md` and `frontend/ui-redesign.md`.
 20. Phase 7B Chatbot: AI chatbot full-stack implementation — `useChatbot` hook + `ChatbotPanel` + `ChatMessage` components (UI), `chat_service.py` hybrid RAG+DB engine + `chat_routes.py` backend (API). See `frontend/chatbot-ui.md` and `intelligence-layer/README.md`.
 21. Phase 7C Scribble: Raw data playground — `scribble_routes.py` read-only SQL API (backend), `TableBrowser` + `SqlLab` + `NotebooksPanel` + `DataTable` components, `useScribble` hooks, localStorage notebooks (frontend). See `frontend/scribble-playground.md`.
+22. UI hardening batch: cross-theme token fixes (`--bg-card`, accent semantics), native date-picker visibility tuning, and section accent modernization for Pulse/Arena/Lab/Dashboard.
 
 ## Suggested Progression
 

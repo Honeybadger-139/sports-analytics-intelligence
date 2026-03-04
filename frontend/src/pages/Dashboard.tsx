@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
 import type { DashboardCreateRouteState, DashboardItem, DashboardSource } from '../types'
 
-const ACCENT = '#F97316'
+const ACCENT = '#D97706'
 
 const SOURCE_META: Record<DashboardSource, { label: string; color: string; section: string }> = {
   'arena/todays-picks': { label: "Today's Picks", color: '#06C5F8', section: 'Arena' },

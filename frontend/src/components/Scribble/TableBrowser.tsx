@@ -6,7 +6,7 @@ import type { RawTableMeta } from '../../types'
 
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 const PAGE_SIZES = [25, 50, 100]
-const ACCENT = '#10B981'
+const ACCENT = '#0F9D75'
 
 interface DerivedTableMeta {
   table: string

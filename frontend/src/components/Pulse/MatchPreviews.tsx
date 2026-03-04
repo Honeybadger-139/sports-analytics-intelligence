@@ -5,7 +5,7 @@ import { useMatches, useTodaysPredictions } from '../../hooks/useApi'
 import type { MatchRow, TodayGamePrediction } from '../../types'
 import GameStatsModal from './GameStatsModal'
 
-const ACCENT  = '#FF5C1A'
+const ACCENT = '#D4551F'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 function fmtDate(iso: string): string {
@@ -46,13 +46,13 @@ function TodayCard({ game, index, onSelect }: { game: TodayGamePrediction; index
       transition={{ duration: 0.2, delay: index * 0.05 }}
       onClick={() => onSelect(game.game_id)}
       style={{
-        background: 'var(--bg-panel)', border: `1px solid ${ACCENT}30`,
+        background: 'var(--bg-panel)', border: `1px solid color-mix(in srgb, ${ACCENT} 19%, transparent)`,
         borderRadius: 'var(--r-md)', overflow: 'hidden', cursor: 'pointer',
         transition: 'border-color 0.15s, transform 0.1s',
       }}
       whileHover={{ scale: 1.01 }}
     >
-      <div style={{ padding: '6px 16px', background: `${ACCENT}12`, borderBottom: `1px solid ${ACCENT}20` }}>
+      <div style={{ padding: '6px 16px', background: `color-mix(in srgb, ${ACCENT} 7%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${ACCENT} 13%, transparent)` }}>
         <span style={{ fontSize: '0.68rem', fontWeight: 700, color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Today's Game · Click for box score
         </span>
@@ -110,7 +110,10 @@ function MatchRow({ match, index, onSelect }: {
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s',
       }}
-      whileHover={{ borderColor: ACCENT + '60', backgroundColor: `${ACCENT}06` } as Record<string, string>}
+      whileHover={{
+        borderColor: `color-mix(in srgb, ${ACCENT} 38%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${ACCENT} 2%, transparent)`,
+      } as Record<string, string>}
     >
       {/* Date */}
       <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', minWidth: 90 }}>
@@ -152,7 +155,9 @@ function MatchRow({ match, index, onSelect }: {
       {/* Status pill */}
       <span style={{
         padding: '2px 8px', borderRadius: 20, fontSize: '0.68rem', fontWeight: 600,
-        background: completed ? 'rgba(0,214,143,0.10)' : 'rgba(255,177,0,0.10)',
+        background: completed
+          ? 'color-mix(in srgb, var(--success) 10%, transparent)'
+          : 'color-mix(in srgb, var(--warning) 10%, transparent)',
         color: completed ? 'var(--success)' : 'var(--warning)',
         fontFamily: 'var(--font-mono)',
       }}>
@@ -306,7 +311,7 @@ function DateFilterBar({ filters, onChange }: {
       {(filters.dateFrom || filters.dateTo) && (
         <span style={{
           padding: '2px 8px', borderRadius: 20,
-          background: `${ACCENT}18`, color: ACCENT,
+          background: `color-mix(in srgb, ${ACCENT} 10%, transparent)`, color: ACCENT,
           fontSize: '0.68rem', fontWeight: 600,
         }}>
           {mode === 'single' ? `${filters.dateFrom}` : 'Date filter active'}

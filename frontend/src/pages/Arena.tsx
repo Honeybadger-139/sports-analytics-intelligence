@@ -6,7 +6,7 @@ const TodaysPicks = lazy(() => import('../components/Arena/TodaysPicks'))
 const DeepDive = lazy(() => import('../components/Arena/DeepDive'))
 const ModelPerformance = lazy(() => import('../components/Arena/ModelPerformance'))
 
-const ACCENT = '#06C5F8'
+const ACCENT = '#0E8ED8'
 
 const TABS = [
   {

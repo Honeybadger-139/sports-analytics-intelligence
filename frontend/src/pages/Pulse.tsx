@@ -6,7 +6,7 @@ const DailyBrief    = lazy(() => import('../components/Pulse/DailyBrief'))
 const TopStories    = lazy(() => import('../components/Pulse/TopStories'))
 const MatchPreviews = lazy(() => import('../components/Pulse/MatchPreviews'))
 
-const ACCENT = '#FF5C1A'
+const ACCENT = '#D4551F'
 
 const TABS = [
   {

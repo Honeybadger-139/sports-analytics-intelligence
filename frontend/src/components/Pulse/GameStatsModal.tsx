@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStats, useGamePrediction } from '../../hooks/useApi'
 import type { PlayerBoxScore, TeamBoxScore } from '../../types'
 
-const ACCENT = '#FF5C1A'
+const ACCENT = '#D4551F'
 const BG_OVERLAY = 'rgba(0,0,0,0.75)'
 
 function pct(val: number | null | undefined, decimals = 1): string {

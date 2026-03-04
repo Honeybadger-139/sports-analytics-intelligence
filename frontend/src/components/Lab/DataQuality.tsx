@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useQualityOverview } from '../../hooks/useApi'
 import type { TopTeam } from '../../types'
 
-const ACCENT   = '#8B5CF6'
+const ACCENT = '#7C3AED'
 const SEASONS  = ['2025-26', '2024-25', '2023-24']
 
 function fmt(n: number | null | undefined, decimals = 1): string {

@@ -3,13 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDailyBrief, useMatches } from '../../hooks/useApi'
 import type { BriefItem } from '../../types'
 
-const ACCENT  = '#FF5C1A'
+const ACCENT = '#D4551F'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 const RISK_CFG = {
-  high:   { color: '#FF4C6A', bg: 'rgba(255,76,106,0.10)',  label: 'High Risk',   emoji: '🔴' },
-  medium: { color: '#FFB100', bg: 'rgba(255,177,0,0.10)',   label: 'Medium Risk', emoji: '🟡' },
-  low:    { color: '#00D68F', bg: 'rgba(0,214,143,0.10)',   label: 'Low Risk',    emoji: '🟢' },
+  high:   { color: 'var(--error)', bg: 'color-mix(in srgb, var(--error) 10%, transparent)', label: 'High Risk',   emoji: '🔴' },
+  medium: { color: 'var(--warning)', bg: 'color-mix(in srgb, var(--warning) 10%, transparent)', label: 'Medium Risk', emoji: '🟡' },
+  low:    { color: 'var(--success)', bg: 'color-mix(in srgb, var(--success) 10%, transparent)', label: 'Low Risk',    emoji: '🟢' },
 }
 const RISK_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
@@ -375,13 +375,13 @@ export default function TopStories() {
 
       {/* Auto-fallback notice */}
       {autoFallbackDone.current && !loading && items.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, padding: '8px 14px', background: 'rgba(255,177,0,0.07)', border: '1px solid rgba(255,177,0,0.2)', borderRadius: 'var(--r-sm)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, padding: '8px 14px', background: 'color-mix(in srgb, var(--warning) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 24%, transparent)', borderRadius: 'var(--r-sm)' }}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden>
-            <circle cx="6.5" cy="6.5" r="5.5" stroke="#FFB100" strokeWidth="1.2"/>
-            <line x1="6.5" y1="4" x2="6.5" y2="7" stroke="#FFB100" strokeWidth="1.2" strokeLinecap="round"/>
-            <circle cx="6.5" cy="9" r="0.6" fill="#FFB100"/>
+            <circle cx="6.5" cy="6.5" r="5.5" stroke="var(--warning)" strokeWidth="1.2"/>
+            <line x1="6.5" y1="4" x2="6.5" y2="7" stroke="var(--warning)" strokeWidth="1.2" strokeLinecap="round"/>
+            <circle cx="6.5" cy="9" r="0.6" fill="var(--warning)"/>
           </svg>
-          <span style={{ fontSize: '0.75rem', color: '#FFB100' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--warning)' }}>
             No games today — showing {briefDate}. Use "Filter by date" to navigate.
           </span>
         </div>

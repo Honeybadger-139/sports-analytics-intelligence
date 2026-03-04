@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { useTeamsList, useTeamGameStats } from '../../hooks/useApi'
 import type { DashboardCreateRouteState, TeamGameLogEntry } from '../../types'
 
-const ACCENT = '#06C5F8'
+const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 function fmtDate(iso: string): string {

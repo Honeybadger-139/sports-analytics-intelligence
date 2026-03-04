@@ -1,40 +1,45 @@
 /* ─── Design Tokens ──────────────────────────────────────── */
 :root {
   /* Backgrounds */
-  --bg-base:     #05090F;
-  --bg-surface:  #0B1422;
-  --bg-panel:    #0F1B2E;
-  --bg-elevated: #142338;
-  --bg-hover:    #1A2D47;
+  --bg-base:     #080E1A;
+  --bg-surface:  #0D1628;
+  --bg-panel:    #111D34;
+  --bg-elevated: #16253F;
+  --bg-card:     #1A2C4A;
+  --bg-hover:    #213657;
 
   /* Borders */
-  --border:       #1C2E48;
-  --border-mid:   #243A58;
-  --border-strong:#2E4A6A;
+  --border:        #223554;
+  --border-mid:    #2B4367;
+  --border-strong: #37557D;
 
   /* Accent colours — one per section */
-  --accent:        #FF5C1A;   /* Pulse  — orange  */
-  --accent-arena:  #06C5F8;   /* Arena  — cyan    */
-  --accent-lab:    #8B5CF6;   /* Lab    — purple  */
-  --accent-scrib:  #10B981;   /* Scribble — emerald */
-  --accent-chat:   #F59E0B;   /* Chatbot — amber  */
+  --accent:            #FF6B2D;   /* Pulse */
+  --accent-arena:      #2BC9FF;   /* Arena */
+  --accent-lab:        #A78BFA;   /* Lab */
+  --accent-scrib:      #34D399;   /* Scribble */
+  --accent-chat:       #F7B24A;   /* Chatbot */
+  --accent-dashboard:  #FB923C;   /* Dashboard */
+  --accent-green:      #34D399;
+  --accent-red:        #FB7185;
 
   /* Accent dim fills */
-  --accent-dim:        rgba(255, 92, 26, 0.12);
-  --accent-arena-dim:  rgba(6, 197, 248, 0.10);
-  --accent-lab-dim:    rgba(139, 92, 246, 0.10);
-  --accent-scrib-dim:  rgba(16, 185, 129, 0.10);
-  --accent-chat-dim:   rgba(245, 158, 11, 0.10);
+  --accent-dim:           rgba(255, 107, 45, 0.12);
+  --accent-arena-dim:     rgba(43, 201, 255, 0.12);
+  --accent-lab-dim:       rgba(167, 139, 250, 0.12);
+  --accent-scrib-dim:     rgba(52, 211, 153, 0.12);
+  --accent-chat-dim:      rgba(247, 178, 74, 0.12);
+  --accent-dashboard-dim: rgba(251, 146, 60, 0.12);
 
   /* Text */
-  --text-1: #E8F0FF;
-  --text-2: #7A8FAF;
-  --text-3: #3A5070;
+  --text-1: #EAF1FF;
+  --text-2: #A1B3D0;
+  --text-3: #6F86AD;
 
   /* Semantic */
-  --success: #00D68F;
-  --error:   #FF4C6A;
-  --warning: #FFB100;
+  --success: #22C55E;
+  --error:   #F43F5E;
+  --warning: #F59E0B;
 
   /* Typography */
   --font-display: 'Bebas Neue', sans-serif;
@@ -61,34 +66,36 @@
 
 /* ─── Light theme ─────────────────────────────────────────── */
 body.theme-light {
-  --bg-base:     #F0F4FC;
+  --bg-base:     #F3F6FC;
   --bg-surface:  #FFFFFF;
-  --bg-panel:    #F7F9FF;
-  --bg-elevated: #EEF3FF;
-  --bg-hover:    #E2EBFF;
+  --bg-panel:    #F7FAFF;
+  --bg-elevated: #EDF3FD;
+  --bg-card:     #E4ECFA;
+  --bg-hover:    #DFE9FA;
 
-  --border:       #C8D5E8;
-  --border-mid:   #B0C2DA;
-  --border-strong:#8AAACE;
+  --border:        #CBD8EA;
+  --border-mid:    #B2C5DF;
+  --border-strong: #8FAAD0;
 
-  /* Text — all three levels pass WCAG AA on both #F0F4FC and #FFFFFF */
-  --text-1: #0B1832;  /* 14.2:1 on white  ✓ */
-  --text-2: #2E4260;  /*  8.1:1 on white  ✓ */
-  --text-3: #516680;  /*  5.0:1 on white  ✓ (was #8A9BB5 → only 2.4:1) */
+  --text-1: #0F1B33;
+  --text-2: #334A6E;
+  --text-3: #5D7392;
 
-  /* Accent colours darkened for readable text on light backgrounds */
-  --accent:        #C94400;  /* orange  — 5.2:1 on white (was #FF5C1A → 3:1) */
-  --accent-arena:  #0369A1;  /* cyan/blue — 7.2:1 on white (was #06C5F8 → 1.4:1) */
-  --accent-lab:    #5B21B6;  /* purple   — 8.4:1 on white (was #8B5CF6 → 3.7:1) */
-  --accent-scrib:  #047857;  /* emerald  — 7.2:1 on white (was #10B981 → 2.7:1) */
-  --accent-chat:   #92400E;  /* amber    — 9.3:1 on white (was #F59E0B → 2.3:1) */
+  --accent:            #C2410C;
+  --accent-arena:      #0369A1;
+  --accent-lab:        #6D28D9;
+  --accent-scrib:      #0F766E;
+  --accent-chat:       #B45309;
+  --accent-dashboard:  #C2410C;
+  --accent-green:      #047857;
+  --accent-red:        #BE123C;
 
-  /* Dim fills — slightly more opaque so they register on white surfaces */
-  --accent-dim:        rgba(201, 68, 0, 0.09);
-  --accent-arena-dim:  rgba(3, 105, 161, 0.08);
-  --accent-lab-dim:    rgba(91, 33, 182, 0.08);
-  --accent-scrib-dim:  rgba(4, 120, 87, 0.08);
-  --accent-chat-dim:   rgba(146, 64, 14, 0.09);
+  --accent-dim:           rgba(194, 65, 12, 0.10);
+  --accent-arena-dim:     rgba(3, 105, 161, 0.10);
+  --accent-lab-dim:       rgba(109, 40, 217, 0.10);
+  --accent-scrib-dim:     rgba(15, 118, 110, 0.10);
+  --accent-chat-dim:      rgba(180, 83, 9, 0.10);
+  --accent-dashboard-dim: rgba(194, 65, 12, 0.10);
 
   --shadow-sm:  0 2px 8px rgba(0, 20, 60, 0.08);
   --shadow-md:  0 8px 24px rgba(0, 20, 60, 0.10);
@@ -1189,7 +1196,7 @@ img, svg { display: block; }
 
 .scribble-tab-btn.active {
   background: var(--bg-elevated);
-  color: #10B981;
+  color: var(--accent-scrib);
 }
 
 .scribble-tab-icon { font-size: 0.9rem; }
@@ -1228,7 +1235,7 @@ img, svg { display: block; }
 }
 
 .scribble-select--sm { width: auto; }
-.scribble-select:focus { outline: none; border-color: #10B981; }
+.scribble-select:focus { outline: none; border-color: var(--accent-scrib); }
 
 .scribble-input {
   width: 100%;
@@ -1243,7 +1250,37 @@ img, svg { display: block; }
   transition: border-color 0.15s ease;
 }
 
-.scribble-input:focus { border-color: #10B981; }
+.scribble-input:focus { border-color: var(--accent-scrib); }
+
+/* Native date input hardening across themes */
+input[type='date'],
+.scribble-input[type='date'] {
+  color-scheme: dark;
+  min-height: 34px;
+  padding-right: 34px;
+}
+
+body.theme-light input[type='date'],
+body.theme-light .scribble-input[type='date'] {
+  color-scheme: light;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator,
+.scribble-input[type='date']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.92;
+  filter: invert(0.92) sepia(0.15) saturate(1.4) hue-rotate(175deg);
+}
+
+body.theme-light input[type='date']::-webkit-calendar-picker-indicator,
+body.theme-light .scribble-input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.2) sepia(0.3) saturate(1.4) hue-rotate(182deg);
+}
+
+input[type='date']::-webkit-datetime-edit,
+.scribble-input[type='date']::-webkit-datetime-edit {
+  color: var(--text-1);
+}
 
 /* ─── Explorer Tab ────────────────────────────────────────── */
 

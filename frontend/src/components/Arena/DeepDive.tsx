@@ -4,7 +4,7 @@ const MatchDeepDive = lazy(() => import('./MatchDeepDive'))
 const PlayerStatsView = lazy(() => import('./PlayerStatsView'))
 const TeamStatsView = lazy(() => import('./TeamStatsView'))
 
-const ACCENT = '#06C5F8'
+const ACCENT = '#0E8ED8'
 
 type DeepDiveMode = 'match' | 'player' | 'team'
 

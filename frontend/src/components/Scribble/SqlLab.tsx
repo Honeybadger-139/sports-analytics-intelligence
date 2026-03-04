@@ -8,7 +8,7 @@ import CreateViewModal from './CreateViewModal'
 import ViewListPanel from './ViewListPanel'
 import SqlAiChat from './SqlAiChat'
 
-const ACCENT = '#10B981'
+const ACCENT = '#0F9D75'
 
 const EXAMPLE_QUERIES = [
   {

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useTodaysPredictions } from '../../hooks/useApi'
 import type { DashboardCreateRouteState, ModelPrediction, TodayGamePrediction } from '../../types'
 
-const ACCENT = '#06C5F8'
+const ACCENT = '#0E8ED8'
 
 const MODEL_ORDER  = ['ensemble', 'xgboost', 'lgbm', 'logistic_regression']
 const MODEL_LABELS: Record<string, string> = {

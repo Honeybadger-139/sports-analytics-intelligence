@@ -4,7 +4,7 @@ import DragDropChartBuilder from '../components/Dashboard/DragDropChartBuilder'
 import { useDashboard } from '../hooks/useDashboard'
 import type { DashboardBuilderConfig, DashboardCreateRouteState, DashboardCreateTemplate, DashboardSource } from '../types'
 
-const ACCENT = '#F97316'
+const ACCENT = '#D97706'
 
 const SOURCE_LABEL: Record<DashboardSource, string> = {
   'arena/todays-picks': "Today's Picks",

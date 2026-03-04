@@ -9,7 +9,7 @@ import type {
   DashboardFilterOp,
 } from '../../types'
 
-const ACCENT = '#F97316'
+const ACCENT = '#D97706'
 const CHART_COLORS = ['#F97316', '#06C5F8', '#22D3EE', '#A78BFA', '#00D68F', '#F43F5E']
 
 interface MetricConfig {

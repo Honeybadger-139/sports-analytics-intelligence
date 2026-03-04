@@ -10,7 +10,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Pulse',
     path: '/pulse',
     description: 'Sports news & daily intelligence',
-    color: '#FF5C1A',
+    color: 'var(--accent)',
     subItems: [
       { label: 'Daily Brief',    path: '/pulse/brief',    description: 'AI-curated game intelligence for today' },
       { label: 'Top Stories',   path: '/pulse/news',     description: 'Latest sports news and injury reports' },
@@ -22,7 +22,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Arena',
     path: '/arena',
     description: 'Predictions & model analysis',
-    color: '#06C5F8',
+    color: 'var(--accent-arena)',
     subItems: [
       { label: "Today's Picks",   path: '/arena/predictions', description: "Model consensus for today's games" },
       { label: 'Match Deep Dive', path: '/arena/deep-dive',   description: 'SHAP explainability + feature snapshots' },
@@ -34,7 +34,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Lab',
     path: '/lab',
     description: 'Data exploration & monitoring',
-    color: '#8B5CF6',
+    color: 'var(--accent-lab)',
     subItems: [
       { label: 'Data Quality',  path: '/lab/quality',  description: 'Row counts, checks and team metrics' },
       { label: 'Pipeline Runs', path: '/lab/pipeline', description: 'Recent ingestion and feature runs' },
@@ -46,7 +46,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Dashboard',
     path: '/dashboard',
     description: 'Created Arena dashboards and chart views',
-    color: '#F97316',
+    color: 'var(--accent-dashboard)',
     subItems: [],
   },
   {
@@ -54,7 +54,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Scribble',
     path: '/scribble',
     description: 'Raw data playground & SQL lab',
-    color: '#10B981',
+    color: 'var(--accent-scrib)',
     subItems: [],
   },
   {
@@ -62,7 +62,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Chatbot',
     path: '/chatbot',
     description: 'AI data assistant',
-    color: '#F59E0B',
+    color: 'var(--accent-chat)',
     subItems: [],
   },
 ]
@@ -147,8 +147,8 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                     fontWeight: 700,
                     padding: '1px 6px',
                     borderRadius: '999px',
-                    background: 'rgba(255,177,0,0.15)',
-                    color: '#FFB100',
+                    background: 'color-mix(in srgb, var(--warning) 14%, transparent)',
+                    color: 'var(--warning)',
                     letterSpacing: '0.06em',
                     lineHeight: 1.6,
                   }}>

@@ -3,13 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDailyBrief, useMatches } from '../../hooks/useApi'
 import type { BriefItem } from '../../types'
 
-const ACCENT  = '#FF5C1A'
+const ACCENT = '#D4551F'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 const RISK_CFG = {
-  high:   { color: '#FF4C6A', bg: 'rgba(255,76,106,0.10)',  label: 'High Risk' },
-  medium: { color: '#FFB100', bg: 'rgba(255,177,0,0.10)',   label: 'Medium Risk' },
-  low:    { color: '#00D68F', bg: 'rgba(0,214,143,0.10)',   label: 'Low Risk' },
+  high:   { color: 'var(--error)', bg: 'color-mix(in srgb, var(--error) 10%, transparent)', label: 'High Risk' },
+  medium: { color: 'var(--warning)', bg: 'color-mix(in srgb, var(--warning) 10%, transparent)', label: 'Medium Risk' },
+  low:    { color: 'var(--success)', bg: 'color-mix(in srgb, var(--success) 10%, transparent)', label: 'Low Risk' },
 }
 
 function todayISO(): string {
@@ -57,12 +57,12 @@ function DisabledState() {
     }}>
       <div style={{
         width: 48, height: 48, borderRadius: '50%',
-        background: 'rgba(255,177,0,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'color-mix(in srgb, var(--warning) 10%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-          <path d="M11 2L19.5 18H2.5L11 2Z" stroke="#FFB100" strokeWidth="1.5" strokeLinejoin="round"/>
-          <line x1="11" y1="8" x2="11" y2="13" stroke="#FFB100" strokeWidth="1.5" strokeLinecap="round"/>
-          <circle cx="11" cy="16" r="0.8" fill="#FFB100"/>
+          <path d="M11 2L19.5 18H2.5L11 2Z" stroke="var(--warning)" strokeWidth="1.5" strokeLinejoin="round"/>
+          <line x1="11" y1="8" x2="11" y2="13" stroke="var(--warning)" strokeWidth="1.5" strokeLinecap="round"/>
+          <circle cx="11" cy="16" r="0.8" fill="var(--warning)"/>
         </svg>
       </div>
       <div>

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useNotebooks } from '../../hooks/useScribble'
 import type { SavedNotebook } from '../../types'
 
-const ACCENT = '#10B981'
+const ACCENT = '#0F9D75'
 
 interface NotebooksPanelProps {
   /** Pre-filled SQL when saving from SQL Lab */

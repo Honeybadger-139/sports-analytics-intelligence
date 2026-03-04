@@ -39,6 +39,7 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-01-dashboard-smoke-verification.md`
 - `changelogs/2026-03-04-data-rag-dashboard-restart.md`
 - `changelogs/2026-03-04-dashboard-create-builder.md`
+- `changelogs/2026-03-04-ui-theme-date-hardening.md`
 
 ## Recommended Start Order
 

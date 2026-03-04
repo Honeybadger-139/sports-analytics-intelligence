@@ -6,7 +6,7 @@ const DataQuality  = lazy(() => import('../components/Lab/DataQuality'))
 const PipelineRuns = lazy(() => import('../components/Lab/PipelineRuns'))
 const MLOpsMonitor = lazy(() => import('../components/Lab/MLOpsMonitor'))
 
-const ACCENT = '#8B5CF6'
+const ACCENT = '#7C3AED'
 
 const TABS = [
   {
