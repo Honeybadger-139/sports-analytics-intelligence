@@ -53,6 +53,8 @@ Recently completed and documented:
 20. Phase 7B Chatbot: AI chatbot full-stack implementation — `useChatbot` hook + `ChatbotPanel` + `ChatMessage` components (UI), `chat_service.py` hybrid RAG+DB engine + `chat_routes.py` backend (API). See `frontend/chatbot-ui.md` and `intelligence-layer/README.md`.
 21. Phase 7C Scribble: Raw data playground — `scribble_routes.py` read-only SQL API (backend), `TableBrowser` + `SqlLab` + `NotebooksPanel` + `DataTable` components, `useScribble` hooks, localStorage notebooks (frontend). See `frontend/scribble-playground.md`.
 22. UI hardening batch: cross-theme token fixes (`--bg-card`, accent semantics), native date-picker visibility tuning, and section accent modernization for Pulse/Arena/Lab/Dashboard.
+23. Frontend ops hotfix: Vite API proxy alignment (`8000 -> 8001`) to restore accurate navbar system status.
+24. UI follow-up hotfix: date-picker indicator rendering switched to native visible indicator (not background-image) to avoid inline style override gaps.
 
 ## Suggested Progression
 

@@ -1268,13 +1268,16 @@ body.theme-light .scribble-input[type='date'] {
 input[type='date']::-webkit-calendar-picker-indicator,
 .scribble-input[type='date']::-webkit-calendar-picker-indicator {
   cursor: pointer;
-  opacity: 0.92;
-  filter: invert(0.92) sepia(0.15) saturate(1.4) hue-rotate(175deg);
+  opacity: 1;
+  width: 18px;
+  height: 18px;
+  filter: brightness(0) saturate(100%) invert(91%) sepia(21%) saturate(235%) hue-rotate(182deg) brightness(102%) contrast(101%);
 }
 
 body.theme-light input[type='date']::-webkit-calendar-picker-indicator,
 body.theme-light .scribble-input[type='date']::-webkit-calendar-picker-indicator {
-  filter: invert(0.2) sepia(0.3) saturate(1.4) hue-rotate(182deg);
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(23%) sepia(23%) saturate(908%) hue-rotate(179deg) brightness(93%) contrast(89%);
 }
 
 input[type='date']::-webkit-datetime-edit,
