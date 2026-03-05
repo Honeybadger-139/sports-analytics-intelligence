@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import SportsMark from './SportsMark'
 import type { NavItem } from '../types'
+import { useSportContext } from '../context/SportContext'
+import { isLiveDataSelection, type SportId } from '../config/sports'
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -78,6 +80,8 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
   const location  = useLocation()
   const [openId, setOpenId] = useState<string | null>(null)
   const navRef    = useRef<HTMLElement>(null)
+  const { selection, sportOptions, leagueOptions, seasonOptions, setSport, setLeague, setSeason } = useSportContext()
+  const isLiveContext = isLiveDataSelection(selection)
 
   const close = useCallback(() => setOpenId(null), [])
 
@@ -167,6 +171,54 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
 
         {/* Right side */}
         <div className="navbar-right">
+          <div className="navbar-context">
+            <label className="navbar-context-field">
+              <span>Sport</span>
+              <select
+                value={selection.sport}
+                onChange={(e) => setSport(e.target.value as SportId)}
+              >
+                {sportOptions.map(option => (
+                  <option key={option.id} value={option.id}>
+                    {option.shortLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="navbar-context-field">
+              <span>League</span>
+              <select
+                value={selection.league}
+                onChange={(e) => setLeague(e.target.value)}
+              >
+                {leagueOptions.map(option => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="navbar-context-field">
+              <span>Season</span>
+              <select
+                value={selection.season}
+                onChange={(e) => setSeason(e.target.value)}
+              >
+                {seasonOptions.map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <span className={`navbar-context-status ${isLiveContext ? 'live' : 'planned'}`}>
+              {isLiveContext ? 'Live Data' : 'Coming Soon'}
+            </span>
+          </div>
+
           <div className={pillClass}>
             <span className="dot" />
             {pillLabel}

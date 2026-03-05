@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import DragDropChartBuilder from '../components/Dashboard/DragDropChartBuilder'
 import { useDashboard } from '../hooks/useDashboard'
 import type { DashboardBuilderConfig, DashboardCreateRouteState, DashboardCreateTemplate, DashboardSource } from '../types'
+import { useSportContext } from '../context/SportContext'
+import { findSportOption, isLiveDataSelection } from '../config/sports'
 
 const ACCENT = '#D97706'
 
@@ -23,6 +25,9 @@ function buildTemplateFromState(state: DashboardCreateRouteState): DashboardCrea
     source: state.fromItem.source,
     route: state.fromItem.route,
     title: state.fromItem.title,
+    sport: state.fromItem.sport,
+    league: state.fromItem.league,
+    season: state.fromItem.season,
     note: state.fromItem.note,
     tags: state.fromItem.tags,
     stats: state.fromItem.stats,
@@ -33,13 +38,18 @@ function buildTemplateFromState(state: DashboardCreateRouteState): DashboardCrea
 export default function DashboardCreate() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { selection } = useSportContext()
   const routeState = (location.state ?? {}) as DashboardCreateRouteState
   const template = useMemo(() => buildTemplateFromState(routeState), [routeState])
+  const isLiveSelection = isLiveDataSelection(selection)
+  const fallbackDataSeason = isLiveSelection ? selection.season : '2025-26'
 
   const [title, setTitle] = useState(template?.title ?? 'Custom Dashboard')
   const [note, setNote] = useState(template?.note ?? '')
   const [builderConfig, setBuilderConfig] = useState<DashboardBuilderConfig>({
-    season: template?.builderDefaults?.season ?? '2025-26',
+    season: template?.builderDefaults?.season ?? template?.season ?? fallbackDataSeason,
+    sport: template?.builderDefaults?.sport ?? template?.sport ?? selection.sport,
+    league: template?.builderDefaults?.league ?? template?.league ?? selection.league,
     tableName: template?.builderDefaults?.tableName ?? 'matches',
     chartType: template?.builderDefaults?.chartType ?? 'bar',
     dimensionField: template?.builderDefaults?.dimensionField ?? '',
@@ -52,6 +62,8 @@ export default function DashboardCreate() {
 
   const source = template?.source ?? 'dashboard/custom'
   const sourceLabel = SOURCE_LABEL[source]
+  const selectedSport = findSportOption(selection.sport)
+  const selectedLeague = selectedSport.leagues.find(item => item.id === selection.league)?.label ?? selection.league
   const trimmedTitle = title.trim()
   const canSave = trimmedTitle.length > 0
   const builderKey = `${source}_${template?.route ?? 'custom'}_${template?.builderDefaults?.tableName ?? 'matches'}`
@@ -63,6 +75,9 @@ export default function DashboardCreate() {
       source,
       route: template?.route ?? '/dashboard/create',
       title: trimmedTitle,
+      sport: template?.sport ?? selection.sport,
+      league: template?.league ?? selection.league,
+      season: template?.season ?? selection.season,
       note: note.trim() || undefined,
       tags: template?.tags,
       stats: template?.stats,
@@ -100,6 +115,14 @@ export default function DashboardCreate() {
           <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 760 }}>
             Build a dashboard for <strong>{sourceLabel}</strong> using raw table fields, multiple aggregates, and filters.
           </p>
+          <p style={{ fontSize: '0.76rem', color: 'var(--text-3)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>
+            Context: {selectedSport.label} · {selectedLeague} · {builderConfig.season}
+          </p>
+          {!isLiveSelection && (
+            <p style={{ fontSize: '0.74rem', color: 'var(--warning)', marginTop: 4 }}>
+              Selected sport/league is coming soon: builder currently runs on Basketball · NBA dataset until adapters are implemented.
+            </p>
+          )}
         </div>
 
         <div

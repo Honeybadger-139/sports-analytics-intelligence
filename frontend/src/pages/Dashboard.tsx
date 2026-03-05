@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
 import type { DashboardCreateRouteState, DashboardItem, DashboardSource } from '../types'
+import { findSportOption } from '../config/sports'
 
 const ACCENT = '#D97706'
 
@@ -40,6 +41,8 @@ function DashboardCard({
 }) {
   const meta = SOURCE_META[item.source] ?? { label: 'Unknown', color: '#64748B', section: 'Arena' }
   const isCustom = item.source === 'dashboard/custom'
+  const sportOption = findSportOption(item.sport ?? 'nba')
+  const leagueLabel = sportOption.leagues.find(league => league.id === (item.league ?? 'nba'))?.label ?? (item.league ?? 'nba')
 
   return (
     <motion.div
@@ -80,6 +83,11 @@ function DashboardCard({
         <p style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 6 }}>{item.title}</p>
         {item.note && (
           <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.55 }}>{item.note}</p>
+        )}
+        {(item.sport || item.league || item.season) && (
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
+            {sportOption.label} · {leagueLabel} · {item.season ?? '2025-26'}
+          </p>
         )}
       </div>
 

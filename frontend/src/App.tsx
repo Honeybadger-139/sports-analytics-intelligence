@@ -10,7 +10,10 @@ import Dashboard from './pages/Dashboard'
 import DashboardCreate from './pages/DashboardCreate'
 import Scribble from './pages/Scribble'
 import Chatbot  from './pages/Chatbot'
+import ComingSoonHold from './components/ComingSoonHold'
 import { useSystemStatus } from './hooks/useApi'
+import { SportContextProvider, useSportContext } from './context/SportContext'
+import { isLiveDataSelection } from './config/sports'
 
 const THEME_KEY = 'sai_v2_theme'
 
@@ -22,6 +25,8 @@ function AppShell() {
   })
 
   const { data: sys, loading, error: sysError } = useSystemStatus()
+  const { selection } = useSportContext()
+  const isLiveSelection = isLiveDataSelection(selection)
 
   useEffect(() => {
     document.body.classList.toggle('theme-light', theme === 'light')
@@ -45,13 +50,13 @@ function AppShell() {
       <AnimatePresence mode="wait">
         <Routes>
           <Route path="/"         element={<Overview />} />
-          <Route path="/pulse/*"  element={<Pulse />} />
-          <Route path="/arena/*"  element={<Arena />} />
-          <Route path="/lab/*"    element={<Lab />} />
-          <Route path="/dashboard/create" element={<DashboardCreate />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/scribble" element={<Scribble />} />
-          <Route path="/chatbot"  element={<Chatbot />} />
+          <Route path="/pulse/*"  element={isLiveSelection ? <Pulse /> : <ComingSoonHold section="Pulse" />} />
+          <Route path="/arena/*"  element={isLiveSelection ? <Arena /> : <ComingSoonHold section="Arena" />} />
+          <Route path="/lab/*"    element={isLiveSelection ? <Lab /> : <ComingSoonHold section="Lab" />} />
+          <Route path="/dashboard/create" element={isLiveSelection ? <DashboardCreate /> : <ComingSoonHold section="Dashboard Builder" />} />
+          <Route path="/dashboard" element={isLiveSelection ? <Dashboard /> : <ComingSoonHold section="Dashboard" />} />
+          <Route path="/scribble" element={isLiveSelection ? <Scribble /> : <ComingSoonHold section="Scribble" />} />
+          <Route path="/chatbot"  element={isLiveSelection ? <Chatbot /> : <ComingSoonHold section="Chatbot" />} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>
@@ -62,7 +67,9 @@ function AppShell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppShell />
+      <SportContextProvider>
+        <AppShell />
+      </SportContextProvider>
     </BrowserRouter>
   )
 }

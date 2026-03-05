@@ -1,3 +1,5 @@
+import type { SportId } from './config/sports'
+
 export interface SystemStatus {
   status: 'healthy' | 'degraded' | 'error'
   database: string
@@ -69,6 +71,12 @@ export interface ChatResponse {
   reply: string
 }
 
+export interface SportLeagueSelection {
+  sport: SportId
+  league: string
+  season: string
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 export type DashboardSource =
@@ -96,6 +104,8 @@ export interface DashboardBuilderFilter {
 
 export interface DashboardBuilderConfig {
   season: string
+  sport?: SportId
+  league?: string
   tableName: string | null
   chartType: DashboardChartType
   dimensionField: string
@@ -117,6 +127,9 @@ export interface DashboardItem {
   source: DashboardSource
   route: string
   savedAt: string
+  sport?: SportId
+  league?: string
+  season?: string
   note?: string
   tags?: string[]
   stats?: DashboardStat[]
@@ -127,6 +140,9 @@ export interface DashboardCreateTemplate {
   source: DashboardSource
   route: string
   title: string
+  sport?: SportId
+  league?: string
+  season?: string
   note?: string
   tags?: string[]
   stats?: DashboardStat[]

@@ -2,8 +2,8 @@ import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
 import { useSystemStatus } from '../hooks/useApi'
 import { NAV_ITEMS } from '../components/Navbar'
-
-const SEASON = '2025-26'
+import { findSportOption, isLiveDataSelection } from '../config/sports'
+import { useSportContext } from '../context/SportContext'
 
 function fmt(n: number | undefined | null, decimals = 0) {
   if (n == null) return '--'
@@ -22,6 +22,10 @@ const fadeUp: Variants = {
 export default function Overview() {
   const navigate = useNavigate()
   const { data: sys, loading: sysLoading } = useSystemStatus()
+  const { selection, setSport, setLeague } = useSportContext()
+  const sport = findSportOption(selection.sport)
+  const league = sport.leagues.find(item => item.id === selection.league)?.label ?? selection.league
+  const isLiveSelection = isLiveDataSelection(selection)
 
   const statusClass =
     sys?.status === 'healthy'  ? 'status-healthy'  :
@@ -29,6 +33,13 @@ export default function Overview() {
     sys?.status === 'degraded' ? 'status-degraded'  : ''
 
   const metrics = [
+    {
+      label: 'Context',
+      value: isLiveSelection ? 'LIVE' : 'COMING SOON',
+      meta: `${sport.label} · ${league} · ${selection.season}`,
+      accent: isLiveSelection ? '#00D68F' : '#F59E0B',
+      valueClass: isLiveSelection ? 'status-healthy' : 'status-degraded',
+    },
     {
       label: 'Database',
       value: sysLoading ? '…' : (sys?.database ?? '--').toUpperCase(),
@@ -46,8 +57,8 @@ export default function Overview() {
     },
     {
       label: 'Matches',
-      value: sysLoading ? '…' : fmt(sys?.stats?.matches),
-      meta: `Season ${SEASON}`,
+      value: isLiveSelection ? (sysLoading ? '…' : fmt(sys?.stats?.matches)) : '—',
+      meta: isLiveSelection ? `Season ${selection.season}` : 'Live for Basketball · NBA',
       accent: '#FF5C1A',
       mono: true,
     },
@@ -60,8 +71,8 @@ export default function Overview() {
     },
     {
       label: 'Players',
-      value: sysLoading ? '…' : fmt(sys?.stats?.active_players),
-      meta: 'Active entries',
+      value: isLiveSelection ? (sysLoading ? '…' : fmt(sys?.stats?.active_players)) : '—',
+      meta: isLiveSelection ? 'Active entries' : 'Sport adapters pending',
       accent: '#06C5F8',
       mono: true,
     },
@@ -83,14 +94,56 @@ export default function Overview() {
           animate="show"
         >
           <motion.p className="overview-eyebrow" variants={fadeUp}>
-            {today} · NBA Season {SEASON}
+            {today} · {sport.label} · {league} · {selection.season}
           </motion.p>
           <motion.h1 className="overview-title" variants={fadeUp}>
             Sports Analytics<br />Intelligence
           </motion.h1>
           <motion.p className="overview-subtitle" variants={fadeUp}>
-            NBA prediction engine · Feature engineering · ML model monitoring · Statistical deep-dive · AI intelligence layer
+            {isLiveSelection
+              ? 'Basketball · NBA prediction engine, feature engineering, model monitoring, deep-dive analytics, and AI intelligence.'
+              : 'Selected sport/league is in rollout. Core workflows are visible, while live metrics are currently enabled only for Basketball · NBA.'}
           </motion.p>
+          {!isLiveSelection && (
+            <motion.div
+              variants={fadeUp}
+              style={{
+                marginTop: 14,
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                background: 'rgba(245, 158, 11, 0.08)',
+                borderRadius: 'var(--r-sm)',
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                maxWidth: 760,
+              }}
+            >
+              <span style={{ fontSize: '0.78rem', color: 'var(--warning)' }}>
+                Current selection is coming soon. Switch to Basketball · NBA to access all active modules.
+              </span>
+              <button
+                onClick={() => {
+                  setSport('nba')
+                  setLeague('nba')
+                }}
+                style={{
+                  border: '1px solid rgba(245, 158, 11, 0.45)',
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  color: 'var(--warning)',
+                  borderRadius: 'var(--r-sm)',
+                  padding: '6px 10px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Switch To Basketball · NBA
+              </button>
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Metric cards */}
@@ -130,7 +183,7 @@ export default function Overview() {
             animate="show"
           >
             {NAV_ITEMS.slice(0, 3).map(item => (
-              <DirectoryCard key={item.id} item={item} onNavigate={navigate} />
+              <DirectoryCard key={item.id} item={item} onNavigate={navigate} disabled={!isLiveSelection} />
             ))}
           </motion.div>
 
@@ -141,7 +194,7 @@ export default function Overview() {
             animate="show"
           >
             {NAV_ITEMS.slice(3).map(item => (
-              <DirectoryCard key={item.id} item={item} onNavigate={navigate} liveIds={['chatbot', 'scribble']} />
+              <DirectoryCard key={item.id} item={item} onNavigate={navigate} disabled={!isLiveSelection} />
             ))}
           </motion.div>
         </div>
@@ -154,11 +207,11 @@ export default function Overview() {
 interface DirectoryCardProps {
   item: (typeof NAV_ITEMS)[0]
   onNavigate: (path: string) => void
-  liveIds?: string[]
+  disabled?: boolean
 }
 
-function DirectoryCard({ item, onNavigate, liveIds = [] }: DirectoryCardProps) {
-  const isComingSoon = !!item.badge && !liveIds.includes(item.id)
+function DirectoryCard({ item, onNavigate, disabled = false }: DirectoryCardProps) {
+  const isComingSoon = disabled
 
   const descriptions: Record<string, string> = {
     pulse:   'Daily game intelligence, sports news, injury reports, and pre-game context grounded in cited sources.',
@@ -192,8 +245,19 @@ function DirectoryCard({ item, onNavigate, liveIds = [] }: DirectoryCardProps) {
             <button
               key={sub.path}
               className="dir-subitem"
-              onClick={() => onNavigate(sub.path)}
-              style={{ textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0', borderBottom: '1px solid var(--border)', width: '100%' }}
+              onClick={() => {
+                if (!isComingSoon) onNavigate(sub.path)
+              }}
+              style={{
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                cursor: isComingSoon ? 'not-allowed' : 'pointer',
+                opacity: isComingSoon ? 0.5 : 1,
+                padding: '8px 0',
+                borderBottom: '1px solid var(--border)',
+                width: '100%',
+              }}
             >
               <span className="dir-subitem-dot" style={{ background: item.color }} />
               <span>
