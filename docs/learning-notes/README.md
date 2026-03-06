@@ -18,7 +18,7 @@ This directory is your study map for interview prep and future system upgrades.
 - `mlops/`:
   - deployment and lifecycle fundamentals
 - `intelligence-layer/`:
-  - RAG, reasoning-layer direction, and chatbot backend (hybrid RAG+DB engine)
+  - RAG, reasoning-layer direction, chatbot backend, and LangGraph orchestration
 
 ## What To Study Next
 
@@ -55,6 +55,7 @@ Recently completed and documented:
 22. UI hardening batch: cross-theme token fixes (`--bg-card`, accent semantics), native date-picker visibility tuning, and section accent modernization for Pulse/Arena/Lab/Dashboard.
 23. Frontend ops hotfix: Vite API proxy alignment (`8000 -> 8001`) to restore accurate navbar system status.
 24. UI follow-up hotfix: date-picker indicator rendering switched to native visible indicator (not background-image) to avoid inline style override gaps.
+25. Phase 7 completion: feature-flagged LangGraph chatbot engine finalized with quality-gate + DB-retry nodes, route-level engine metadata, and offline-safe evaluation harness (`backend/src/intelligence/chat_eval.py`).
 
 ## Suggested Progression
 

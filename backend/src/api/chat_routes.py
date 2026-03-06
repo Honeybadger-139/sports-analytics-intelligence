@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from src.data.db import get_db
 from src.intelligence.chat_service import ChatService, LLMClient
+from src.intelligence.langgraph_chat_service import LangGraphChatService
 from src import config
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     intent: Optional[str] = None  # 'rag' | 'db' | 'off_topic' — useful for debugging
+    engine: Optional[str] = None  # 'legacy' | 'langgraph'
 
 
 class ChatHealthResponse(BaseModel):
@@ -65,7 +67,23 @@ class ChatHealthResponse(BaseModel):
     db_connected: bool
     schema_tables_visible: int
     gemini_model: str
+    chat_engine_configured: str
+    chat_engine_active: str
+    langgraph_available: bool
     message: str
+
+
+def _get_chat_service(db: Session, sport: str):
+    """
+    Build chatbot service using configured orchestration engine.
+
+    CHAT_ENGINE options:
+    - legacy   (default): existing custom orchestration
+    - langgraph         : LangGraph state machine + LangChain runnable nodes
+    """
+    if config.CHAT_ENGINE == "langgraph":
+        return LangGraphChatService(db=db, sport=sport)
+    return ChatService(db=db, sport=sport)
 
 
 @router.get("/chat/health", response_model=ChatHealthResponse)
@@ -86,6 +104,7 @@ async def chat_health(db: Session = Depends(get_db)):
     from src.intelligence.chat_service import _fetch_schema_context, _SQL_SAFE_TABLES
 
     llm = _get_llm_client()
+    service = _get_chat_service(db=db, sport="nba")
     llm_ok = llm.available
 
     db_ok = False
@@ -117,6 +136,9 @@ async def chat_health(db: Session = Depends(get_db)):
         db_connected=db_ok,
         schema_tables_visible=schema_count,
         gemini_model=config.RAG_SUMMARY_MODEL,
+        chat_engine_configured=config.CHAT_ENGINE,
+        chat_engine_active=getattr(service, "active_engine", "legacy"),
+        langgraph_available=bool(getattr(service, "graph_available", False)),
         message=msg,
     )
 
@@ -139,7 +161,7 @@ async def chat(
     """
     try:
         history = [h.model_dump() for h in (payload.history or [])]
-        service = ChatService(db=db, sport=payload.sport or "nba")
+        service = _get_chat_service(db=db, sport=payload.sport or "nba")
 
         # Expose intent for frontend debug (not shown in UI, available in network tab)
         from src.intelligence.chat_service import IntentRouter
@@ -150,7 +172,11 @@ async def chat(
             history=history,
             session_id=payload.session_id,
         )
-        return ChatResponse(reply=reply, intent=intent)
+        return ChatResponse(
+            reply=reply,
+            intent=intent,
+            engine=getattr(service, "active_engine", "legacy"),
+        )
 
     except HTTPException:
         raise

@@ -192,3 +192,82 @@ POST /api/v1/chat
 > "I applied the Adapter pattern for the LLM client. The rest of the system depends on the interface, not on Gemini. When Minimax goes live, it's a one-class swap."
 
 > "I added a hard off-topic gate before any LLM call. If the question isn't about sports analytics, we decline at zero LLM cost. This keeps the product focused, costs minimal, and behavior auditable."
+
+---
+
+## LangChain + LangGraph Completion — Phase 7 (`langgraph_chat_service.py`)
+
+> **Linear**: SCR-200
+
+### What is it?
+
+`backend/src/intelligence/langgraph_chat_service.py` adds a graph-based orchestration engine on top of the existing chatbot. It keeps the legacy chatbot intact and exposes a feature-flag switch:
+
+- `CHAT_ENGINE=legacy` (default)
+- `CHAT_ENGINE=langgraph` (new graph path)
+
+### Why does it matter?
+
+The old service had good logic but mostly linear control flow. LangGraph gives explicit state-machine behavior for guardrails and retries:
+
+1. Intent routing is explicit and testable.
+2. RAG quality gate blocks uncited/empty-context narratives.
+3. DB retry node enables a deterministic second attempt on known failure replies.
+4. Finalize node validates output shape before returning.
+
+This is reliability engineering for LLM systems, not just "using a new framework."
+
+### How it works (intuition first)
+
+```text
+route_intent -> rewrite_query ->
+  rag: retrieve -> quality_gate -> rag_respond -> finalize
+  db : db_query -> (retry?) -> finalize
+  off_topic -> finalize
+```
+
+- **LangChain usage**: each node tool call is wrapped with `RunnableLambda` for consistent invocation.
+- **LangGraph usage**: conditional edges decide branch transitions (`rag`, `db`, `off_topic`, retry/no-retry).
+- **Fallback behavior**: if LangGraph deps are unavailable or runtime fails, service falls back to `ChatService`.
+
+### API contract impact
+
+`POST /api/v1/chat` response now includes:
+
+- `reply`
+- `intent`
+- `engine` (`legacy` or `langgraph`)
+
+`GET /api/v1/chat/health` now reports:
+
+- `chat_engine_configured`
+- `chat_engine_active`
+- `langgraph_available`
+
+### Evaluation harness (Phase 7 evidence)
+
+`backend/src/intelligence/chat_eval.py` compares legacy vs langgraph on fixed cases:
+
+1. DB analytical query
+2. RAG context query
+3. off-topic guard query
+
+It records intent match, reply lengths, and basic signal-presence checks into JSON for repeatable comparisons.
+
+### Senior Manager perspective
+
+This phase introduces a controlled migration pattern:
+
+1. Keep production-safe default (`legacy`).
+2. Incrementally enable `langgraph`.
+3. Keep observability and regression checks during rollout.
+
+That is the same pattern used in platform modernization projects: no risky hard cutovers.
+
+### Common interview questions
+
+1. Why use LangGraph when you already have working Python orchestration?
+2. Why a feature flag instead of replacing the old chatbot directly?
+3. How do you prevent hallucinations in the RAG path?
+4. How does your DB retry policy avoid infinite loops?
+5. What metrics in your eval harness would you upgrade next for production?

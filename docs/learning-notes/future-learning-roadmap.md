@@ -2,7 +2,7 @@
 
 This roadmap captures learning priorities across all completed and upcoming phases of the Sports Analytics Intelligence Platform.
 
-## Current Baseline (Completed — Phases 0 through 7C)
+## Current Baseline (Completed — Phases 0 through 7)
 
 1. Structured ingestion resilience (rate limiting, retries, idempotent upserts).
 2. Feature reliability hardening (H2H execution + non-leaky pregame streaks).
@@ -21,6 +21,7 @@ This roadmap captures learning priorities across all completed and upcoming phas
 15. Phase 7A UI redesign: React + Vite + TypeScript `frontend` on `ui-redesign` branch.
 16. Phase 7B Chatbot: hybrid RAG+DB engine, LLMClient Adapter, IntentRouter, off-topic gate.
 17. Phase 7C Scribble: read-only SQL API, DataTable reuse, CustomEvent bus, localStorage notebooks.
+18. Phase 7 completion (LangGraph): feature-flagged dual engine (`legacy|langgraph`), state-graph guard nodes (RAG quality gate + DB retry + finalize contract), and parity evaluation harness (`chat_eval.py`).
 
 ---
 

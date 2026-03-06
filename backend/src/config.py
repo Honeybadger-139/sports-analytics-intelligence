@@ -51,6 +51,13 @@ def _env_csv(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_chat_engine(name: str = "CHAT_ENGINE", default: str = "legacy") -> str:
+    raw = os.getenv(name, default).strip().lower()
+    if raw in {"legacy", "langgraph"}:
+        return raw
+    return default
+
+
 # Intelligence (Phase 4)
 INTELLIGENCE_ENABLED = _env_bool("INTELLIGENCE_ENABLED", True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -118,6 +125,11 @@ LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 LANGFUSE_DEBUG: bool = _env_bool("LANGFUSE_DEBUG", False)
+
+# Chatbot engine (Phase 7A)
+# - legacy   : existing custom orchestration
+# - langgraph: LangGraph state machine wrapping RAG/DB/off-topic flow
+CHAT_ENGINE: str = _env_chat_engine()
 
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))

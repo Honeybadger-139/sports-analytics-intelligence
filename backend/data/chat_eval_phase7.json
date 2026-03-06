@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-03-06T13:45:57.925751+00:00",
+  "cases_total": 3,
+  "results": [
+    {
+      "case": "db_team_win_rate",
+      "message": "Which NBA team has the best win rate this season?",
+      "expected_intent": "db",
+      "detected_intent": "db",
+      "intent_match": true,
+      "legacy_reply_len": 198,
+      "langgraph_reply_len": 198,
+      "legacy_contains_signal": false,
+      "langgraph_contains_signal": false,
+      "langgraph_engine_active": "langgraph"
+    },
+    {
+      "case": "rag_injury_context",
+      "message": "Any injury updates for tonight's games?",
+      "expected_intent": "rag",
+      "detected_intent": "rag",
+      "intent_match": true,
+      "legacy_reply_len": 308,
+      "langgraph_reply_len": 308,
+      "legacy_contains_signal": true,
+      "langgraph_contains_signal": true,
+      "langgraph_engine_active": "langgraph"
+    },
+    {
+      "case": "off_topic_guard",
+      "message": "Give me a pasta recipe with mushrooms.",
+      "expected_intent": "off_topic",
+      "detected_intent": "off_topic",
+      "intent_match": true,
+      "legacy_reply_len": 192,
+      "langgraph_reply_len": 192,
+      "legacy_contains_signal": true,
+      "langgraph_contains_signal": true,
+      "langgraph_engine_active": "langgraph"
+    }
+  ]
+}

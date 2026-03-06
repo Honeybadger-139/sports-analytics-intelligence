@@ -634,10 +634,10 @@ img, svg { display: block; }
 }
 .directory-grid-bottom {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   margin-top: 14px;
-  max-width: calc(66.67% + 7px);
+  max-width: 100%;
 }
 
 .dir-card {

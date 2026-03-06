@@ -1,0 +1,101 @@
+"""
+Tests for chatbot routes and engine selection.
+"""
+
+from fastapi.testclient import TestClient
+
+from main import app
+from src.api import chat_routes as chat_routes_module
+from src.data.db import get_db
+
+
+client = TestClient(app)
+
+
+class _FakeDB:
+    def execute(self, *_args, **_kwargs):
+        raise RuntimeError("db unavailable in test")
+
+
+def _override_get_db():
+    yield _FakeDB()
+
+
+def test_get_chat_service_legacy(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+
+    class _FakeLegacy:
+        def __init__(self, db, sport):
+            self.db = db
+            self.sport = sport
+
+    monkeypatch.setattr(chat_routes_module, "ChatService", _FakeLegacy)
+    service = chat_routes_module._get_chat_service(db=_FakeDB(), sport="nba")
+    assert isinstance(service, _FakeLegacy)
+
+
+def test_get_chat_service_langgraph(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "langgraph")
+
+    class _FakeGraph:
+        def __init__(self, db, sport):
+            self.db = db
+            self.sport = sport
+
+    monkeypatch.setattr(chat_routes_module, "LangGraphChatService", _FakeGraph)
+    service = chat_routes_module._get_chat_service(db=_FakeDB(), sport="nba")
+    assert isinstance(service, _FakeGraph)
+
+
+def test_chat_endpoint_uses_configured_service(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+
+    class _FakeService:
+        active_engine = "legacy"
+
+        def reply(self, message, history, session_id=None):
+            return f"echo::{message}::{len(history)}::{session_id or 'none'}"
+
+    monkeypatch.setattr(chat_routes_module, "_get_chat_service", lambda db, sport: _FakeService())
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat",
+            json={
+                "message": "Hello",
+                "history": [{"role": "user", "content": "Old turn"}],
+                "session_id": "session-123",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reply"] == "echo::Hello::1::session-123"
+    assert payload["intent"] in {"db", "rag", "off_topic"}
+    assert payload["engine"] == "legacy"
+
+
+def test_chat_health_includes_engine_fields(monkeypatch):
+    class _FakeLLM:
+        available = False
+
+    class _FakeService:
+        active_engine = "langgraph"
+        graph_available = True
+
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "langgraph")
+    monkeypatch.setattr(chat_routes_module, "_get_llm_client", lambda: _FakeLLM())
+    monkeypatch.setattr(chat_routes_module, "_get_chat_service", lambda db, sport: _FakeService())
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.get("/api/v1/chat/health")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chat_engine_configured"] == "langgraph"
+    assert payload["chat_engine_active"] == "langgraph"
+    assert payload["langgraph_available"] is True

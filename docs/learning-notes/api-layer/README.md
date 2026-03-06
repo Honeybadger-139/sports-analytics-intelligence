@@ -25,6 +25,7 @@ The API Layer exposes the platform's capabilities as RESTful endpoints using Fas
 | `GET /api/v1/features/{id}` | Computed features for a game |
 | `GET /api/v1/system/status` | Pipeline health + audit trail |
 | `POST /api/v1/chat` | AI chatbot — hybrid RAG+DB query engine (Phase 7B) |
+| `GET /api/v1/chat/health` | Chatbot readiness + engine metadata (`legacy` vs `langgraph`) |
 | `POST /api/v1/scribble/query` | Read-only SQL execution for data playground (Phase 7C) |
 
 ## Key Design Patterns
@@ -74,14 +75,28 @@ This design creates a measurable feedback loop: model quality, decision quality,
 # chat_routes.py
 @router.post("/chat")
 async def chat(request: ChatRequest) -> ChatResponse:
-    service = ChatService(sport=request.sport or 'nba')
-    return service.chat(request.message, request.history)
+    service = _get_chat_service(db=db, sport=request.sport or "nba")
+    reply = service.reply(message=request.message, history=request.history, session_id=request.session_id)
+    return ChatResponse(reply=reply, intent=intent, engine=service.active_engine)
 ```
 
 - **Request**: `{ message, history[], sport? }`
-- **Response**: `{ reply, path: "rag"|"db"|"off_topic", sql_used?, citations? }`
+- **Response**: `{ reply, intent, engine }`
 - HTTP 500 with detail message on unexpected errors (graceful degradation)
 - Registered in `main.py` as `chat_router`
+- Engine selection is feature-flagged via `CHAT_ENGINE` (`legacy` default, `langgraph` optional)
+
+### `GET /api/v1/chat/health` — Chatbot engine readiness
+
+- **Response fields** include:
+  - `status`
+  - `llm_available`
+  - `db_connected`
+  - `schema_tables_visible`
+  - `chat_engine_configured`
+  - `chat_engine_active`
+  - `langgraph_available`
+- This endpoint confirms both dependency health and active orchestration path for debugging/demo readiness.
 
 See `intelligence-layer/README.md` for the full backend architecture.
 
