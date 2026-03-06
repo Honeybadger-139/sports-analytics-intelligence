@@ -331,14 +331,23 @@ export function useGamePrediction(gameId: string | null) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!gameId) { setData(null); return }
+    if (!gameId) {
+      setData(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     const ctrl = new AbortController()
     setLoading(true)
+    setData(null)
     setError(null)
     fetchJSON<GamePredictionResponse>(`/predictions/game/${gameId}`, ctrl.signal)
       .then(setData)
       .catch(err => {
-        if ((err as Error).name !== 'AbortError') setError('Failed to load prediction')
+        if ((err as Error).name !== 'AbortError') {
+          setData(null)
+          setError('Failed to load prediction')
+        }
       })
       .finally(() => setLoading(false))
     return () => ctrl.abort()

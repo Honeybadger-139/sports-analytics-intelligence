@@ -1,10 +1,31 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStats, useGamePrediction } from '../../hooks/useApi'
-import type { PlayerBoxScore, TeamBoxScore } from '../../types'
+import type { PlayerBoxScore, ShapFactor, TeamBoxScore } from '../../types'
 
 const ACCENT = '#D4551F'
 const BG_OVERLAY = 'rgba(0,0,0,0.75)'
+
+function isShapFactor(row: unknown): row is ShapFactor {
+  if (!row || typeof row !== 'object') return false
+  return typeof (row as { feature?: unknown }).feature === 'string'
+    && typeof (row as { shap_value?: unknown }).shap_value === 'number'
+}
+
+function normalizeExplanation(explanation: unknown): ShapFactor[] {
+  if (!explanation || typeof explanation !== 'object') return []
+  const payload = explanation as Record<string, unknown>
+
+  // Current backend shape: { base_value, model_name, top_factors, all_factors }
+  if (Array.isArray(payload.all_factors)) {
+    return payload.all_factors.filter(isShapFactor)
+  }
+
+  // Legacy shape: { model_a: ShapFactor[], model_b: ShapFactor[] }
+  return Object.values(payload).flatMap(value => (
+    Array.isArray(value) ? value.filter(isShapFactor) : []
+  ))
+}
 
 function pct(val: number | null | undefined, decimals = 1): string {
   if (val == null) return '—'
@@ -212,6 +233,7 @@ function PredictionTab({ gameId, homeTeam, awayTeam }: { gameId: string; homeTea
   if (!data) return null
 
   const ensemble = data.predictions?.ensemble ?? data.predictions?.xgboost ?? Object.values(data.predictions ?? {})[0]
+  const shapFactors = normalizeExplanation(data.explanation).slice(0, 6)
 
   return (
     <div>
@@ -247,30 +269,28 @@ function PredictionTab({ gameId, homeTeam, awayTeam }: { gameId: string; homeTea
       </div>
 
       {/* SHAP Explanations */}
-      {ensemble && Object.keys(data.explanation ?? {}).length > 0 && (
+      {ensemble && shapFactors.length > 0 && (
         <>
           <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 16 }}>
             Key Factors (SHAP)
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {Object.entries(data.explanation).flatMap(([, factors]) =>
-              factors.slice(0, 6).map(f => (
-                <div key={f.feature} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', flex: 1 }}>{f.display_name ?? f.feature}</span>
-                  <div style={{ width: 120, height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%',
-                      width: `${Math.min(Math.abs(f.shap_value) * 200, 100)}%`,
-                      background: f.shap_value >= 0 ? 'var(--success)' : 'var(--error)',
-                      borderRadius: 3,
-                    }} />
-                  </div>
-                  <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: f.shap_value >= 0 ? 'var(--success)' : 'var(--error)', minWidth: 44, textAlign: 'right' }}>
-                    {f.shap_value >= 0 ? '+' : ''}{f.shap_value.toFixed(3)}
-                  </span>
+            {shapFactors.map(f => (
+              <div key={f.feature} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', flex: 1 }}>{f.display_name ?? f.feature}</span>
+                <div style={{ width: 120, height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(Math.abs(f.shap_value) * 200, 100)}%`,
+                    background: f.shap_value >= 0 ? 'var(--success)' : 'var(--error)',
+                    borderRadius: 3,
+                  }} />
                 </div>
-              ))
-            )}
+                <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: f.shap_value >= 0 ? 'var(--success)' : 'var(--error)', minWidth: 44, textAlign: 'right' }}>
+                  {f.shap_value >= 0 ? '+' : ''}{f.shap_value.toFixed(3)}
+                </span>
+              </div>
+            ))}
           </div>
         </>
       )}

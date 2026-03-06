@@ -10,12 +10,14 @@ const SEASONS  = ['2025-26', '2024-25', '2023-24']
 const MODEL_LABELS: Record<string, string> = {
   ensemble:            'Ensemble',
   xgboost:             'XGBoost',
+  lightgbm:            'LightGBM',
   lgbm:                'LightGBM',
   logistic_regression: 'Logistic Regression',
 }
 const MODEL_COLORS: Record<string, string> = {
   ensemble:            '#06C5F8',
   xgboost:             '#8B5CF6',
+  lightgbm:            '#10B981',
   lgbm:                '#10B981',
   logistic_regression: '#FFB100',
 }

@@ -6,16 +6,18 @@ import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#0E8ED8'
 
-const MODEL_ORDER  = ['ensemble', 'xgboost', 'lgbm', 'logistic_regression']
+const MODEL_ORDER  = ['ensemble', 'xgboost', 'lightgbm', 'logistic_regression']
 const MODEL_LABELS: Record<string, string> = {
   ensemble:            'Ensemble',
   xgboost:             'XGBoost',
+  lightgbm:            'LightGBM',
   lgbm:                'LightGBM',
   logistic_regression: 'Logistic',
 }
 const MODEL_COLORS: Record<string, string> = {
   ensemble:            '#06C5F8',
   xgboost:             '#8B5CF6',
+  lightgbm:            '#10B981',
   lgbm:                '#10B981',
   logistic_regression: '#FFB100',
 }
@@ -49,7 +51,9 @@ function GameCard({
   onSave: (game: TodayGamePrediction) => void
 }) {
   const preds = game.predictions ?? {}
-  const models = MODEL_ORDER.filter(m => m in preds)
+  const orderedModels = MODEL_ORDER.filter(m => m in preds)
+  const extraModels = Object.keys(preds).filter(m => !MODEL_ORDER.includes(m))
+  const models = [...orderedModels, ...extraModels]
 
   const ensemble = preds.ensemble as ModelPrediction | undefined
   const bestPick = ensemble

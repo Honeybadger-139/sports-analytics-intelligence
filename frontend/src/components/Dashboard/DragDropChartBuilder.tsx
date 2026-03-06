@@ -25,6 +25,12 @@ interface FilterConfig {
   value: string
 }
 
+interface PlayerDirectory {
+  allPlayers: string[]
+  playersByTeam: Record<string, string[]>
+  teamList: string[]
+}
+
 interface AggregatePoint {
   key: string
   metrics: number[]
@@ -308,6 +314,11 @@ export default function DragDropChartBuilder({ initialConfig, onConfigChange }: 
   const [dimensionField, setDimensionField] = useState(initialConfig?.dimensionField ?? '')
   const [metrics, setMetrics] = useState<MetricConfig[]>(withMetricIds(initialConfig?.metrics ?? []))
   const [filters, setFilters] = useState<FilterConfig[]>(withFilterIds(initialConfig?.filters ?? []))
+  const [playerDirectory, setPlayerDirectory] = useState<PlayerDirectory>({
+    allPlayers: [],
+    playersByTeam: {},
+    teamList: [],
+  })
 
   const { data: tableList, loading: tablesLoading } = useTableList(season)
   const { data: tableRows, loading: rowsLoading } = useTableRows(tableName, season, 300, 0)
@@ -320,6 +331,52 @@ export default function DragDropChartBuilder({ initialConfig, onConfigChange }: 
   const numericColumns = useMemo(() => {
     return columns.filter(col => (tableRows?.rows ?? []).some(row => parseNumber(row[col]) !== null))
   }, [columns, tableRows])
+
+  const valueOptionsByField = useMemo<Record<string, string[]>>(() => {
+    const rows = tableRows?.rows ?? []
+    const result: Record<string, string[]> = {}
+    for (const col of columns) {
+      const seen = new Set<string>()
+      for (const row of rows) {
+        const value = row[col]
+        if (value === null || value === undefined || value === '') continue
+        const text = String(value)
+        if (!text.trim() || seen.has(text)) continue
+        seen.add(text)
+        if (seen.size >= 200) break
+      }
+      result[col] = Array.from(seen).sort((a, b) => a.localeCompare(b))
+    }
+    return result
+  }, [columns, tableRows])
+
+  const activeTeamFilter = useMemo(() => {
+    const teamFilter = filters.find(
+      filter =>
+        filter.field === 'team_abbreviation' &&
+        filter.op === 'eq' &&
+        filter.value.trim().length > 0,
+    )
+    return teamFilter?.value.trim().toUpperCase() ?? ''
+  }, [filters])
+
+  const filterOptionsById = useMemo<Record<string, string[]>>(() => {
+    const result: Record<string, string[]> = {}
+    for (const filter of filters) {
+      if (tableName === 'player_game_stats' && filter.field === 'team_abbreviation' && playerDirectory.teamList.length > 0) {
+        result[filter.id] = playerDirectory.teamList
+        continue
+      }
+      if (tableName === 'player_game_stats' && filter.field === 'player_name') {
+        result[filter.id] = activeTeamFilter
+          ? (playerDirectory.playersByTeam[activeTeamFilter] ?? [])
+          : playerDirectory.allPlayers
+        continue
+      }
+      result[filter.id] = valueOptionsByField[filter.field] ?? []
+    }
+    return result
+  }, [activeTeamFilter, filters, playerDirectory, tableName, valueOptionsByField])
 
   const normalizedFilters = useMemo<DashboardBuilderFilter[]>(
     () => filters.map(filter => ({ field: filter.field, op: filter.op, value: filter.value })),
@@ -418,6 +475,74 @@ export default function DragDropChartBuilder({ initialConfig, onConfigChange }: 
       setTableName(tables[0].table)
     }
   }, [tableList, tableName])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPlayerDirectory() {
+      if (tableName !== 'player_game_stats') {
+        setPlayerDirectory({ allPlayers: [], playersByTeam: {}, teamList: [] })
+        return
+      }
+
+      const allRows: Record<string, unknown>[] = []
+      const limit = 300
+      let offset = 0
+      let total = Number.POSITIVE_INFINITY
+
+      while (offset < total && offset < 12000) {
+        const params = new URLSearchParams({
+          season,
+          limit: String(limit),
+          offset: String(offset),
+        })
+        const res = await fetch(`/api/v1/raw/players?${params}`)
+        if (!res.ok) throw new Error(`Failed to load players (${res.status})`)
+        const payload = await res.json() as { rows?: Record<string, unknown>[]; total?: number }
+        const rows = Array.isArray(payload.rows) ? payload.rows : []
+        allRows.push(...rows)
+        total = typeof payload.total === 'number' ? payload.total : rows.length
+        if (rows.length < limit) break
+        offset += limit
+      }
+
+      if (cancelled) return
+
+      const playerSet = new Set<string>()
+      const teamMap = new Map<string, Set<string>>()
+
+      for (const row of allRows) {
+        const fullName = String(row.full_name ?? '').trim()
+        if (!fullName) continue
+        playerSet.add(fullName)
+        const team = String(row.team_abbreviation ?? '').trim().toUpperCase()
+        if (!team) continue
+        if (!teamMap.has(team)) teamMap.set(team, new Set<string>())
+        teamMap.get(team)?.add(fullName)
+      }
+
+      const playersByTeam: Record<string, string[]> = {}
+      for (const [team, players] of teamMap.entries()) {
+        playersByTeam[team] = Array.from(players).sort((a, b) => a.localeCompare(b))
+      }
+
+      setPlayerDirectory({
+        allPlayers: Array.from(playerSet).sort((a, b) => a.localeCompare(b)),
+        playersByTeam,
+        teamList: Array.from(teamMap.keys()).sort((a, b) => a.localeCompare(b)),
+      })
+    }
+
+    loadPlayerDirectory().catch(() => {
+      if (!cancelled) {
+        setPlayerDirectory({ allPlayers: [], playersByTeam: {}, teamList: [] })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [season, tableName])
 
   useEffect(() => {
     if (!onConfigChange) return
@@ -681,12 +806,50 @@ export default function DragDropChartBuilder({ initialConfig, onConfigChange }: 
                     <option value="lt">&lt;</option>
                     <option value="lte">≤</option>
                   </select>
-                  <input
-                    value={filter.value}
-                    onChange={e => updateFilter(filter.id, { value: e.target.value })}
-                    placeholder="Value"
-                    style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-1)' }}
-                  />
+                  {(() => {
+                    const valueOptions = filterOptionsById[filter.id] ?? []
+                    const shouldUseSelect =
+                      (filter.op === 'eq' || filter.op === 'neq') &&
+                      valueOptions.length > 0 &&
+                      valueOptions.length <= 40
+
+                    if (shouldUseSelect) {
+                      return (
+                        <select
+                          value={filter.value}
+                          onChange={e => updateFilter(filter.id, { value: e.target.value })}
+                          style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-1)' }}
+                        >
+                          <option value="">(any)</option>
+                          {valueOptions.map(option => (
+                            <option key={`${filter.id}_${option}`} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      )
+                    }
+
+                    const datalistId = `flt_values_${filter.id}`
+                    return (
+                      <>
+                        <input
+                          list={valueOptions.length ? datalistId : undefined}
+                          value={filter.value}
+                          onChange={e => updateFilter(filter.id, { value: e.target.value })}
+                          placeholder="Value"
+                          style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-1)' }}
+                        />
+                        {valueOptions.length > 0 && (
+                          <datalist id={datalistId}>
+                            {valueOptions.map(option => (
+                              <option key={`${datalistId}_${option}`} value={option} />
+                            ))}
+                          </datalist>
+                        )}
+                      </>
+                    )
+                  })()}
                   <button
                     onClick={() => removeFilter(filter.id)}
                     style={{

@@ -87,6 +87,130 @@ def _persist_predictions_for_games(db: Session, games: list) -> int:
     return persisted
 
 
+def _bootstrap_predictions_from_completed_games(
+    db: Session,
+    season: str,
+    max_games: int = 1500,
+) -> Dict[str, int]:
+    """
+    Backfill prediction rows for completed games when performance history is empty.
+    """
+    predictor = get_predictor()
+    feature_cols = predictor.feature_columns or []
+    if not feature_cols:
+        return {
+            "scanned_games": 0,
+            "games_bootstrapped": 0,
+            "persisted_rows": 0,
+            "errors": 0,
+        }
+
+    query = text(
+        """
+        SELECT
+            m.game_id,
+            m.game_date,
+            ht.abbreviation as home_team,
+            ht.full_name as home_team_name,
+            at.abbreviation as away_team,
+            at.full_name as away_team_name,
+            hf.win_pct_last_5, hf.win_pct_last_10,
+            hf.avg_point_diff_last_5, hf.avg_point_diff_last_10,
+            1 as is_home, hf.days_rest,
+            CASE WHEN hf.is_back_to_back THEN 1 ELSE 0 END as is_back_to_back,
+            hf.avg_off_rating_last_5, hf.avg_def_rating_last_5,
+            hf.avg_pace_last_5, hf.avg_efg_last_5,
+            hf.h2h_win_pct, hf.h2h_avg_margin, hf.current_streak,
+            af.win_pct_last_5 as opp_win_pct_last_5,
+            af.win_pct_last_10 as opp_win_pct_last_10,
+            af.avg_point_diff_last_5 as opp_avg_point_diff_last_5,
+            af.avg_point_diff_last_10 as opp_avg_point_diff_last_10,
+            af.days_rest as opp_days_rest,
+            CASE WHEN af.is_back_to_back THEN 1 ELSE 0 END as opp_is_back_to_back,
+            af.avg_off_rating_last_5 as opp_avg_off_rating_last_5,
+            af.avg_def_rating_last_5 as opp_avg_def_rating_last_5,
+            af.avg_pace_last_5 as opp_avg_pace_last_5,
+            af.avg_efg_last_5 as opp_avg_efg_last_5
+        FROM matches m
+        JOIN teams ht ON m.home_team_id = ht.team_id
+        JOIN teams at ON m.away_team_id = at.team_id
+        LEFT JOIN match_features hf ON m.game_id = hf.game_id AND m.home_team_id = hf.team_id
+        LEFT JOIN match_features af ON m.game_id = af.game_id AND m.away_team_id = af.team_id
+        WHERE m.season = :season
+          AND m.is_completed = TRUE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM predictions p
+              WHERE p.game_id = m.game_id
+          )
+        ORDER BY m.game_date DESC, m.game_id DESC
+        LIMIT :max_games
+        """
+    )
+
+    with db.get_bind().connect() as conn:
+        df = pd.read_sql(query, conn, params={"season": season, "max_games": max_games})
+
+    if df.empty:
+        return {
+            "scanned_games": 0,
+            "games_bootstrapped": 0,
+            "persisted_rows": 0,
+            "errors": 0,
+        }
+
+    persisted_rows = 0
+    games_bootstrapped = 0
+    errors = 0
+
+    for _, row in df.iterrows():
+        game_id = str(row.get("game_id"))
+        try:
+            # Build one-row numeric feature frame deterministically to avoid noisy
+            # dtype downcasting warnings during large bootstrap loops.
+            feature_payload = {
+                col: float(row.get(col, 0) or 0)
+                for col in feature_cols
+            }
+            features = pd.DataFrame([feature_payload], columns=feature_cols)
+            predictions = predictor.predict_game(features)
+
+            predicted_at = None
+            game_date = row.get("game_date")
+            if game_date is not None and pd.notna(game_date):
+                if isinstance(game_date, datetime):
+                    predicted_at = game_date
+                else:
+                    parsed = pd.to_datetime(game_date)
+                    predicted_at = datetime.combine(parsed.date(), datetime.min.time())
+
+            persisted_rows += persist_game_predictions(
+                db,
+                game_id=game_id,
+                predictions=predictions,
+                predicted_at=predicted_at,
+            )
+            games_bootstrapped += 1
+        except Exception as exc:
+            errors += 1
+            logger.warning(
+                "Skipped prediction bootstrap for game_id=%s season=%s: %s",
+                game_id,
+                season,
+                exc,
+            )
+
+    if persisted_rows > 0:
+        sync_prediction_outcomes(db, season=season)
+
+    return {
+        "scanned_games": int(len(df)),
+        "games_bootstrapped": int(games_bootstrapped),
+        "persisted_rows": int(persisted_rows),
+        "errors": int(errors),
+    }
+
+
 class BetCreateRequest(BaseModel):
     game_id: str = Field(min_length=1, max_length=20)
     bet_type: str = Field(default="match_winner", min_length=1, max_length=50)
@@ -787,6 +911,11 @@ async def get_prediction_performance(
     season: str = Query(default=config.CURRENT_SEASON),
     model_name: Optional[str] = Query(default=None, description="Specific model name"),
     min_games: int = Query(default=1, ge=1, le=5000),
+    bootstrap_if_empty: bool = Query(
+        default=True,
+        description="Backfill historical predictions for completed games when summary is empty.",
+    ),
+    bootstrap_limit: int = Query(default=1500, ge=50, le=5000),
     db: Session = Depends(get_db),
 ):
     """
@@ -832,6 +961,27 @@ async def get_prediction_performance(
         pending_query, {"season": season, "model_name": model_name}
     ).scalar()
 
+    bootstrap = {
+        "attempted": False,
+        "scanned_games": 0,
+        "games_bootstrapped": 0,
+        "persisted_rows": 0,
+        "errors": 0,
+    }
+    if bootstrap_if_empty and len(rows) == 0:
+        bootstrap["attempted"] = True
+        result = _bootstrap_predictions_from_completed_games(
+            db,
+            season=season,
+            max_games=bootstrap_limit,
+        )
+        bootstrap.update(result)
+        if bootstrap["persisted_rows"] > 0:
+            rows = db.execute(summary_query, params).fetchall()
+            pending_count = db.execute(
+                pending_query, {"season": season, "model_name": model_name}
+            ).scalar()
+
     performance = []
     for row in rows:
         item = dict(row._mapping)
@@ -847,6 +997,7 @@ async def get_prediction_performance(
         "pending_games": int(pending_count or 0),
         "evaluated_models": len(performance),
         "performance": performance,
+        "bootstrap": bootstrap,
     }
 
 

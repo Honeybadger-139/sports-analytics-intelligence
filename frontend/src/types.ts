@@ -454,6 +454,17 @@ export interface ShapFactor {
   display_name?: string
 }
 
+export interface ShapExplanationCurrent {
+  base_value?: number
+  model_name?: string
+  top_factors?: ShapFactor[]
+  all_factors?: ShapFactor[]
+}
+
+export type ShapExplanation =
+  | Record<string, ShapFactor[]>
+  | ShapExplanationCurrent
+
 export interface GamePredictionResponse {
   game_id: string
   home_team: string
@@ -461,7 +472,7 @@ export interface GamePredictionResponse {
   home_team_name: string
   away_team_name: string
   predictions: Record<string, ModelPrediction>
-  explanation: Record<string, ShapFactor[]>
+  explanation: ShapExplanation
 }
 
 export interface ModelPerformanceItem {

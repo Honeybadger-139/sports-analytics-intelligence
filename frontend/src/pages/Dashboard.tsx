@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
-import type { DashboardCreateRouteState, DashboardItem, DashboardSource } from '../types'
+import { useSportContext } from '../context/SportContext'
+import type { DashboardCreateRouteState, DashboardCreateTemplate, DashboardItem, DashboardSource } from '../types'
 import { findSportOption } from '../config/sports'
 
 const ACCENT = '#D97706'
@@ -14,6 +15,14 @@ const SOURCE_META: Record<DashboardSource, { label: string; color: string; secti
   'arena/player-stats': { label: 'Player Stats', color: '#22D3EE', section: 'Arena' },
   'arena/team-stats': { label: 'Team Stats', color: '#0891B2', section: 'Arena' },
   'dashboard/custom': { label: 'Custom Builder', color: '#F97316', section: 'Dashboard' },
+}
+
+interface DashboardStarterCard {
+  id: string
+  title: string
+  description: string
+  highlights: string[]
+  template: DashboardCreateTemplate
 }
 
 function fmtDateTime(iso: string): string {
@@ -150,6 +159,7 @@ function DashboardCard({
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { selection } = useSportContext()
   const { items, removeItem, clearAll } = useDashboard()
   const [sourceFilter, setSourceFilter] = useState<'all' | DashboardSource>('all')
 
@@ -161,6 +171,75 @@ export default function Dashboard() {
     if (sourceFilter === 'all') return items
     return items.filter(item => item.source === sourceFilter)
   }, [items, sourceFilter])
+
+  const starterCards = useMemo<DashboardStarterCard[]>(() => {
+    const shared = {
+      source: 'dashboard/custom' as const,
+      route: '/dashboard/create',
+      sport: selection.sport,
+      league: selection.league,
+      season: selection.season,
+    }
+    return [
+      {
+        id: 'team-trends',
+        title: 'Team Trends Dashboard',
+        description: 'Track average points, rebounds, and assists over time for any NBA team.',
+        highlights: ['Line chart on game_date', 'Team filter dropdown', 'Multi-metric trend view'],
+        template: {
+          ...shared,
+          title: 'Team Trend Explorer',
+          note: 'Team-level scoring and ball movement trend dashboard.',
+          tags: ['starter:team-trends', 'team', 'trend'],
+          builderDefaults: {
+            season: selection.season,
+            sport: selection.sport,
+            league: selection.league,
+            tableName: 'team_game_stats',
+            chartType: 'line',
+            dimensionField: 'game_date',
+            metrics: [
+              { field: 'points', aggregate: 'avg' },
+              { field: 'rebounds', aggregate: 'avg' },
+              { field: 'assists', aggregate: 'avg' },
+            ],
+            filters: [
+              { field: 'team_abbreviation', op: 'eq', value: '' },
+            ],
+          },
+        },
+      },
+      {
+        id: 'player-trends',
+        title: 'Player Trends Dashboard',
+        description: 'Compare how a player is trending in points, rebounds, and assists by game date.',
+        highlights: ['Line chart on game_date', 'Team + player filters', 'Supports any active player'],
+        template: {
+          ...shared,
+          title: 'Player Trend Explorer',
+          note: 'Player-level production trend dashboard.',
+          tags: ['starter:player-trends', 'player', 'trend'],
+          builderDefaults: {
+            season: selection.season,
+            sport: selection.sport,
+            league: selection.league,
+            tableName: 'player_game_stats',
+            chartType: 'line',
+            dimensionField: 'game_date',
+            metrics: [
+              { field: 'points', aggregate: 'avg' },
+              { field: 'rebounds', aggregate: 'avg' },
+              { field: 'assists', aggregate: 'avg' },
+            ],
+            filters: [
+              { field: 'team_abbreviation', op: 'eq', value: '' },
+              { field: 'player_name', op: 'eq', value: '' },
+            ],
+          },
+        },
+      },
+    ]
+  }, [selection])
 
   return (
     <div className="page-shell">
@@ -213,6 +292,73 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        <section
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-md)',
+            background: 'var(--bg-panel)',
+            padding: '16px 18px',
+            marginBottom: 18,
+          }}
+        >
+          <p style={{ fontSize: '0.72rem', color: ACCENT, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Starter Dashboards
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+            {starterCards.map(card => (
+              <div
+                key={card.id}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-sm)',
+                  background: 'var(--bg-elevated)',
+                  padding: '12px 12px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <p style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-1)' }}>{card.title}</p>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', lineHeight: 1.45 }}>{card.description}</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {card.highlights.map(highlight => (
+                    <span
+                      key={highlight}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-panel)',
+                        fontSize: '0.68rem',
+                        color: 'var(--text-3)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      {highlight}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  onClick={() => navigate('/dashboard/create', { state: { template: card.template } })}
+                  style={{
+                    marginTop: 'auto',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--r-sm)',
+                    border: `1px solid ${ACCENT}`,
+                    background: `${ACCENT}18`,
+                    color: ACCENT,
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Use This Starter
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
           <button

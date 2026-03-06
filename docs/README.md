@@ -46,6 +46,10 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-06-navbar-theme-toggle-visibility-fix.md`
 - `changelogs/2026-03-06-team-stats-hero-style-tuning.md`
 - `changelogs/2026-03-06-navbar-two-tier-layout.md`
+- `changelogs/2026-03-06-arena-match-stats-payload-compat-fix.md`
+- `changelogs/2026-03-06-arena-model-performance-bootstrap-fix.md`
+- `changelogs/2026-03-07-dashboard-starter-trends-and-dynamic-filters.md`
+- `changelogs/2026-03-07-dashboard-player-filter-suggestions-team-aware.md`
 
 ## Recommended Start Order
 

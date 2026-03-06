@@ -64,6 +64,8 @@ export default function DashboardCreate() {
   const sourceLabel = SOURCE_LABEL[source]
   const selectedSport = findSportOption(selection.sport)
   const selectedLeague = selectedSport.leagues.find(item => item.id === selection.league)?.label ?? selection.league
+  const isTeamStarter = template?.tags?.includes('starter:team-trends') ?? false
+  const isPlayerStarter = template?.tags?.includes('starter:player-trends') ?? false
   const trimmedTitle = title.trim()
   const canSave = trimmedTitle.length > 0
   const builderKey = `${source}_${template?.route ?? 'custom'}_${template?.builderDefaults?.tableName ?? 'matches'}`
@@ -202,6 +204,26 @@ export default function DashboardCreate() {
           initialConfig={template?.builderDefaults}
           onConfigChange={setBuilderConfig}
         />
+
+        {(isTeamStarter || isPlayerStarter) && (
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--bg-panel)',
+              padding: '10px 12px',
+              marginTop: -6,
+              marginBottom: 14,
+            }}
+          >
+            <p style={{ fontSize: '0.74rem', color: ACCENT, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+              Starter Tip
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', lineHeight: 1.45 }}>
+              Use <strong>Filters</strong> in the builder to pick team/player dynamically. For Team Trends, set <code>team_abbreviation</code>. For Player Trends, set both <code>team_abbreviation</code> and <code>player_name</code>.
+            </p>
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button

@@ -11,8 +11,40 @@ const SEASONS = ['2025-26', '2024-25', '2023-24']
 const MODEL_LABELS: Record<string, string> = {
   ensemble: 'Ensemble',
   xgboost: 'XGBoost',
+  lightgbm: 'LightGBM',
   lgbm: 'LightGBM',
   logistic_regression: 'Logistic',
+}
+
+function isShapFactor(value: unknown): value is ShapFactor {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return typeof row.feature === 'string' && typeof row.shap_value === 'number'
+}
+
+function normalizeExplanation(explanation: unknown): { models: string[]; byModel: Record<string, ShapFactor[]> } {
+  if (!explanation || typeof explanation !== 'object') {
+    return { models: [], byModel: {} }
+  }
+
+  const payload = explanation as Record<string, unknown>
+
+  // Current backend shape: { model_name, top_factors, all_factors, ... }
+  if (Array.isArray(payload.all_factors)) {
+    const modelName = typeof payload.model_name === 'string' ? payload.model_name : 'xgboost'
+    const factors = payload.all_factors.filter(isShapFactor)
+    return { models: [modelName], byModel: { [modelName]: factors } }
+  }
+
+  // Legacy backend shape: { xgboost: [...], lgbm: [...], ... }
+  const byModel: Record<string, ShapFactor[]> = {}
+  for (const [model, factors] of Object.entries(payload)) {
+    if (!Array.isArray(factors)) continue
+    const validFactors = factors.filter(isShapFactor)
+    if (validFactors.length > 0) byModel[model] = validFactors
+  }
+
+  return { models: Object.keys(byModel), byModel }
 }
 
 function fmtDate(iso: string): string {
@@ -112,11 +144,16 @@ export default function MatchDeepDive() {
   const matches = matchData?.matches ?? []
   const selectedMatch = matches.find(m => m.game_id === selectedId) ?? null
 
-  // SHAP factors: flatten per model
-  const shapModels = pred ? Object.keys(pred.explanation ?? {}) : []
   const [activeShapModel, setActiveShapModel] = useState<string>('xgboost')
-
-  const shapFactors: ShapFactor[] = pred?.explanation?.[activeShapModel] ?? pred?.explanation?.[shapModels[0]] ?? []
+  const normalizedExplanation = normalizeExplanation(pred?.explanation)
+  const shapModels = normalizedExplanation.models
+  const selectedShapModel =
+    shapModels.includes(activeShapModel)
+      ? activeShapModel
+      : (shapModels[0] ?? '')
+  const shapFactors: ShapFactor[] = selectedShapModel
+    ? (normalizedExplanation.byModel[selectedShapModel] ?? [])
+    : []
   const maxAbsShap = shapFactors.length
     ? Math.max(...shapFactors.map(f => Math.abs(f.shap_value)))
     : 1
@@ -296,6 +333,19 @@ export default function MatchDeepDive() {
         {selectedId && predError && (
           <div style={{ padding: '16px 20px', background: 'rgba(255,76,106,0.07)', border: '1px solid rgba(255,76,106,0.2)', borderRadius: 'var(--r-md)' }}>
             <p style={{ color: 'var(--error)', fontSize: '0.85rem' }}>{predError} — this game may not have model predictions yet.</p>
+          </div>
+        )}
+
+        {selectedId && !predLoading && !predError && !pred && (
+          <div style={{
+            padding: '16px 20px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-md)',
+          }}>
+            <p style={{ color: 'var(--text-2)', fontSize: '0.85rem' }}>
+              No prediction payload was returned for this game. Try another game or refresh the model artifacts.
+            </p>
           </div>
         )}
 
