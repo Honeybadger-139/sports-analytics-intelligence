@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
-import type { DashboardCreateRouteState, MatchRow, ModelPrediction, ShapFactor } from '../../types'
+import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
+import { openGrafanaCreateDashboard } from '../../utils/grafana'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -120,7 +120,6 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
 }
 
 export default function MatchDeepDive() {
-  const navigate = useNavigate()
   const [season, setSeason] = useState('2025-26')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -142,7 +141,6 @@ export default function MatchDeepDive() {
   const { data: pred, loading: predLoading, error: predError } = useGamePrediction(selectedId)
 
   const matches = matchData?.matches ?? []
-  const selectedMatch = matches.find(m => m.game_id === selectedId) ?? null
 
   const [activeShapModel, setActiveShapModel] = useState<string>('xgboost')
   const normalizedExplanation = normalizeExplanation(pred?.explanation)
@@ -162,37 +160,7 @@ export default function MatchDeepDive() {
 
   function saveCurrentView() {
     if (!pred) return
-
-    const ensemble = pred.predictions?.ensemble ?? Object.values(pred.predictions ?? {})[0]
-    const homeProb = ensemble?.home_win_prob
-    const awayProb = ensemble?.away_win_prob
-    const winnerTeam = (homeProb ?? 0) >= (awayProb ?? 0) ? pred.home_team : pred.away_team
-    const winnerProb = (homeProb ?? 0) >= (awayProb ?? 0) ? homeProb : awayProb
-
-    const state: DashboardCreateRouteState = {
-      template: {
-        source: 'arena/match-deep-dive',
-        route: '/arena/deep-dive',
-        title: `${pred.home_team} vs ${pred.away_team}`,
-        note: `Created from Match Deep Dive (${season})${teamSearch ? ` · team search: ${teamSearch}` : ''}.`,
-        tags: [pred.home_team, pred.away_team, season],
-        stats: [
-          { label: 'Season', value: season },
-          { label: 'Predicted Winner', value: winnerTeam },
-          { label: 'Win Prob', value: winnerProb != null ? `${(winnerProb * 100).toFixed(1)}%` : '—' },
-          { label: 'Date', value: selectedMatch ? fmtDate(selectedMatch.game_date) : '—' },
-        ],
-        builderDefaults: {
-          season,
-          tableName: 'team_game_stats',
-          chartType: 'line',
-          dimensionField: 'game_date',
-          metrics: [{ field: 'plus_minus', aggregate: 'avg' }],
-          filters: [],
-        },
-      },
-    }
-    navigate('/dashboard/create', { state })
+    openGrafanaCreateDashboard()
   }
 
   return (

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document details the data pipeline that powers the Sports Analytics Intelligence Platform — from raw NBA API calls to ML-ready features stored in PostgreSQL.
+This document details the data pipeline that powers GameThread — from raw NBA API calls to ML-ready features stored in PostgreSQL.
 
 ## Pipeline Architecture Diagram
 

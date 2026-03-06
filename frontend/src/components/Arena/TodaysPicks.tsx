@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTodaysPredictions } from '../../hooks/useApi'
-import type { DashboardCreateRouteState, ModelPrediction, TodayGamePrediction } from '../../types'
+import type { ModelPrediction, TodayGamePrediction } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
+import { openGrafanaCreateDashboard } from '../../utils/grafana'
 
 const ACCENT = '#0E8ED8'
 
@@ -183,44 +183,13 @@ function GameCard({
 }
 
 export default function TodaysPicks() {
-  const navigate = useNavigate()
   const { data, loading, error, refresh } = useTodaysPredictions()
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const games  = data?.games ?? []
 
-  function saveGame(game: TodayGamePrediction) {
-    const ensemble = game.predictions?.ensemble ?? Object.values(game.predictions ?? {})[0]
-    const homeProb = ensemble?.home_win_prob
-    const awayProb = ensemble?.away_win_prob
-    const confidence = ensemble?.confidence
-    const hasHomeEdge = (homeProb ?? 0) >= (awayProb ?? 0)
-    const pickTeam = hasHomeEdge ? game.home_team : game.away_team
-    const pickProb = hasHomeEdge ? homeProb : awayProb
-
-    const state: DashboardCreateRouteState = {
-      template: {
-        source: 'arena/todays-picks',
-        route: '/arena/predictions',
-        title: `${game.home_team} vs ${game.away_team}`,
-        note: "Created from Today's Picks for quick recall.",
-        tags: [game.home_team, game.away_team, 'today'],
-        stats: [
-          { label: 'Pick', value: pickTeam },
-          { label: 'Win Prob', value: pickProb != null ? `${(pickProb * 100).toFixed(1)}%` : '—' },
-          { label: 'Confidence', value: confidence != null ? `${(confidence * 100).toFixed(1)}%` : '—' },
-        ],
-        builderDefaults: {
-          season: '2025-26',
-          tableName: 'matches',
-          chartType: 'bar',
-          dimensionField: 'home_team',
-          metrics: [{ field: 'game_id', aggregate: 'count' }],
-          filters: [],
-        },
-      },
-    }
-    navigate('/dashboard/create', { state })
+  function saveGame(_game: TodayGamePrediction) {
+    openGrafanaCreateDashboard()
   }
 
   return (

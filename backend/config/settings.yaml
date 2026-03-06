@@ -1,6 +1,6 @@
 # Application settings
 app:
-  name: "Sports Analytics Intelligence Platform"
+  name: "GameThread"
   version: "1.0.0"
   debug: false
 

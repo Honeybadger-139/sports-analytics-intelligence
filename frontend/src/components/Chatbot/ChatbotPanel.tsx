@@ -108,7 +108,7 @@ export default function ChatbotPanel() {
             <div className="chatbot-header-icon">💬</div>
             <div>
               <h1 className="chatbot-title">Chatbot</h1>
-              <p className="chatbot-subtitle">Sports Analytics AI · Powered by your live data</p>
+              <p className="chatbot-subtitle">GameThread · Powered by your live data</p>
             </div>
           </div>
           {hasSentOnce && (

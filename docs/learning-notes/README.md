@@ -57,6 +57,9 @@ Recently completed and documented:
 24. UI follow-up hotfix: date-picker indicator rendering switched to native visible indicator (not background-image) to avoid inline style override gaps.
 25. Phase 7 completion: feature-flagged LangGraph chatbot engine finalized with quality-gate + DB-retry nodes, route-level engine metadata, and offline-safe evaluation harness (`backend/src/intelligence/chat_eval.py`).
 26. Phase 8 completion: chatbot streaming via SSE (`/api/v1/chat/stream`), stream-first frontend hook with non-stream fallback, and Langfuse fail-open decorator hardening for offline/local workflows.
+27. Dashboard creation flow update: all `Create Dashboard` CTAs in Arena + Dashboard now open Grafana builder (`/dashboard/new` by default) via shared frontend helper + env config.
+28. Product branding refresh: user-facing dashboard and API metadata renamed to **GameThread** with updated docs entry points.
+29. Grafana runtime remap: moved Grafana host port from `3000` to `3301`, enabled compose service, and aligned frontend default URL to avoid port conflict.
 
 ## Suggested Progression
 

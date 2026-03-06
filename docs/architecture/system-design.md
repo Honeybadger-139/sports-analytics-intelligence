@@ -1,4 +1,4 @@
-# System Architecture — Sports Analytics Intelligence Platform
+# System Architecture — GameThread
 
 ## Overview
 

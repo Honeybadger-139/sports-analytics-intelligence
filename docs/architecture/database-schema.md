@@ -1,4 +1,4 @@
-# Database Schema — Sports Analytics Intelligence Platform
+# Database Schema — GameThread
 
 ## Overview
 

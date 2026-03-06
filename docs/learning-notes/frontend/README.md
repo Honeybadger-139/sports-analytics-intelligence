@@ -147,6 +147,15 @@ The chatbot, Scribble playground, and future Lab/Arena modules require complex i
 | **Scribble** | Live | Explorer, SQL Lab, Notebooks |
 | **Chatbot** | Live | Full-page AI assistant wired to `/api/v1/chat` |
 
+### Dashboard creation flow (Grafana-first)
+
+- Product direction now treats Grafana as the dashboard builder.
+- Any `Create Dashboard` button in Arena or Dashboard opens Grafana create URL (default: `http://localhost:3301/dashboard/new`).
+- `frontend/src/utils/grafana.ts` centralizes this behavior and reads:
+  - `VITE_GRAFANA_URL`
+  - `VITE_GRAFANA_CREATE_PATH`
+- Local route `/dashboard/create` remains as a launcher/fallback that redirects into Grafana.
+
 ### Overview home page (two zones)
 
 - **Zone 1 — Live Metric Cards**: DB, Pipeline, Matches, Features, Players, Bankroll, ROI, Open Bets — polled from real backend APIs

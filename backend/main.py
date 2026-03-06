@@ -1,5 +1,5 @@
 """
-Sports Analytics Intelligence Platform — FastAPI Backend
+GameThread — FastAPI Backend
 
 This is the entry point for the FastAPI application. It serves ML predictions,
 SHAP explanations, and risk-optimized stake sizing via REST API endpoints.
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Sports Analytics Intelligence Platform",
+    title="GameThread",
     description="ML-powered sports analytics with prediction, explainability, and risk optimization",
     version="1.0.0",
     lifespan=lifespan,
@@ -105,7 +105,7 @@ if os.path.exists(FRONTEND_DIR):
 async def root():
     """Health check endpoint."""
     return {
-        "name": "Sports Analytics Intelligence Platform",
+        "name": "GameThread",
         "version": "1.0.0",
         "status": "operational",
         "phase": "Phase 7 Active — UI Redesign + Chatbot + Scribble",

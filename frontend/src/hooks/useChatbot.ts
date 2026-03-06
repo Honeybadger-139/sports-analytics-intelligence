@@ -22,7 +22,7 @@ const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
   content:
-    "Hey! I'm your Sports Analytics AI assistant — connected to your live NBA Postgres database and news feeds.\n\nAsk me about player stats, team win rates, predictions, bankroll performance, injury reports, or game context. What would you like to explore?",
+    "Hey! I'm your GameThread assistant — connected to your live NBA Postgres database and news feeds.\n\nAsk me about player stats, team win rates, predictions, bankroll performance, injury reports, or game context. What would you like to explore?",
   timestamp: new Date().toISOString(),
 }
 

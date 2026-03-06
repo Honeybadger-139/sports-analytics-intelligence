@@ -12,7 +12,7 @@ export default function SportsMark({ size = 40, className = '' }: SportsMarkProp
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="Sports Analytics Intelligence"
+      aria-label="GameThread"
       style={{ overflow: 'visible' }}
     >
       <style>{`

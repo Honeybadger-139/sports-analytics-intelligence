@@ -97,7 +97,7 @@ export default function Overview() {
             {today} · {sport.label} · {league} · {selection.season}
           </motion.p>
           <motion.h1 className="overview-title" variants={fadeUp}>
-            Sports Analytics<br />Intelligence
+            GameThread<br />Command Center
           </motion.h1>
           <motion.p className="overview-subtitle" variants={fadeUp}>
             {isLiveSelection

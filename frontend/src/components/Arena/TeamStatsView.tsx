@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTeamsList, useTeamGameStats } from '../../hooks/useApi'
-import type { DashboardCreateRouteState, TeamGameLogEntry } from '../../types'
+import type { TeamGameLogEntry } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
+import { openGrafanaCreateDashboard } from '../../utils/grafana'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -72,7 +72,6 @@ function RecordCard({ label, value, sub }: { label: string; value: string | numb
 }
 
 export default function TeamStatsView() {
-    const navigate = useNavigate()
     const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [selectedAbbr, setSelectedAbbr] = useState<string | null>(null)
     const [opponent, setOpponent] = useState('')
@@ -133,31 +132,7 @@ export default function TeamStatsView() {
 
     function saveCurrentView() {
         if (!statsData) return
-        const state: DashboardCreateRouteState = {
-            template: {
-                source: 'arena/team-stats',
-                route: '/arena/deep-dive',
-                title: `${statsData.team.full_name} · Team Stats`,
-                note: `Created team game-log view${hasActiveFilters ? ' with active opponent/date filters' : ''}.`,
-                tags: [statsData.team.abbreviation, ...selectedSeasons],
-                stats: [
-                    { label: 'Seasons', value: seasonLabel },
-                    { label: 'Record', value: `${displayedRecord.wins}-${displayedRecord.losses}` },
-                    { label: 'Games', value: String(filteredGames.length) },
-                    { label: 'Opponent', value: opponent || 'All teams' },
-                    { label: 'Date Range', value: normalizedDateFrom || normalizedDateTo ? `${normalizedDateFrom || '—'} → ${normalizedDateTo || '—'}` : 'All dates' },
-                ],
-                builderDefaults: {
-                    season: selectedSeasons[0] ?? '2025-26',
-                    tableName: 'team_game_stats',
-                    chartType: 'line',
-                    dimensionField: 'game_date',
-                    metrics: [{ field: 'plus_minus', aggregate: 'avg' }],
-                    filters: opponent ? [{ field: 'opponent', op: 'eq', value: opponent }] : [],
-                },
-            },
-        }
-        navigate('/dashboard/create', { state })
+        openGrafanaCreateDashboard()
     }
 
     return (

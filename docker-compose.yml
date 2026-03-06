@@ -58,6 +58,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Grafana — Reporting builder (Phase 9 add-on)
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: sports-analytics-grafana
+    restart: unless-stopped
+    ports:
+      - "3301:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
   # ChromaDB Vector Store (for RAG agent — Phase 3)
   # chromadb:
   #   image: chromadb/chroma:latest
@@ -69,4 +82,6 @@ services:
 
 volumes:
   postgres_data:
-  pgadmin_data: # chroma_data:
+  pgadmin_data:
+  grafana_data:
+  # chroma_data:

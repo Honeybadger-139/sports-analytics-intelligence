@@ -50,6 +50,9 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-06-arena-model-performance-bootstrap-fix.md`
 - `changelogs/2026-03-07-dashboard-starter-trends-and-dynamic-filters.md`
 - `changelogs/2026-03-07-dashboard-player-filter-suggestions-team-aware.md`
+- `changelogs/2026-03-07-grafana-create-dashboard-routing.md`
+- `changelogs/2026-03-07-branding-gamethread.md`
+- `changelogs/2026-03-07-grafana-port-remap-3301.md`
 
 ## Recommended Start Order
 

@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
 import { useSportContext } from '../context/SportContext'
-import type { DashboardCreateRouteState, DashboardCreateTemplate, DashboardItem, DashboardSource } from '../types'
+import type { DashboardCreateTemplate, DashboardItem, DashboardSource } from '../types'
 import { findSportOption } from '../config/sports'
+import { openGrafanaCreateDashboard } from '../utils/grafana'
 
 const ACCENT = '#D97706'
 
@@ -253,13 +254,13 @@ export default function Dashboard() {
               Created Dashboards
             </h1>
             <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 720 }}>
-              Review all previously created dashboards first, then open the dedicated create page to build a new one from Arena context or raw tables.
+              Review all previously created dashboards first, then use Create Dashboard to open Grafana and build reporting views.
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
-              onClick={() => navigate('/dashboard/create')}
+              onClick={() => openGrafanaCreateDashboard()}
               style={{
                 padding: '7px 12px',
                 borderRadius: 'var(--r-sm)',
@@ -340,7 +341,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <button
-                  onClick={() => navigate('/dashboard/create', { state: { template: card.template } })}
+                  onClick={() => openGrafanaCreateDashboard()}
                   style={{
                     marginTop: 'auto',
                     padding: '7px 10px',
@@ -435,7 +436,7 @@ export default function Dashboard() {
               Open Arena
             </button>
             <button
-              onClick={() => navigate('/dashboard/create')}
+              onClick={() => openGrafanaCreateDashboard()}
               style={{
                 marginLeft: 8,
                 padding: '8px 14px',
@@ -459,8 +460,7 @@ export default function Dashboard() {
                 item={item}
                 onOpen={(selectedItem) => {
                   if (selectedItem.source === 'dashboard/custom') {
-                    const state: DashboardCreateRouteState = { fromItem: selectedItem }
-                    navigate('/dashboard/create', { state })
+                    openGrafanaCreateDashboard()
                     return
                   }
                   navigate(selectedItem.route)

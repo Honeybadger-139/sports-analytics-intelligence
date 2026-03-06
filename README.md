@@ -1,4 +1,4 @@
-# Sports Analytics Intelligence Platform
+# GameThread
 
 A production-grade NBA analytics platform with ML-powered match predictions, SHAP explainability, risk-optimized bet sizing, AI chatbot, and a SQL playground — all served from a single FastAPI backend.
 
@@ -84,6 +84,14 @@ make dev
 ```
 
 Starts the backend on `localhost:8000` and the Vite dev server on `localhost:5174`. Open `http://localhost:5174` — changes to frontend files appear in the browser instantly without a full rebuild. API calls are forwarded to `localhost:8000` automatically.
+
+### Optional: Start Grafana (dashboard builder)
+
+```bash
+docker-compose up -d grafana
+```
+
+Open `http://localhost:3301` (default credentials: `admin` / `admin` unless overridden in `.env`).
 
 ### 6. Stop everything
 
