@@ -26,6 +26,7 @@ The API Layer exposes the platform's capabilities as RESTful endpoints using Fas
 | `GET /api/v1/system/status` | Pipeline health + audit trail |
 | `POST /api/v1/chat` | AI chatbot — hybrid RAG+DB query engine (Phase 7B) |
 | `GET /api/v1/chat/health` | Chatbot readiness + engine metadata (`legacy` vs `langgraph`) |
+| `POST /api/v1/chat/stream` | SSE streaming chatbot response (Phase 8) |
 | `POST /api/v1/scribble/query` | Read-only SQL execution for data playground (Phase 7C) |
 
 ## Key Design Patterns
@@ -97,6 +98,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
   - `chat_engine_active`
   - `langgraph_available`
 - This endpoint confirms both dependency health and active orchestration path for debugging/demo readiness.
+
+### `POST /api/v1/chat/stream` — SSE response stream
+
+- **Request**: same shape as `POST /api/v1/chat`
+- **Response**: `text/event-stream` with events:
+  - `meta` (intent + engine)
+  - `token` (incremental text chunks)
+  - `done` (final reply payload)
+  - `error` (terminal failure payload)
+- Frontend uses stream-first behavior with fallback to non-stream `/chat` when stream endpoint is unavailable.
 
 See `intelligence-layer/README.md` for the full backend architecture.
 

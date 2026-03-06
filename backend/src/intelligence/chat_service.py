@@ -29,11 +29,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from langfuse import observe
-
 from src import config
 from src.intelligence.embeddings import EmbeddingClient
-from src.intelligence.langfuse_client import record_generation, set_session_context
+from src.intelligence.langfuse_client import (
+    init_langfuse,
+    observe,
+    record_generation,
+    set_session_context,
+)
 from src.intelligence.retriever import ContextRetriever
 from src.intelligence.vector_store import VectorStore
 
@@ -342,6 +345,7 @@ class ChatService:
     def __init__(self, db: Session, sport: str = "nba") -> None:
         self.db = db
         self.sport = sport
+        init_langfuse()
         self.llm = LLMClient()
         self._embedding_client = EmbeddingClient()
         self._vector_store = VectorStore()

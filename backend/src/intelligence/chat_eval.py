@@ -10,10 +10,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
+
+# Force offline-safe tracing behavior for local/sandbox eval runs.
+os.environ.setdefault("LANGFUSE_ENABLED", "false")
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+os.environ.setdefault("GEMINI_API_KEY", "")
+os.environ.setdefault("RAG_COLLECTION", "nba_context_eval_offline")
+os.environ.setdefault("RAG_CHROMA_DIR", "data/chroma_eval")
+
+from sqlalchemy import text
 
 from src.data.db import SessionLocal
 from src.intelligence.chat_service import ChatService, IntentRouter
@@ -55,17 +65,37 @@ def _passes_contains(reply: str, tokens: List[str]) -> bool:
     return any(token.lower() in lower for token in tokens)
 
 
+def _safe_reply(engine_name: str, fn, message: str) -> tuple[str, str | None]:
+    try:
+        return str(fn(message, history=[])), None
+    except Exception as exc:
+        return "", f"{engine_name} error: {str(exc)[:220]}"
+
+
 def run_eval() -> Dict:
     db = SessionLocal()
     try:
+        db_available = True
+        db_error = None
+        try:
+            db.execute(text("SELECT 1"))
+        except Exception as exc:
+            db_available = False
+            db_error = str(exc)[:220]
+
         legacy = ChatService(db=db, sport="nba")
         graph = LangGraphChatService(db=db, sport="nba")
 
         rows = []
         for case in CASES:
             intent = IntentRouter.route(case.message)
-            legacy_reply = legacy.reply(case.message, history=[])
-            graph_reply = graph.reply(case.message, history=[])
+            if not db_available and case.expected_intent == "db":
+                legacy_reply, graph_reply = "", ""
+                legacy_error = "legacy skipped: db unavailable"
+                graph_error = "langgraph skipped: db unavailable"
+            else:
+                legacy_reply, legacy_error = _safe_reply("legacy", legacy.reply, case.message)
+                graph_reply, graph_error = _safe_reply("langgraph", graph.reply, case.message)
             rows.append(
                 {
                     "case": case.name,
@@ -78,12 +108,16 @@ def run_eval() -> Dict:
                     "legacy_contains_signal": _passes_contains(legacy_reply, case.must_include_any),
                     "langgraph_contains_signal": _passes_contains(graph_reply, case.must_include_any),
                     "langgraph_engine_active": graph.active_engine,
+                    "legacy_error": legacy_error,
+                    "langgraph_error": graph_error,
                 }
             )
 
         return {
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
             "cases_total": len(rows),
+            "db_available": db_available,
+            "db_error": db_error,
             "results": rows,
         }
     finally:

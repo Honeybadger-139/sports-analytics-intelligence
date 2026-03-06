@@ -69,6 +69,8 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   reply: string
+  intent?: 'rag' | 'db' | 'off_topic'
+  engine?: 'legacy' | 'langgraph'
 }
 
 export interface SportLeagueSelection {

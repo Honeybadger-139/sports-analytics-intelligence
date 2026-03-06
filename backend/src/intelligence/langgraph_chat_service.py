@@ -18,13 +18,12 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional, Tuple, TypedDict
 
-from langfuse import observe
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from src import config
 from src.intelligence.chat_service import ChatService, IntentRouter
-from src.intelligence.langfuse_client import set_session_context
+from src.intelligence.langfuse_client import observe, set_session_context
 
 logger = logging.getLogger(__name__)
 

@@ -37,6 +37,71 @@ async function postChat(payload: ChatRequest, signal: AbortSignal): Promise<Chat
   return res.json()
 }
 
+type StreamHandlers = {
+  onToken: (token: string) => void
+  onDone: (payload: ChatResponse) => void
+}
+
+async function postChatStream(
+  payload: ChatRequest,
+  signal: AbortSignal,
+  handlers: StreamHandlers
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.body) throw new Error('Streaming response body unavailable')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  const parseFrame = (frame: string) => {
+    let event = 'message'
+    let data = ''
+    for (const line of frame.split('\n')) {
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        data += line.slice(5).trim()
+      }
+    }
+    if (!data) return
+
+    const payloadData = JSON.parse(data) as { token?: string; reply?: string; message?: string }
+    if (event === 'token' && payloadData.token) {
+      handlers.onToken(payloadData.token)
+      return
+    }
+    if (event === 'done') {
+      handlers.onDone({ reply: payloadData.reply || '' })
+      return
+    }
+    if (event === 'error') {
+      throw new Error(payloadData.message || 'Streaming failed')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const frame = buffer.slice(0, boundary).trim()
+      buffer = buffer.slice(boundary + 2)
+      if (frame) parseFrame(frame)
+      boundary = buffer.indexOf('\n\n')
+    }
+
+    if (done) break
+  }
+}
+
 export function useChatbot() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE])
   const [isLoading, setIsLoading] = useState(false)
@@ -66,18 +131,58 @@ export function useChatbot() {
           .filter(m => m.role !== 'error')
           .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
-        const res = await postChat(
-          { message: content.trim(), history, session_id: sessionIdRef.current },
-          ctrl.signal
-        )
-
+        const assistantMsgId = crypto.randomUUID()
         const assistantMsg: ChatMessage = {
-          id: crypto.randomUUID(),
+          id: assistantMsgId,
           role: 'assistant',
-          content: res.reply,
+          content: '',
           timestamp: new Date().toISOString(),
         }
         setMessages(prev => [...prev, assistantMsg])
+
+        try {
+          await postChatStream(
+            { message: content.trim(), history, session_id: sessionIdRef.current },
+            ctrl.signal,
+            {
+              onToken: (token) => {
+                setMessages(prev =>
+                  prev.map(msg =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, content: msg.content + token }
+                      : msg
+                  )
+                )
+              },
+              onDone: (payload) => {
+                if (!payload.reply) return
+                setMessages(prev =>
+                  prev.map(msg =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, content: payload.reply }
+                      : msg
+                  )
+                )
+              },
+            }
+          )
+        } catch (streamErr) {
+          // Backward-compatible fallback to non-stream endpoint if stream is unavailable.
+          const streamHttp404 = (streamErr as Error).message?.includes('HTTP 404')
+          if (!streamHttp404) throw streamErr
+
+          const res = await postChat(
+            { message: content.trim(), history, session_id: sessionIdRef.current },
+            ctrl.signal
+          )
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMsgId
+                ? { ...msg, content: res.reply }
+                : msg
+            )
+          )
+        }
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           const isNetworkError = (err as Error).message?.includes('Failed to fetch')
@@ -90,7 +195,14 @@ export function useChatbot() {
               : `Something went wrong: ${(err as Error).message || 'Unknown error'}. Please try again.`,
             timestamp: new Date().toISOString(),
           }
-          setMessages(prev => [...prev, errorMsg])
+          setMessages(prev => {
+            const trimmed = [...prev]
+            const last = trimmed[trimmed.length - 1]
+            if (last?.role === 'assistant' && !last.content.trim()) {
+              trimmed.pop()
+            }
+            return [...trimmed, errorMsg]
+          })
         }
       } finally {
         setIsLoading(false)

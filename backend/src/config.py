@@ -120,7 +120,7 @@ RAG_SCHEDULE_HOURS: list[int] = _env_int_list(
 # Sign up at https://cloud.langfuse.com to get keys (free tier available).
 # All values are optional — if LANGFUSE_SECRET_KEY is empty, tracing is silently
 # disabled and the chatbot continues to work normally.
-LANGFUSE_ENABLED: bool = _env_bool("LANGFUSE_ENABLED", True)
+LANGFUSE_ENABLED: bool = _env_bool("LANGFUSE_ENABLED", False)
 LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")

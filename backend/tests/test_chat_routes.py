@@ -99,3 +99,35 @@ def test_chat_health_includes_engine_fields(monkeypatch):
     assert payload["chat_engine_configured"] == "langgraph"
     assert payload["chat_engine_active"] == "langgraph"
     assert payload["langgraph_available"] is True
+
+
+def test_chat_stream_endpoint_emits_sse_events(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+
+    class _FakeService:
+        active_engine = "legacy"
+
+        def reply(self, message, history, session_id=None):
+            return "Streaming response payload."
+
+    monkeypatch.setattr(chat_routes_module, "_get_chat_service", lambda db, sport: _FakeService())
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat/stream",
+            json={
+                "message": "Stream this please",
+                "history": [],
+                "session_id": "session-stream-1",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: meta" in body
+    assert "event: token" in body
+    assert "event: done" in body
+    assert "Streaming response payload." in body

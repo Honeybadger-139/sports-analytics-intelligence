@@ -28,10 +28,47 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+import os
 
 logger = logging.getLogger(__name__)
 
 _initialized = False
+
+
+def _identity_decorator(*args, **kwargs):
+    """
+    No-op decorator compatible with `@observe(...)` usage.
+    """
+    if args and callable(args[0]) and len(args) == 1 and not kwargs:
+        return args[0]
+
+    def _decorator(func):
+        return func
+
+    return _decorator
+
+
+def _tracing_enabled() -> bool:
+    from src import config
+
+    return bool(config.LANGFUSE_ENABLED and config.LANGFUSE_SECRET_KEY)
+
+
+def observe(*args, **kwargs):
+    """
+    Safe observe wrapper:
+    - returns a no-op decorator when tracing is disabled
+    - otherwise delegates to Langfuse's observe decorator
+    """
+    if not _tracing_enabled():
+        return _identity_decorator(*args, **kwargs)
+    try:
+        from langfuse import observe as _lf_observe
+
+        return _lf_observe(*args, **kwargs)
+    except Exception as exc:
+        logger.debug("Langfuse observe unavailable, using no-op decorator: %s", exc)
+        return _identity_decorator(*args, **kwargs)
 
 
 def init_langfuse() -> bool:
@@ -50,10 +87,12 @@ def init_langfuse() -> bool:
     from src import config
 
     if not config.LANGFUSE_ENABLED:
+        os.environ.setdefault("OTEL_SDK_DISABLED", "true")
         logger.info("Langfuse: disabled via LANGFUSE_ENABLED=false.")
         return False
 
     if not config.LANGFUSE_SECRET_KEY:
+        os.environ.setdefault("OTEL_SDK_DISABLED", "true")
         logger.warning(
             "Langfuse: LANGFUSE_SECRET_KEY not set in backend/.env — "
             "session tracing and LLM chain observability are disabled. "
@@ -78,6 +117,7 @@ def init_langfuse() -> bool:
         )
         return True
     except Exception as exc:
+        os.environ.setdefault("OTEL_SDK_DISABLED", "true")
         logger.warning("Langfuse: client init failed — %s. Tracing disabled.", exc)
         return False
 

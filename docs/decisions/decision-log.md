@@ -125,6 +125,14 @@
 | 72 | **State-machine orchestration with explicit guard nodes** (`route_intent`, `rag_quality_gate`, `db_retry`, `finalize`) | Single linear chain, monolithic `if/else` service only | Graph nodes make control flow auditable and testable. Guard nodes enforce non-hallucination behavior (no-context fallback) and deterministic retry behavior for DB path without mutating core model logic. | More orchestration code than a simple chain | "I used LangGraph for control-plane reliability, not novelty. Explicit nodes make fallback, retry, and quality gates first-class behaviors that can be tested independently." |
 | 73 | **Offline-safe evaluation harness for legacy vs LangGraph comparison** (`chat_eval.py`) | Manual prompt spot-checking, notebook-only ad hoc checks | A repeatable harness creates objective parity checks (intent match, signal coverage, reply completeness) and supports interview storytelling with evidence instead of anecdotes. | Lightweight heuristic metrics; not a full benchmark suite yet | "I shipped a pragmatic eval harness early. Even simple deterministic checks give us repeatable quality signals and prevent silent regressions while we iterate on prompts and graph topology." |
 
+## Phase 8 Decisions — Streaming + Observability Hardening
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------|
+| 74 | **SSE streaming endpoint (`POST /api/v1/chat/stream`) over replacing `/api/v1/chat`** | Replace existing endpoint with streaming-only, WebSocket-only transport | Adds token-stream UX without breaking existing contract consumers. `/chat` remains stable; `/chat/stream` is additive. | Two endpoint contracts to maintain | "I shipped streaming as an additive API contract to avoid breaking existing clients. This is backward-compatible API evolution." |
+| 75 | **Frontend stream-first with fallback to non-stream endpoint** | Fail hard when stream endpoint unavailable, keep non-stream only | Stream-first provides better UX; fallback preserves robustness across mixed backend versions and rollout windows. | Slightly more client hook complexity | "I implemented progressive enhancement: use streaming when available, fallback to classic request/response if not. Users always get an answer." |
+| 76 | **Local observability wrapper (`langfuse_client.observe`) with no-op mode** | Direct `from langfuse import observe` everywhere | Central wrapper allows fail-open behavior when tracing is disabled/offline, avoiding noisy exporter retries in local/sandbox workflows. | Requires one abstraction layer around decorator usage | "I abstracted observability decorators behind a local wrapper so tracing is optional and fail-open. Production observability stays available, local development stays clean." |
+
 ---
 
 

@@ -48,7 +48,7 @@ These topics are partially implemented — deepen the interview narrative and ed
 1. **Arena module**: Wire `Today's Predictions`, `Model Performance`, and `Bankroll Tracker` pages to live backend APIs — migrate from stub to live.
 2. **Lab module**: Wire `Data Quality`, `Pipeline Runs`, and `MLOps Monitor` pages — the backend already has all required endpoints.
 3. **Pulse module**: Implement `Top Stories` and `Daily Brief` using the intelligence brief API (`GET /api/v1/intelligence/brief`).
-4. **Chatbot streaming**: Upgrade `POST /api/v1/chat` to use Server-Sent Events (SSE) for streaming tokens. Update `useChatbot` to read `ReadableStream`.
+4. **Streaming refinement**: Add partial citation streaming and explicit progress events (`retrieval_started`, `sql_running`, `finalizing`) on top of current SSE token stream.
 5. **Multi-sport extensibility**: Add `sport` selector to the chatbot UI; extend `IntentRouter` keyword sets for football/cricket.
 
 ## Level 4: Production & Platform Hardening

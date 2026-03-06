@@ -56,6 +56,7 @@ Recently completed and documented:
 23. Frontend ops hotfix: Vite API proxy alignment (`8000 -> 8001`) to restore accurate navbar system status.
 24. UI follow-up hotfix: date-picker indicator rendering switched to native visible indicator (not background-image) to avoid inline style override gaps.
 25. Phase 7 completion: feature-flagged LangGraph chatbot engine finalized with quality-gate + DB-retry nodes, route-level engine metadata, and offline-safe evaluation harness (`backend/src/intelligence/chat_eval.py`).
+26. Phase 8 completion: chatbot streaming via SSE (`/api/v1/chat/stream`), stream-first frontend hook with non-stream fallback, and Langfuse fail-open decorator hardening for offline/local workflows.
 
 ## Suggested Progression
 

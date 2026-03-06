@@ -271,3 +271,27 @@ That is the same pattern used in platform modernization projects: no risky hard 
 3. How do you prevent hallucinations in the RAG path?
 4. How does your DB retry policy avoid infinite loops?
 5. What metrics in your eval harness would you upgrade next for production?
+
+---
+
+## Phase 8 — Streaming Chat + Offline Observability Hardening
+
+### What was added
+
+1. **Streaming route**: `POST /api/v1/chat/stream` in `chat_routes.py` (SSE).
+2. **Frontend stream consumption**: `useChatbot` now consumes token events and renders incremental assistant output.
+3. **Safe observability wrapper**: `langfuse_client.observe` now acts as a no-op decorator when tracing is disabled.
+4. **Eval resilience**: `chat_eval.py` now:
+   - forces local-safe defaults (`LANGFUSE_ENABLED=false`, `OTEL_SDK_DISABLED=true`, empty Gemini key),
+   - probes DB availability,
+   - skips DB cases when DB is unavailable and still writes a report.
+
+### Why this matters
+
+- Streaming improves perceived latency and user trust ("it is thinking now").
+- Fail-open tracing keeps local development clean while preserving production observability as an option.
+- Eval scripts now produce artifacts even in restricted environments, which helps CI and interview demos.
+
+### Interview angle
+
+> "I treated streaming as an additive API contract and observability as optional infrastructure. The assistant works in both high-observability and constrained local environments without behavior drift."

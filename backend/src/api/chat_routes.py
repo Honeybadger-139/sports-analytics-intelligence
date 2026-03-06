@@ -8,10 +8,12 @@ Exposes:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -84,6 +86,17 @@ def _get_chat_service(db: Session, sport: str):
     if config.CHAT_ENGINE == "langgraph":
         return LangGraphChatService(db=db, sport=sport)
     return ChatService(db=db, sport=sport)
+
+
+def _sse_event(event: str, payload: Dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=True)}\n\n"
+
+
+def _chunk_reply(reply: str, chunk_size: int = 24) -> List[str]:
+    text_value = reply or ""
+    if not text_value:
+        return []
+    return [text_value[i : i + chunk_size] for i in range(0, len(text_value), chunk_size)]
 
 
 @router.get("/chat/health", response_model=ChatHealthResponse)
@@ -186,3 +199,69 @@ async def chat(
             status_code=500,
             detail="The AI assistant encountered an error. Please try again.",
         ) from exc
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Streaming chatbot endpoint (SSE).
+
+    Emits events:
+    - `meta`   : initial intent/engine metadata
+    - `token`  : chunk of assistant reply text
+    - `done`   : final payload with full reply + metadata
+    - `error`  : terminal error payload
+    """
+    history = [h.model_dump() for h in (payload.history or [])]
+    service = _get_chat_service(db=db, sport=payload.sport or "nba")
+
+    from src.intelligence.chat_service import IntentRouter
+
+    intent = IntentRouter.route(payload.message)
+    engine = getattr(service, "active_engine", "legacy")
+
+    async def event_generator():
+        yield _sse_event(
+            "meta",
+            {
+                "intent": intent,
+                "engine": engine,
+            },
+        )
+        try:
+            reply = service.reply(
+                message=payload.message,
+                history=history,
+                session_id=payload.session_id,
+            )
+            for chunk in _chunk_reply(reply):
+                yield _sse_event("token", {"token": chunk})
+            yield _sse_event(
+                "done",
+                {
+                    "reply": reply,
+                    "intent": intent,
+                    "engine": engine,
+                },
+            )
+        except Exception as exc:
+            logger.error("ChatService stream error: %s", exc, exc_info=True)
+            yield _sse_event(
+                "error",
+                {
+                    "message": "The AI assistant encountered an error. Please try again.",
+                },
+            )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
