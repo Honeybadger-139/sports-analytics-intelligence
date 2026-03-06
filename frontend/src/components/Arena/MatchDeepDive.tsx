@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
 import type { DashboardCreateRouteState, MatchRow, ModelPrediction, ShapFactor } from '../../types'
+import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -56,11 +57,22 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
       onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
-          color: isSelected ? ACCENT : 'var(--text-1)',
-        }}>
-          {match.home_team} vs {match.away_team}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <NbaTeamLogo team={match.home_team} altLabel={match.home_team} size={20} />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
+            color: isSelected ? ACCENT : 'var(--text-1)',
+          }}>
+            {match.home_team}
+          </span>
+          <span style={{ color: 'var(--text-3)', fontSize: '0.7rem' }}>vs</span>
+          <NbaTeamLogo team={match.away_team} altLabel={match.away_team} size={20} />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
+            color: isSelected ? ACCENT : 'var(--text-1)',
+          }}>
+            {match.away_team}
+          </span>
         </span>
         {completed && match.home_score != null && (
           <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-2)', flexShrink: 0 }}>
@@ -293,10 +305,12 @@ export default function MatchDeepDive() {
             <div style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <NbaTeamLogo team={pred.home_team} altLabel={pred.home_team_name ?? pred.home_team} size={34} />
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
                     {pred.home_team}
                   </span>
                   <span style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>vs</span>
+                  <NbaTeamLogo team={pred.away_team} altLabel={pred.away_team_name ?? pred.away_team} size={34} />
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
                     {pred.away_team}
                   </span>
@@ -336,7 +350,14 @@ export default function MatchDeepDive() {
                       {MODEL_LABELS[modelKey] ?? modelKey}
                     </p>
                     <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.1rem', color: ACCENT, marginBottom: 2 }}>
-                      {isHome ? pred.home_team : pred.away_team}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <NbaTeamLogo
+                          team={isHome ? pred.home_team : pred.away_team}
+                          altLabel={isHome ? (pred.home_team_name ?? pred.home_team) : (pred.away_team_name ?? pred.away_team)}
+                          size={20}
+                        />
+                        {isHome ? pred.home_team : pred.away_team}
+                      </span>
                     </p>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', marginBottom: 8 }}>
                       {((isHome ? p.home_win_prob : p.away_win_prob) * 100).toFixed(1)}% win prob

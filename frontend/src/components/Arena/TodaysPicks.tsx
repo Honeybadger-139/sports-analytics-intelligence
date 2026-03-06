@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTodaysPredictions } from '../../hooks/useApi'
 import type { DashboardCreateRouteState, ModelPrediction, TodayGamePrediction } from '../../types'
+import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#0E8ED8'
 
@@ -78,10 +79,20 @@ function GameCard({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <NbaTeamLogo
+            team={game.home_team}
+            altLabel={game.home_team_name ?? game.home_team}
+            size={26}
+          />
           <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
             {game.home_team}
           </span>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>vs</span>
+          <NbaTeamLogo
+            team={game.away_team}
+            altLabel={game.away_team_name ?? game.away_team}
+            size={26}
+          />
           <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
             {game.away_team}
           </span>

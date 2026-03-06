@@ -79,7 +79,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
   const navigate  = useNavigate()
   const location  = useLocation()
   const [openId, setOpenId] = useState<string | null>(null)
-  const navRef    = useRef<HTMLElement>(null)
+  const navRef    = useRef<HTMLDivElement>(null)
   const { selection, sportOptions, leagueOptions, seasonOptions, setSport, setLeague, setSeason } = useSportContext()
   const isLiveContext = isLiveDataSelection(selection)
 
@@ -114,136 +114,142 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
 
   return (
     <>
-      <nav className="navbar" ref={navRef}>
-        {/* Logo */}
-        <button className="navbar-logo" onClick={() => navigate('/')} aria-label="Go to Overview">
-          <SportsMark size={38} />
-        </button>
-
-        {/* Primary nav */}
-        <div className="navbar-nav">
-          {NAV_ITEMS.map(item => {
-            const isActive = activeSection === item.id
-            const isOpen   = openId === item.id
-            const hasMenu  = item.subItems.length > 0
-
-            return (
-              <button
-                key={item.id}
-                className={`nav-item ${isActive ? 'active' : ''} ${isOpen ? 'open' : ''}`}
-                onClick={() => {
-                  if (hasMenu) {
-                    setOpenId(isOpen ? null : item.id)
-                  } else {
-                    navigate(item.path)
-                  }
-                }}
-                style={{ '--item-color': item.color } as React.CSSProperties}
-              >
-                <span
-                  className="nav-item-dot"
-                  style={{ background: item.color, opacity: isActive || isOpen ? 1 : 0.4 }}
-                />
-                {item.label}
-                {item.badge && (
-                  <span style={{
-                    fontSize: '0.6rem',
-                    fontWeight: 700,
-                    padding: '1px 6px',
-                    borderRadius: '999px',
-                    background: 'color-mix(in srgb, var(--warning) 14%, transparent)',
-                    color: 'var(--warning)',
-                    letterSpacing: '0.06em',
-                    lineHeight: 1.6,
-                  }}>
-                    {item.badge}
-                  </span>
-                )}
-                {hasMenu && (
-                  <svg className="nav-item-chevron" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Right side */}
-        <div className="navbar-right">
-          <div className="navbar-context">
-            <label className="navbar-context-field">
-              <span>Sport</span>
-              <select
-                value={selection.sport}
-                onChange={(e) => setSport(e.target.value as SportId)}
-              >
-                {sportOptions.map(option => (
-                  <option key={option.id} value={option.id}>
-                    {option.shortLabel}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="navbar-context-field">
-              <span>League</span>
-              <select
-                value={selection.league}
-                onChange={(e) => setLeague(e.target.value)}
-              >
-                {leagueOptions.map(option => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="navbar-context-field">
-              <span>Season</span>
-              <select
-                value={selection.season}
-                onChange={(e) => setSeason(e.target.value)}
-              >
-                {seasonOptions.map(option => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <span className={`navbar-context-status ${isLiveContext ? 'live' : 'planned'}`}>
-              {isLiveContext ? 'Live Data' : 'Coming Soon'}
-            </span>
-          </div>
-
-          <div className={pillClass}>
-            <span className="dot" />
-            {pillLabel}
-          </div>
-          <button className="theme-btn" onClick={onToggleTheme} aria-label="Toggle theme">
-            {theme === 'dark' ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4" />
-                <line x1="8" y1="1"  x2="8" y2="3"  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="1"  y1="8" x2="3"  y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="3.05" y1="3.05" x2="4.46" y2="4.46" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="12.95" y1="3.05" x2="11.54" y2="4.46" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M13.5 9.5A6 6 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+      <div className="navbar-shell" ref={navRef}>
+        <nav className="navbar navbar-main">
+          {/* Logo */}
+          <button className="navbar-logo" onClick={() => navigate('/')} aria-label="Go to Overview">
+            <SportsMark size={38} />
           </button>
+
+          {/* Primary nav */}
+          <div className="navbar-nav">
+            {NAV_ITEMS.map(item => {
+              const isActive = activeSection === item.id
+              const isOpen   = openId === item.id
+              const hasMenu  = item.subItems.length > 0
+
+              return (
+                <button
+                  key={item.id}
+                  className={`nav-item ${isActive ? 'active' : ''} ${isOpen ? 'open' : ''}`}
+                  onClick={() => {
+                    if (hasMenu) {
+                      setOpenId(isOpen ? null : item.id)
+                    } else {
+                      navigate(item.path)
+                    }
+                  }}
+                  style={{ '--item-color': item.color } as React.CSSProperties}
+                >
+                  <span
+                    className="nav-item-dot"
+                    style={{ background: item.color, opacity: isActive || isOpen ? 1 : 0.4 }}
+                  />
+                  {item.label}
+                  {item.badge && (
+                    <span style={{
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: '999px',
+                      background: 'color-mix(in srgb, var(--warning) 14%, transparent)',
+                      color: 'var(--warning)',
+                      letterSpacing: '0.06em',
+                      lineHeight: 1.6,
+                    }}>
+                      {item.badge}
+                    </span>
+                  )}
+                  {hasMenu && (
+                    <svg className="nav-item-chevron" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Right side */}
+          <div className="navbar-right">
+            <div className={pillClass}>
+              <span className="dot" />
+              {pillLabel}
+            </div>
+            <button className="theme-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+              {theme === 'dark' ? (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4" />
+                  <line x1="8" y1="1"  x2="8" y2="3"  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="8" y1="13" x2="8" y2="15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="1"  y1="8" x2="3"  y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="13" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="3.05" y1="3.05" x2="4.46" y2="4.46" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="11.54" y1="11.54" x2="12.95" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="12.95" y1="3.05" x2="11.54" y2="4.46" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <line x1="4.46" y1="11.54" x2="3.05" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M13.5 9.5A6 6 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </nav>
+
+        <div className="navbar-context-row">
+          <div className="navbar-context-row-inner">
+            <div className="navbar-context">
+              <label className="navbar-context-field">
+                <span>Sport</span>
+                <select
+                  value={selection.sport}
+                  onChange={(e) => setSport(e.target.value as SportId)}
+                >
+                  {sportOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.shortLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="navbar-context-field">
+                <span>League</span>
+                <select
+                  value={selection.league}
+                  onChange={(e) => setLeague(e.target.value)}
+                >
+                  {leagueOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="navbar-context-field">
+                <span>Season</span>
+                <select
+                  value={selection.season}
+                  onChange={(e) => setSeason(e.target.value)}
+                >
+                  {seasonOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <span className={`navbar-context-status ${isLiveContext ? 'live' : 'planned'}`}>
+                {isLiveContext ? 'Live Data' : 'Coming Soon'}
+              </span>
+            </div>
+          </div>
         </div>
-      </nav>
+      </div>
 
       {/* Mega menu flyout */}
       <AnimatePresence>

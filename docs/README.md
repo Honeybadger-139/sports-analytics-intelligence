@@ -42,6 +42,10 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-04-ui-theme-date-hardening.md`
 - `changelogs/2026-03-04-navbar-status-proxy-hotfix.md`
 - `changelogs/2026-03-04-dark-date-picker-icon-hotfix.md`
+- `changelogs/2026-03-06-arena-team-logo-enhancement.md`
+- `changelogs/2026-03-06-navbar-theme-toggle-visibility-fix.md`
+- `changelogs/2026-03-06-team-stats-hero-style-tuning.md`
+- `changelogs/2026-03-06-navbar-two-tier-layout.md`
 
 ## Recommended Start Order
 

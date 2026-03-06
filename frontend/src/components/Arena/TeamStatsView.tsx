@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTeamsList, useTeamGameStats } from '../../hooks/useApi'
 import type { DashboardCreateRouteState, TeamGameLogEntry } from '../../types'
+import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -37,11 +38,14 @@ function TeamRow({ team, isSelected, onClick }: {
             onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-elevated)' }}
             onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
         >
-            <span style={{
-                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
-                color: isSelected ? ACCENT : 'var(--text-1)',
-            }}>
-                {team.abbreviation}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <NbaTeamLogo team={team.team_id} altLabel={team.full_name} size={20} />
+                <span style={{
+                    fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
+                    color: isSelected ? ACCENT : 'var(--text-1)',
+                }}>
+                    {team.abbreviation}
+                </span>
             </span>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', margin: '2px 0 0', fontFamily: 'var(--font-mono)' }}>
                 {team.full_name}
@@ -232,31 +236,99 @@ export default function TeamStatsView() {
                 {selectedAbbr && statsData && !statsLoading && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                         {/* Team header */}
-                        <div style={{ marginBottom: 24 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                                <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', marginBottom: 4 }}>
-                                    {statsData.team.full_name}
-                                </p>
-                                <button
-                                    onClick={saveCurrentView}
-                                    style={{
-                                        padding: '6px 12px',
-                                        borderRadius: 'var(--r-sm)',
-                                        border: `1px solid ${ACCENT}`,
-                                        background: `${ACCENT}12`,
-                                        color: ACCENT,
-                                        fontSize: '0.74rem',
-                                        fontWeight: 700,
-                                        fontFamily: 'var(--font-mono)',
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    Create Dashboard
-                                </button>
+                        <div
+                            style={{
+                                marginBottom: 24,
+                                border: '1px solid var(--border)',
+                                borderRadius: 'var(--r-md)',
+                                background: 'linear-gradient(135deg, color-mix(in srgb, var(--bg-panel) 90%, #0B1220 10%), var(--bg-panel))',
+                                padding: '18px 20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 14,
+                                flexWrap: 'wrap',
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                <NbaTeamLogo team={statsData.team.team_id} altLabel={statsData.team.full_name} size={84} />
+                                <div>
+                                    <p
+                                        style={{
+                                            fontFamily: 'var(--font-display)',
+                                            fontWeight: 800,
+                                            fontSize: '2rem',
+                                            color: 'var(--text-1)',
+                                            letterSpacing: '0.01em',
+                                            lineHeight: 1.05,
+                                            marginBottom: 10,
+                                        }}
+                                    >
+                                        {statsData.team.full_name}
+                                    </p>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        <span
+                                            style={{
+                                                borderRadius: 999,
+                                                border: '1px solid var(--border-mid)',
+                                                background: 'var(--bg-elevated)',
+                                                color: 'var(--text-2)',
+                                                padding: '4px 10px',
+                                                fontSize: '0.74rem',
+                                                fontWeight: 700,
+                                                fontFamily: 'var(--font-mono)',
+                                            }}
+                                        >
+                                            USA
+                                        </span>
+                                        <span
+                                            style={{
+                                                borderRadius: 999,
+                                                border: `1px solid ${ACCENT}66`,
+                                                background: `${ACCENT}14`,
+                                                color: ACCENT,
+                                                padding: '4px 10px',
+                                                fontSize: '0.74rem',
+                                                fontWeight: 700,
+                                                fontFamily: 'var(--font-mono)',
+                                            }}
+                                        >
+                                            {statsData.team.abbreviation}
+                                        </span>
+                                        <span
+                                            style={{
+                                                borderRadius: 999,
+                                                border: '1px solid var(--border-mid)',
+                                                background: 'var(--bg-elevated)',
+                                                color: 'var(--text-3)',
+                                                padding: '4px 10px',
+                                                fontSize: '0.74rem',
+                                                fontWeight: 700,
+                                                fontFamily: 'var(--font-mono)',
+                                            }}
+                                        >
+                                            {seasonLabel}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
-                            <p style={{ fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>
-                                {statsData.team.abbreviation} · {seasonLabel}
-                            </p>
+
+                            <button
+                                onClick={saveCurrentView}
+                                style={{
+                                    padding: '7px 13px',
+                                    borderRadius: 'var(--r-sm)',
+                                    border: `1px solid ${ACCENT}`,
+                                    background: `${ACCENT}12`,
+                                    color: ACCENT,
+                                    fontSize: '0.76rem',
+                                    fontWeight: 700,
+                                    fontFamily: 'var(--font-mono)',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Create Dashboard
+                            </button>
                         </div>
 
                         {/* Game-log filters */}
@@ -417,7 +489,13 @@ export default function TeamStatsView() {
                                         {filteredGames.map((g, i) => (
                                             <tr key={g.game_id} style={{ borderBottom: i < filteredGames.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-2)' }}>{fmtDate(g.game_date)}</td>
-                                                <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600 }}>{g.location} {g.opponent}</td>
+                                                <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600 }}>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                        <span>{g.location}</span>
+                                                        <NbaTeamLogo team={g.opponent} altLabel={g.opponent} size={18} />
+                                                        <span>{g.opponent}</span>
+                                                    </span>
+                                                </td>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: g.result === 'W' ? '#4ADE80' : g.result === 'L' ? 'var(--error)' : 'var(--text-3)', fontWeight: 700 }}>{g.result ?? '—'}</td>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 700 }}>{g.points}–{g.opponent_points ?? '?'}</td>
                                                 <td style={{ padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-2)', textAlign: 'right' }}>{pct(g.field_goal_pct)}</td>
