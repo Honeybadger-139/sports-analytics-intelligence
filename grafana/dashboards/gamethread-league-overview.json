@@ -1,0 +1,246 @@
+{
+  "id": null,
+  "uid": "gamethread-league",
+  "title": "GameThread - League Overview",
+  "tags": ["gamethread", "basketball", "overview"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "style": "dark",
+  "editable": true,
+  "time": {
+    "from": "now-120d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "season",
+        "label": "Season",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gamethread-pg"
+        },
+        "refresh": 1,
+        "sort": 3,
+        "multi": false,
+        "includeAll": false,
+        "query": "SELECT DISTINCT season FROM matches ORDER BY season DESC",
+        "current": {
+          "text": "2025-26",
+          "value": "2025-26"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Completed Games",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::numeric AS completed_games FROM matches m WHERE m.season='${season}' AND m.is_completed=TRUE AND $__timeFilter(m.game_date::timestamp);"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Home Win Rate (%)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * AVG(CASE WHEN m.winner_team_id = m.home_team_id THEN 1 ELSE 0 END), 2) AS home_win_rate_pct FROM matches m WHERE m.season='${season}' AND m.is_completed=TRUE AND $__timeFilter(m.game_date::timestamp);"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Avg Team Points",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(tgs.points), 2) AS avg_team_points FROM team_game_stats tgs JOIN matches m ON m.game_id = tgs.game_id WHERE m.season='${season}' AND m.is_completed=TRUE AND $__timeFilter(m.game_date::timestamp);"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Avg Team Assists",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(tgs.assists), 2) AS avg_team_assists FROM team_game_stats tgs JOIN matches m ON m.game_id = tgs.game_id WHERE m.season='${season}' AND m.is_completed=TRUE AND $__timeFilter(m.game_date::timestamp);"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Games by Date",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT m.game_date::timestamp AS \"time\", COUNT(*)::numeric AS games FROM matches m WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) GROUP BY 1 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Top Teams by Win %",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t.abbreviation AS team, ROUND(100.0 * AVG(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END), 2) AS win_pct FROM matches m JOIN teams t ON t.team_id IN (m.home_team_id, m.away_team_id) WHERE m.season='${season}' AND m.is_completed=TRUE AND $__timeFilter(m.game_date::timestamp) GROUP BY t.abbreviation HAVING COUNT(*) >= 5 ORDER BY win_pct DESC LIMIT 12;"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.8,
+        "barWidth": 0.75
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Team Ratings Snapshot",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t.abbreviation AS team, ROUND(AVG(tgs.offensive_rating), 2) AS off_rating, ROUND(AVG(tgs.defensive_rating), 2) AS def_rating, ROUND(AVG(tgs.pace), 2) AS pace, ROUND(AVG(tgs.effective_fg_pct) * 100, 2) AS efg_pct FROM team_game_stats tgs JOIN matches m ON m.game_id = tgs.game_id JOIN teams t ON t.team_id = tgs.team_id WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) GROUP BY t.abbreviation ORDER BY off_rating DESC;"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ]
+}

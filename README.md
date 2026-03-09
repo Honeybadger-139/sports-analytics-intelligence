@@ -93,6 +93,10 @@ docker-compose up -d grafana
 
 Open `http://localhost:3301` (default credentials: `admin` / `admin` unless overridden in `.env`).
 
+Pre-provisioned dashboards are available under the **GameThread** folder:
+- `GameThread - League Overview`
+- `GameThread - Team & Player Trends`
+
 ### 6. Stop everything
 
 ```bash

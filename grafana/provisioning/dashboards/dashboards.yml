@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: GameThread Dashboards
+    orgId: 1
+    folder: GameThread
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,180 @@
+{
+  "id": null,
+  "uid": "gamethread-team-player",
+  "title": "GameThread - Team & Player Trends",
+  "tags": ["gamethread", "basketball", "players", "teams"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "style": "dark",
+  "editable": true,
+  "time": {
+    "from": "now-120d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "season",
+        "label": "Season",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gamethread-pg"
+        },
+        "refresh": 1,
+        "sort": 3,
+        "multi": false,
+        "includeAll": false,
+        "query": "SELECT DISTINCT season FROM matches ORDER BY season DESC",
+        "current": {
+          "text": "2025-26",
+          "value": "2025-26"
+        }
+      },
+      {
+        "name": "team",
+        "label": "Team",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "gamethread-pg"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "__all",
+        "query": "SELECT DISTINCT t.abbreviation FROM teams t JOIN team_game_stats tgs ON tgs.team_id = t.team_id JOIN matches m ON m.game_id = tgs.game_id WHERE m.season='${season}' ORDER BY 1"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Team Trends (Points / Rebounds / Assists)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT m.game_date::timestamp AS \"time\", ROUND(AVG(tgs.points), 2) AS points, ROUND(AVG(tgs.rebounds), 2) AS rebounds, ROUND(AVG(tgs.assists), 2) AS assists FROM team_game_stats tgs JOIN matches m ON m.game_id = tgs.game_id JOIN teams t ON t.team_id = tgs.team_id WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) AND ('${team}'='__all' OR t.abbreviation='${team}') GROUP BY 1 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "barchart",
+      "title": "Top Players by Avg Points",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT p.full_name AS player, ROUND(AVG(pgs.points), 2) AS avg_points FROM player_game_stats pgs JOIN players p ON p.player_id = pgs.player_id JOIN teams t ON t.team_id = pgs.team_id JOIN matches m ON m.game_id = pgs.game_id WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) AND ('${team}'='__all' OR t.abbreviation='${team}') GROUP BY p.full_name HAVING COUNT(*) >= 3 ORDER BY avg_points DESC LIMIT 15;"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.8,
+        "barWidth": 0.75
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Player Production Snapshot",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT p.full_name AS player, COUNT(*) AS games, ROUND(AVG(pgs.points), 2) AS avg_points, ROUND(AVG(pgs.rebounds), 2) AS avg_rebounds, ROUND(AVG(pgs.assists), 2) AS avg_assists, ROUND(AVG(pgs.field_goal_pct) * 100, 2) AS fg_pct, ROUND(AVG(pgs.three_point_pct) * 100, 2) AS three_pct, ROUND(AVG(pgs.fantasy_points), 2) AS fantasy_pts FROM player_game_stats pgs JOIN players p ON p.player_id = pgs.player_id JOIN teams t ON t.team_id = pgs.team_id JOIN matches m ON m.game_id = pgs.game_id WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) AND ('${team}'='__all' OR t.abbreviation='${team}') GROUP BY p.full_name HAVING COUNT(*) >= 3 ORDER BY avg_points DESC LIMIT 20;"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Selected Team Pace vs Ratings",
+      "datasource": {
+        "type": "postgres",
+        "uid": "gamethread-pg"
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT m.game_date::timestamp AS \"time\", ROUND(AVG(tgs.pace), 2) AS pace, ROUND(AVG(tgs.offensive_rating), 2) AS off_rating, ROUND(AVG(tgs.defensive_rating), 2) AS def_rating FROM team_game_stats tgs JOIN matches m ON m.game_id = tgs.game_id JOIN teams t ON t.team_id = tgs.team_id WHERE m.season='${season}' AND $__timeFilter(m.game_date::timestamp) AND ('${team}'='__all' OR t.abbreviation='${team}') GROUP BY 1 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

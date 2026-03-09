@@ -60,6 +60,7 @@ Recently completed and documented:
 27. Dashboard creation flow update: all `Create Dashboard` CTAs in Arena + Dashboard now open Grafana builder (`/dashboard/new` by default) via shared frontend helper + env config.
 28. Product branding refresh: user-facing dashboard and API metadata renamed to **GameThread** with updated docs entry points.
 29. Grafana runtime remap: moved Grafana host port from `3000` to `3301`, enabled compose service, and aligned frontend default URL to avoid port conflict.
+30. Grafana starter reporting: provisioned PostgreSQL datasource + two curated dashboards (`League Overview`, `Team & Player Trends`) under `GameThread` folder.
 
 ## Suggested Progression
 

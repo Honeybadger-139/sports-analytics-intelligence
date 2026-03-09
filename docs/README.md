@@ -53,6 +53,7 @@ This folder is the long-term source of truth for architecture, decisions, change
 - `changelogs/2026-03-07-grafana-create-dashboard-routing.md`
 - `changelogs/2026-03-07-branding-gamethread.md`
 - `changelogs/2026-03-07-grafana-port-remap-3301.md`
+- `changelogs/2026-03-07-grafana-curated-dashboards-provisioning.md`
 
 ## Recommended Start Order
 

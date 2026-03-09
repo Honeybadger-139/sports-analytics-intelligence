@@ -156,6 +156,19 @@ The chatbot, Scribble playground, and future Lab/Arena modules require complex i
   - `VITE_GRAFANA_CREATE_PATH`
 - Local route `/dashboard/create` remains as a launcher/fallback that redirects into Grafana.
 
+### Grafana curated dashboards (provisioned)
+
+- Datasource: `GameThread Postgres` (PostgreSQL `sports_analytics`).
+- Folder: `GameThread`.
+- Preloaded dashboards:
+  - `GameThread - League Overview`
+  - `GameThread - Team & Player Trends`
+- Coverage:
+  - season-level KPIs (completed games, home win rate, average scoring/assists)
+  - games-by-date trend and team win-rate ranking
+  - team trends for points/rebounds/assists
+  - player production snapshot with team filter
+
 ### Overview home page (two zones)
 
 - **Zone 1 — Live Metric Cards**: DB, Pipeline, Matches, Features, Players, Bankroll, ROI, Open Bets — polled from real backend APIs
