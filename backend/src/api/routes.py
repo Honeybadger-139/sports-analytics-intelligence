@@ -315,6 +315,7 @@ async def get_raw_tables(
 async def get_raw_table_rows(
     table_name: str,
     season: Optional[str] = Query(default=config.CURRENT_SEASON),
+    search: Optional[str] = Query(default=None, description="Global text filter (applied before pagination)"),
     limit: int = Query(default=50, ge=1, le=300),
     offset: int = Query(default=0, ge=0, le=50000),
     db: Session = Depends(get_db),
@@ -324,144 +325,264 @@ async def get_raw_table_rows(
     """
     if table_name not in RAW_TABLES:
         raise HTTPException(status_code=404, detail=f"Unsupported raw table: {table_name}")
+    normalized_search = search.strip() if search else None
+    search_param = f"%{normalized_search}%" if normalized_search else None
 
     if table_name == "matches":
+        params = {"season": season, "search": search_param, "limit": limit, "offset": offset}
         rows = db.execute(
             text(
                 """
-                SELECT
-                    m.*,
-                    ht.abbreviation AS home_team,
-                    at.abbreviation AS away_team
-                FROM matches m
-                JOIN teams ht ON m.home_team_id = ht.team_id
-                JOIN teams at ON m.away_team_id = at.team_id
-                WHERE (:season IS NULL OR m.season = :season)
-                ORDER BY m.game_date DESC, m.game_id DESC
+                WITH base AS (
+                    SELECT
+                        m.*,
+                        ht.abbreviation AS home_team,
+                        at.abbreviation AS away_team
+                    FROM matches m
+                    JOIN teams ht ON m.home_team_id = ht.team_id
+                    JOIN teams at ON m.away_team_id = at.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
+                SELECT *
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                ORDER BY game_date DESC, game_id DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
-            {"season": season, "limit": limit, "offset": offset},
+            params,
         ).fetchall()
         total = db.execute(
-            text("SELECT COUNT(*) FROM matches WHERE (:season IS NULL OR season = :season)"),
-            {"season": season},
+            text(
+                """
+                WITH base AS (
+                    SELECT
+                        m.*,
+                        ht.abbreviation AS home_team,
+                        at.abbreviation AS away_team
+                    FROM matches m
+                    JOIN teams ht ON m.home_team_id = ht.team_id
+                    JOIN teams at ON m.away_team_id = at.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
+                SELECT COUNT(*)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                """
+            ),
+            {"season": season, "search": search_param},
         ).scalar()
     elif table_name == "teams":
+        params = {"search": search_param, "limit": limit, "offset": offset}
         rows = db.execute(
             text(
                 """
+                WITH base AS (
+                    SELECT *
+                    FROM teams
+                )
                 SELECT *
-                FROM teams
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
                 ORDER BY abbreviation
                 LIMIT :limit OFFSET :offset
                 """
             ),
-            {"limit": limit, "offset": offset},
-        ).fetchall()
-        total = db.execute(text("SELECT COUNT(*) FROM teams")).scalar()
-    elif table_name == "players":
-        rows = db.execute(
-            text(
-                """
-                SELECT p.*, t.abbreviation AS team_abbreviation
-                FROM players p
-                LEFT JOIN teams t ON p.team_id = t.team_id
-                ORDER BY p.player_id DESC
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            {"limit": limit, "offset": offset},
-        ).fetchall()
-        total = db.execute(text("SELECT COUNT(*) FROM players")).scalar()
-    elif table_name == "team_game_stats":
-        rows = db.execute(
-            text(
-                """
-                SELECT
-                    tgs.*,
-                    m.game_date,
-                    m.season,
-                    tm.abbreviation AS team_abbreviation
-                FROM team_game_stats tgs
-                JOIN matches m ON tgs.game_id = m.game_id
-                JOIN teams tm ON tgs.team_id = tm.team_id
-                WHERE (:season IS NULL OR m.season = :season)
-                ORDER BY m.game_date DESC, tgs.game_id DESC, tgs.team_id
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            {"season": season, "limit": limit, "offset": offset},
+            params,
         ).fetchall()
         total = db.execute(
             text(
                 """
+                WITH base AS (
+                    SELECT *
+                    FROM teams
+                )
                 SELECT COUNT(*)
-                FROM team_game_stats tgs
-                JOIN matches m ON tgs.game_id = m.game_id
-                WHERE (:season IS NULL OR m.season = :season)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
                 """
             ),
-            {"season": season},
+            {"search": search_param},
+        ).scalar()
+    elif table_name == "players":
+        params = {"search": search_param, "limit": limit, "offset": offset}
+        rows = db.execute(
+            text(
+                """
+                WITH base AS (
+                    SELECT p.*, t.abbreviation AS team_abbreviation
+                    FROM players p
+                    LEFT JOIN teams t ON p.team_id = t.team_id
+                )
+                SELECT *
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                ORDER BY player_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        ).fetchall()
+        total = db.execute(
+            text(
+                """
+                WITH base AS (
+                    SELECT p.*, t.abbreviation AS team_abbreviation
+                    FROM players p
+                    LEFT JOIN teams t ON p.team_id = t.team_id
+                )
+                SELECT COUNT(*)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                """
+            ),
+            {"search": search_param},
+        ).scalar()
+    elif table_name == "team_game_stats":
+        params = {"season": season, "search": search_param, "limit": limit, "offset": offset}
+        rows = db.execute(
+            text(
+                """
+                WITH base AS (
+                    SELECT
+                        tgs.*,
+                        m.game_date,
+                        m.season,
+                        tm.abbreviation AS team_abbreviation
+                    FROM team_game_stats tgs
+                    JOIN matches m ON tgs.game_id = m.game_id
+                    JOIN teams tm ON tgs.team_id = tm.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
+                SELECT *
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                ORDER BY game_date DESC, game_id DESC, team_id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        ).fetchall()
+        total = db.execute(
+            text(
+                """
+                WITH base AS (
+                    SELECT
+                        tgs.*,
+                        m.game_date,
+                        m.season,
+                        tm.abbreviation AS team_abbreviation
+                    FROM team_game_stats tgs
+                    JOIN matches m ON tgs.game_id = m.game_id
+                    JOIN teams tm ON tgs.team_id = tm.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
+                SELECT COUNT(*)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                """
+            ),
+            {"season": season, "search": search_param},
         ).scalar()
     elif table_name == "player_game_stats":
+        params = {"season": season, "search": search_param, "limit": limit, "offset": offset}
         rows = db.execute(
             text(
                 """
-                SELECT
-                    pgs.*,
-                    m.game_date,
-                    m.season,
-                    pl.full_name AS player_name,
-                    tm.abbreviation AS team_abbreviation
-                FROM player_game_stats pgs
-                JOIN matches m ON pgs.game_id = m.game_id
-                LEFT JOIN players pl ON pgs.player_id = pl.player_id
-                LEFT JOIN teams tm ON pgs.team_id = tm.team_id
-                WHERE (:season IS NULL OR m.season = :season)
-                ORDER BY m.game_date DESC, pgs.game_id DESC, pgs.player_id
+                WITH base AS (
+                    SELECT
+                        pgs.*,
+                        m.game_date,
+                        m.season,
+                        pl.full_name AS player_name,
+                        tm.abbreviation AS team_abbreviation
+                    FROM player_game_stats pgs
+                    JOIN matches m ON pgs.game_id = m.game_id
+                    LEFT JOIN players pl ON pgs.player_id = pl.player_id
+                    LEFT JOIN teams tm ON pgs.team_id = tm.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
+                SELECT *
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                ORDER BY game_date DESC, game_id DESC, player_id
                 LIMIT :limit OFFSET :offset
                 """
             ),
-            {"season": season, "limit": limit, "offset": offset},
+            params,
         ).fetchall()
         total = db.execute(
             text(
                 """
+                WITH base AS (
+                    SELECT
+                        pgs.*,
+                        m.game_date,
+                        m.season,
+                        pl.full_name AS player_name,
+                        tm.abbreviation AS team_abbreviation
+                    FROM player_game_stats pgs
+                    JOIN matches m ON pgs.game_id = m.game_id
+                    LEFT JOIN players pl ON pgs.player_id = pl.player_id
+                    LEFT JOIN teams tm ON pgs.team_id = tm.team_id
+                    WHERE (:season IS NULL OR m.season = :season)
+                )
                 SELECT COUNT(*)
-                FROM player_game_stats pgs
-                JOIN matches m ON pgs.game_id = m.game_id
-                WHERE (:season IS NULL OR m.season = :season)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
                 """
             ),
-            {"season": season},
+            {"season": season, "search": search_param},
         ).scalar()
     else:  # player_season_stats
+        params = {"season": season, "search": search_param, "limit": limit, "offset": offset}
         rows = db.execute(
             text(
                 """
-                SELECT
-                    pss.*,
-                    pl.full_name AS player_name,
-                    tm.abbreviation AS team_abbreviation
-                FROM player_season_stats pss
-                LEFT JOIN players pl ON pss.player_id = pl.player_id
-                LEFT JOIN teams tm ON pss.team_id = tm.team_id
-                WHERE (:season IS NULL OR pss.season = :season)
-                ORDER BY pss.season DESC, pss.player_id DESC
+                WITH base AS (
+                    SELECT
+                        pss.*,
+                        pl.full_name AS player_name,
+                        tm.abbreviation AS team_abbreviation
+                    FROM player_season_stats pss
+                    LEFT JOIN players pl ON pss.player_id = pl.player_id
+                    LEFT JOIN teams tm ON pss.team_id = tm.team_id
+                    WHERE (:season IS NULL OR pss.season = :season)
+                )
+                SELECT *
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                ORDER BY season DESC, player_id DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
-            {"season": season, "limit": limit, "offset": offset},
+            params,
         ).fetchall()
         total = db.execute(
-            text("SELECT COUNT(*) FROM player_season_stats WHERE (:season IS NULL OR season = :season)"),
-            {"season": season},
+            text(
+                """
+                WITH base AS (
+                    SELECT
+                        pss.*,
+                        pl.full_name AS player_name,
+                        tm.abbreviation AS team_abbreviation
+                    FROM player_season_stats pss
+                    LEFT JOIN players pl ON pss.player_id = pl.player_id
+                    LEFT JOIN teams tm ON pss.team_id = tm.team_id
+                    WHERE (:season IS NULL OR pss.season = :season)
+                )
+                SELECT COUNT(*)
+                FROM base
+                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                """
+            ),
+            {"season": season, "search": search_param},
         ).scalar()
 
     return {
         "table": table_name,
         "season": season,
+        "search": normalized_search,
         "limit": limit,
         "offset": offset,
         "total": int(total or 0),
@@ -1149,6 +1270,7 @@ async def list_players(
     db: Session = Depends(get_db),
 ):
     """List or search NBA players with optional team and active filters."""
+    normalized_search = " ".join(search.split()) if search else None
     query = """
         SELECT p.player_id, p.full_name, p.is_active,
                t.abbreviation AS team_abbreviation, t.full_name AS team_name
@@ -1160,12 +1282,12 @@ async def list_players(
 
     if active_only:
         query += " AND p.is_active = TRUE"
-    if search:
+    if normalized_search:
         query += " AND LOWER(p.full_name) LIKE LOWER(:search)"
-        params["search"] = f"%{search}%"
+        params["search"] = f"%{normalized_search}%"
     if team:
         query += " AND t.abbreviation = :team"
-        params["team"] = team.upper()
+        params["team"] = team.strip().upper()
 
     query += " ORDER BY p.full_name LIMIT :limit"
 

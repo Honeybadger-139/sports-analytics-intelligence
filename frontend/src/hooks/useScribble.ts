@@ -63,7 +63,8 @@ export function useTableRows(
   tableName: string | null,
   season = '2025-26',
   limit = 50,
-  offset = 0
+  offset = 0,
+  search = '',
 ) {
   const [data, setData] = useState<TableRowsResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -80,6 +81,10 @@ export function useTableRows(
           limit: String(limit),
           offset: String(offset),
         })
+        const normalizedSearch = search.trim()
+        if (normalizedSearch) {
+          params.set('search', normalizedSearch)
+        }
         const result = await apiFetch<TableRowsResponse>(
           `/raw/${tableName}?${params}`,
           { signal }
@@ -94,7 +99,7 @@ export function useTableRows(
         setLoading(false)
       }
     },
-    [tableName, season, limit, offset]
+    [tableName, season, limit, offset, search]
   )
 
   useEffect(() => {

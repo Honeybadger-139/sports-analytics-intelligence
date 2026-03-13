@@ -1795,6 +1795,7 @@ input[type='date']::-webkit-datetime-edit,
 
 .data-table-th:hover { color: var(--text-1); }
 .data-table-th.sorted { color: var(--col-accent, #10B981); }
+.data-table-th.num-col { text-align: right; }
 
 .sort-icon {
   margin-left: 5px;

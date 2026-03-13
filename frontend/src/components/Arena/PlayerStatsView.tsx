@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { usePlayers, usePlayerGameStats, useTeamsList } from '../../hooks/useApi'
 import type { PlayerGameLogEntry, PlayerListItem } from '../../types'
@@ -67,13 +67,16 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 export default function PlayerStatsView() {
     const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [search, setSearch] = useState('')
+    const [searchTeam, setSearchTeam] = useState('')
     const [selectedId, setSelectedId] = useState<number | null>(null)
     const [opponent, setOpponent] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
 
-    const { data: playerData, loading: searchLoading } = usePlayers(search)
+    const { data: playerData, loading: searchLoading } = usePlayers(search, searchTeam || undefined)
     const { data: teamsData } = useTeamsList()
+    const normalizedSearch = search.trim().replace(/\s+/g, ' ')
+    const isPlayerQueryActive = normalizedSearch.length >= 2 || !!searchTeam
 
     const rawDateFrom = dateFrom || undefined
     const rawDateTo = dateTo || undefined
@@ -90,14 +93,23 @@ export default function PlayerStatsView() {
     })
 
     const players = playerData?.players ?? []
-    const opponentOptions = useMemo(
+    const teamOptions = useMemo(
         () => [...new Set((teamsData?.teams ?? []).map(t => t.abbreviation))].sort(),
         [teamsData?.teams],
     )
+    const opponentOptions = teamOptions
     const allGames = useMemo(
         () => ((statsData?.games ?? []) as PlayerGameLogEntry[]),
         [statsData?.games],
     )
+
+    useEffect(() => {
+        if (!selectedId || !isPlayerQueryActive || searchLoading) return
+        const isSelectedPlayerInResults = players.some(p => p.player_id === selectedId)
+        if (!isSelectedPlayerInResults) {
+            setSelectedId(null)
+        }
+    }, [isPlayerQueryActive, players, searchLoading, selectedId])
     const filteredGames = useMemo(() => {
         return allGames.filter(g => {
             const gameDate = String(g.game_date).slice(0, 10)
@@ -166,6 +178,20 @@ export default function PlayerStatsView() {
                             outline: 'none', boxSizing: 'border-box',
                         }}
                     />
+                    <p style={{ fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-2)', margin: '10px 0 6px' }}>
+                        Team Filter
+                    </p>
+                    <select
+                        className="scribble-select"
+                        value={searchTeam}
+                        onChange={e => setSearchTeam(e.target.value)}
+                        style={{ width: '100%', fontSize: '0.78rem' }}
+                    >
+                        <option value="">All teams</option>
+                        {teamOptions.map(abbr => (
+                            <option key={abbr} value={abbr}>{abbr}</option>
+                        ))}
+                    </select>
                 </div>
 
                 <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid var(--border)' }}>
@@ -180,11 +206,11 @@ export default function PlayerStatsView() {
                             {[...Array(6)].map((_, i) => <div key={i} style={{ height: 40, borderRadius: 6 }} className="skeleton-row" />)}
                         </div>
                     )}
-                    {!searchLoading && search.length >= 2 && players.length === 0 && (
+                    {!searchLoading && isPlayerQueryActive && players.length === 0 && (
                         <p style={{ padding: '16px 14px', fontSize: '0.8rem', color: 'var(--text-3)' }}>No players found.</p>
                     )}
-                    {!searchLoading && search.length < 2 && (
-                        <p style={{ padding: '16px 14px', fontSize: '0.8rem', color: 'var(--text-3)' }}>Type at least 2 characters to search.</p>
+                    {!searchLoading && !isPlayerQueryActive && (
+                        <p style={{ padding: '16px 14px', fontSize: '0.8rem', color: 'var(--text-3)' }}>Type at least 2 characters or choose a team.</p>
                     )}
                     {!searchLoading && players.map(p => (
                         <PlayerRow

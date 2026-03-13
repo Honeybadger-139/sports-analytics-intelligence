@@ -41,13 +41,15 @@ export default function TableBrowser() {
   const [selected, setSelected] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(50)
+  const [search, setSearch] = useState('')
 
   const { data: tableList, loading: listLoading } = useTableList(season)
-  const { data: tableRows, loading: rowsLoading } = useTableRows(selected, season, limit, offset)
+  const { data: tableRows, loading: rowsLoading } = useTableRows(selected, season, limit, offset, search)
 
   function selectTable(table: string) {
     setSelected(table)
     setOffset(0)
+    setSearch('')
   }
 
   const columns = tableRows?.rows.length ? Object.keys(tableRows.rows[0]) : []
@@ -61,7 +63,7 @@ export default function TableBrowser() {
           <select
             className="scribble-select"
             value={season}
-            onChange={e => { setSeason(e.target.value); setSelected(null); setOffset(0) }}
+            onChange={e => { setSeason(e.target.value); setSelected(null); setOffset(0); setSearch('') }}
           >
             {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -159,7 +161,9 @@ export default function TableBrowser() {
               <div>
                 <h2 className="explorer-rows-title">{tableRows?.table ?? selected}</h2>
                 <p className="explorer-rows-meta">
-                  {tableRows ? `${tableRows.total.toLocaleString()} total rows · Season ${tableRows.season ?? 'all'}` : 'Loading…'}
+                  {tableRows
+                    ? `${tableRows.total.toLocaleString()} ${search.trim() ? 'matching rows' : 'total rows'} · Season ${tableRows.season ?? 'all'}`
+                    : 'Loading…'}
                 </p>
               </div>
               <div className="explorer-rows-controls">
@@ -183,6 +187,11 @@ export default function TableBrowser() {
               onPageChange={setOffset}
               loading={rowsLoading}
               accent={ACCENT}
+              filterValue={search}
+              onFilterChange={(next) => {
+                setSearch(next)
+                setOffset(0)
+              }}
             />
           </motion.div>
         )}

@@ -356,6 +356,8 @@ class TestDataOpsEndpoints:
         class _FakeDB:
             def execute(self, query, _params=None):
                 q = str(query)
+                if "SELECT COUNT(*)" in q and "FROM players p" in q:
+                    return _Result(scalar_value=1)
                 if "FROM players p" in q:
                     return _Result(
                         fetchall_value=[
@@ -368,8 +370,6 @@ class TestDataOpsEndpoints:
                             )
                         ]
                     )
-                if "SELECT COUNT(*) FROM players" in q:
-                    return _Result(scalar_value=1)
                 return _Result(fetchall_value=[])
 
         def _override_get_db():
@@ -386,6 +386,164 @@ class TestDataOpsEndpoints:
         assert payload["table"] == "players"
         assert payload["total"] == 1
         assert payload["rows"][0]["full_name"] == "Sample Player"
+
+    def test_raw_table_players_search_applies_before_pagination(self):
+        class _Result:
+            def __init__(self, *, fetchall_value=None, scalar_value=None):
+                self._fetchall_value = fetchall_value
+                self._scalar_value = scalar_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _Row:
+            def __init__(self, mapping):
+                self._mapping = mapping
+
+        class _FakeDB:
+            def __init__(self):
+                self.params_log = []
+
+            def execute(self, query, params=None):
+                q = str(query)
+                self.params_log.append(params or {})
+                if "SELECT COUNT(*)" in q and "FROM players p" in q:
+                    return _Result(scalar_value=1)
+                if "FROM players p" in q:
+                    return _Result(
+                        fetchall_value=[
+                            _Row(
+                                {
+                                    "player_id": 203497,
+                                    "full_name": "Rudy Gobert",
+                                    "team_abbreviation": "MIN",
+                                }
+                            )
+                        ]
+                    )
+                return _Result(fetchall_value=[])
+
+        fake_db = _FakeDB()
+
+        def _override_get_db():
+            yield fake_db
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/raw/players?limit=50&offset=0&search=rudy")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 1
+        assert payload["rows"][0]["full_name"] == "Rudy Gobert"
+        assert any(p.get("search") == "%rudy%" for p in fake_db.params_log)
+
+
+class TestDataOpsAndPlayerSearchEndpoints:
+    """Tests for data ops response shapes and player search/filter normalization."""
+
+    def test_list_players_normalizes_whitespace_in_search(self):
+        class _Result:
+            def __init__(self, *, fetchall_value=None):
+                self._fetchall_value = fetchall_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+        class _Row:
+            def __init__(self, mapping):
+                self._mapping = mapping
+
+        class _FakeDB:
+            def __init__(self):
+                self.last_params = None
+
+            def execute(self, _query, params=None):
+                self.last_params = params or {}
+                return _Result(
+                    fetchall_value=[
+                        _Row(
+                            {
+                                "player_id": 203497,
+                                "full_name": "Rudy Gobert",
+                                "is_active": True,
+                                "team_abbreviation": "MIN",
+                                "team_name": "Minnesota Timberwolves",
+                            }
+                        )
+                    ]
+                )
+
+        fake_db = _FakeDB()
+
+        def _override_get_db():
+            yield fake_db
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/players?search=%20Rudy%20%20Gobert%20&limit=10")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["count"] == 1
+        assert payload["players"][0]["full_name"] == "Rudy Gobert"
+        assert fake_db.last_params["search"] == "%Rudy Gobert%"
+
+    def test_list_players_team_filter_trims_and_uppercases(self):
+        class _Result:
+            def __init__(self, *, fetchall_value=None):
+                self._fetchall_value = fetchall_value
+
+            def fetchall(self):
+                return self._fetchall_value
+
+        class _Row:
+            def __init__(self, mapping):
+                self._mapping = mapping
+
+        class _FakeDB:
+            def __init__(self):
+                self.last_params = None
+
+            def execute(self, _query, params=None):
+                self.last_params = params or {}
+                return _Result(
+                    fetchall_value=[
+                        _Row(
+                            {
+                                "player_id": 1630162,
+                                "full_name": "Anthony Edwards",
+                                "is_active": True,
+                                "team_abbreviation": "MIN",
+                                "team_name": "Minnesota Timberwolves",
+                            }
+                        )
+                    ]
+                )
+
+        fake_db = _FakeDB()
+
+        def _override_get_db():
+            yield fake_db
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/players?team=%20min%20&limit=5")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["count"] == 1
+        assert payload["players"][0]["team_abbreviation"] == "MIN"
+        assert fake_db.last_params["team"] == "MIN"
 
     def test_quality_overview_returns_expected_sections(self):
         class _Result:

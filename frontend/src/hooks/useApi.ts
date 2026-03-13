@@ -399,19 +399,22 @@ import type {
 export function usePlayers(search: string, team?: string, limit = 50) {
   const [data, setData] = useState<PlayersListResponse | null>(null)
   const [loading, setLoading] = useState(false)
+  const normalizedSearch = search.trim().replace(/\s+/g, ' ')
 
   useEffect(() => {
-    if (!search || search.length < 2) { setData(null); return }
+    const hasSearch = normalizedSearch.length >= 2
+    if (!hasSearch && !team) { setData(null); setLoading(false); return }
     const ctrl = new AbortController()
     setLoading(true)
-    let url = `/players?search=${encodeURIComponent(search)}&limit=${limit}`
+    let url = `/players?limit=${limit}`
+    if (hasSearch) url += `&search=${encodeURIComponent(normalizedSearch)}`
     if (team) url += `&team=${encodeURIComponent(team)}`
     fetchJSON<PlayersListResponse>(url, ctrl.signal)
       .then(setData)
       .catch(() => { })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [search, team, limit])
+  }, [normalizedSearch, team, limit])
 
   return { data, loading }
 }

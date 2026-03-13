@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 interface DataTableProps {
   columns: string[]
@@ -12,6 +12,9 @@ interface DataTableProps {
   onPageChange?: (newOffset: number) => void
   loading?: boolean
   accent?: string
+  filterValue?: string
+  onFilterChange?: (value: string) => void
+  filterPlaceholder?: string
 }
 
 function cellStr(val: unknown): string {
@@ -37,14 +40,28 @@ export default function DataTable({
   onPageChange,
   loading = false,
   accent = '#10B981',
+  filterValue,
+  onFilterChange,
+  filterPlaceholder = 'Filter rows…',
 }: DataTableProps) {
   const [sortCol, setSortCol] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [filter, setFilter] = useState('')
+  const [localFilter, setLocalFilter] = useState('')
+  const isServerFilterMode = typeof onFilterChange === 'function'
+  const filter = filterValue ?? localFilter
 
   const hasPagination = total !== undefined && onPageChange !== undefined
   const page = Math.floor(offset / limit)
   const totalPages = total !== undefined ? Math.ceil(total / limit) : 1
+  const numericColumns = useMemo(() => {
+    const set = new Set<string>()
+    for (const col of columns) {
+      if (rows.some(row => typeof row[col] === 'number')) {
+        set.add(col)
+      }
+    }
+    return set
+  }, [columns, rows])
 
   function handleSort(col: string) {
     if (sortCol === col) {
@@ -55,7 +72,7 @@ export default function DataTable({
     }
   }
 
-  const filteredRows = filter
+  const filteredRows = !isServerFilterMode && filter
     ? rows.filter(row =>
         columns.some(col => {
           const v = cellStr(row[col]).toLowerCase()
@@ -93,17 +110,42 @@ export default function DataTable({
           </svg>
           <input
             className="data-table-filter-input"
-            placeholder="Filter rows…"
+            placeholder={filterPlaceholder}
             value={filter}
-            onChange={e => setFilter(e.target.value)}
+            onChange={e => {
+              if (isServerFilterMode) {
+                onFilterChange?.(e.target.value)
+              } else {
+                setLocalFilter(e.target.value)
+              }
+            }}
           />
           {filter && (
-            <button className="data-table-filter-clear" onClick={() => setFilter('')}>×</button>
+            <button
+              className="data-table-filter-clear"
+              onClick={() => {
+                if (isServerFilterMode) {
+                  onFilterChange?.('')
+                } else {
+                  setLocalFilter('')
+                }
+              }}
+            >
+              ×
+            </button>
           )}
         </div>
         <span className="data-table-count" style={{ color: accent }}>
-          {filter ? `${sortedRows.length} / ${rows.length}` : rows.length} rows
-          {total !== undefined && !filter && ` of ${total.toLocaleString()} total`}
+          {isServerFilterMode
+            ? rows.length
+            : filter
+              ? `${sortedRows.length} / ${rows.length}`
+              : rows.length} rows
+          {total !== undefined && (
+            isServerFilterMode
+              ? ` of ${total.toLocaleString()} ${filter ? 'matching' : 'total'}`
+              : (!filter ? ` of ${total.toLocaleString()} total` : '')
+          )}
         </span>
       </div>
 
@@ -115,7 +157,7 @@ export default function DataTable({
               {columns.map(col => (
                 <th
                   key={col}
-                  className={`data-table-th ${sortCol === col ? 'sorted' : ''}`}
+                  className={`data-table-th ${sortCol === col ? 'sorted' : ''} ${numericColumns.has(col) ? 'num-col' : ''}`}
                   onClick={() => handleSort(col)}
                   style={{ '--col-accent': accent } as React.CSSProperties}
                 >
