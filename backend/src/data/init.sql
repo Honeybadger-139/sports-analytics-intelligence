@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS matches (
     winner_team_id INTEGER REFERENCES teams(team_id),
     is_completed BOOLEAN DEFAULT FALSE,
     venue VARCHAR(100),
-    attendance INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

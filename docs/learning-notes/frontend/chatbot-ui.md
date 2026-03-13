@@ -1,6 +1,6 @@
 # Chatbot UI — Learning Notes
 
-> 📌 **Status**: Implemented on `chatbot` branch, merged into `ui-redesign`.
+> 📌 **Status**: Implemented and live on `main` (`frontend/src/pages/Chatbot.tsx` + `useChatbot.ts`).
 > **Commits**: `db5a416` (UI) · `c7b0c6b` (backend integration)
 > **Linear**: SCR-145 · SCR-147
 

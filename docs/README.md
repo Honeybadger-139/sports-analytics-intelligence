@@ -1,63 +1,36 @@
 # Documentation Index
 
-This folder is the long-term source of truth for architecture, decisions, changelogs, and learning notes.
+This folder is the long-term source of truth for architecture, decisions, changelogs, and interview-focused learning notes.
 
 ## Structure
 
-- `architecture/`:
-  - System design, data pipeline, database schema, phase execution runbook
-- `decisions/`:
-  - Decision log with alternatives, trade-offs, and interview framing
-- `learning-notes/`:
-  - Topic-wise deep dives for Data Layer, ML Engine, API, Infrastructure, Frontend, MLOps
-- `changelogs/`:
-  - Session-level execution logs (what changed, why, validation evidence, next backlog)
-
-## How To Use
-
-1. Start with `architecture/` for system-level understanding.
-2. Read `decisions/decision-log.md` to understand why each major design choice was made.
-3. Use `learning-notes/` for interview prep and future skill-building.
-4. Review `changelogs/` to track implementation history and pending follow-ups.
-
-## Latest Session Record
-
-- `changelogs/2026-02-28-phase-0-hardening.md`
-- `changelogs/2026-02-28-phase-1-reliability.md`
-- `changelogs/2026-02-28-phase-2-operations.md`
-- `changelogs/2026-02-28-phase-3a-frontend-integration.md`
-- `changelogs/2026-02-28-phase-3b-theme-toggle.md`
-- `changelogs/2026-02-28-phase-3c-tabbed-redesign.md`
-- `changelogs/2026-02-28-phase-4-rag-plan-update.md`
-- `changelogs/2026-02-28-phase-4-5-implementation.md`
-- `changelogs/2026-03-01-phase-4b-hardening.md`
-- `changelogs/2026-03-01-phase-5a-monitoring-hardening.md`
-- `changelogs/2026-03-01-phase-5b-retrain-automation.md`
-- `changelogs/2026-03-01-phase-6a-ci-regression.md`
-- `changelogs/2026-03-01-phase-6b-db-integration-tests.md`
-- `changelogs/2026-03-01-phase-6c-runtime-parity.md`
-- `changelogs/2026-03-01-dashboard-smoke-verification.md`
-- `changelogs/2026-03-04-data-rag-dashboard-restart.md`
-- `changelogs/2026-03-04-dashboard-create-builder.md`
-- `changelogs/2026-03-04-ui-theme-date-hardening.md`
-- `changelogs/2026-03-04-navbar-status-proxy-hotfix.md`
-- `changelogs/2026-03-04-dark-date-picker-icon-hotfix.md`
-- `changelogs/2026-03-06-arena-team-logo-enhancement.md`
-- `changelogs/2026-03-06-navbar-theme-toggle-visibility-fix.md`
-- `changelogs/2026-03-06-team-stats-hero-style-tuning.md`
-- `changelogs/2026-03-06-navbar-two-tier-layout.md`
-- `changelogs/2026-03-06-arena-match-stats-payload-compat-fix.md`
-- `changelogs/2026-03-06-arena-model-performance-bootstrap-fix.md`
-- `changelogs/2026-03-07-dashboard-starter-trends-and-dynamic-filters.md`
-- `changelogs/2026-03-07-dashboard-player-filter-suggestions-team-aware.md`
-- `changelogs/2026-03-07-grafana-create-dashboard-routing.md`
-- `changelogs/2026-03-07-branding-gamethread.md`
-- `changelogs/2026-03-07-grafana-port-remap-3301.md`
-- `changelogs/2026-03-07-grafana-curated-dashboards-provisioning.md`
+- `architecture/`
+  - System design, data pipeline, database schema, phase runbook
+- `decisions/`
+  - Decision log with alternatives, trade-offs, and rationale
+- `learning-notes/`
+  - Domain notes (data, API, intelligence, frontend, MLOps, infrastructure)
+  - fast revision guide for interview prep
+- `changelogs/`
+  - dated implementation/doc updates with validation context
 
 ## Recommended Start Order
 
-1. `architecture/phase-execution-runbook.md` for phase-by-phase command flow.
-2. `architecture/system-design.md` and `architecture/data-pipeline.md` for system context.
-3. `decisions/decision-log.md` for interview framing.
-4. `learning-notes/` for concept deep dives and revision.
+1. `architecture/system-design.md`
+2. `architecture/data-pipeline.md`
+3. `architecture/database-schema.md`
+4. `decisions/decision-log.md`
+5. `learning-notes/interview-2-day-refresh.md`
+6. `learning-notes/` deep dives by domain
+
+## Recent Change Records
+
+- `changelogs/2026-03-13-documentation-state-sync.md`
+- `changelogs/2026-03-07-grafana-curated-dashboards-provisioning.md`
+- `changelogs/2026-03-07-grafana-port-remap-3301.md`
+- `changelogs/2026-03-07-branding-gamethread.md`
+- `changelogs/2026-03-06-phase-8-streaming-langfuse-hardening.md`
+- `changelogs/2026-03-06-phase-7a-langgraph-chat-engine.md`
+- `changelogs/2026-03-05-phase-6a-global-sport-context-foundation.md`
+
+For older records, browse the full `changelogs/` directory chronologically.

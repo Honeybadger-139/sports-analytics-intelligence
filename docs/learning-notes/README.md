@@ -1,69 +1,42 @@
 # Learning Notes Index
 
-This directory is your study map for interview prep and future system upgrades.
+This directory is your study map for interview prep and quick re-onboarding after short breaks.
 
 ## Domains
 
-- `data-layer/`:
-  - ingestion, schema design, feature engineering, sync precision, query workflows
-- `ml-engine/`:
-  - rolling features, H2H metrics, resilient ETL, model selection
-- `api-layer/`:
-  - endpoint design and contract thinking
-- `infrastructure/`:
-  - docker and environment reliability
-- `frontend/`:
-  - dashboard implementation notes (vanilla `frontend/`) and `frontend` React redesign
-  - sub-notes: `ui-redesign.md`, `chatbot-ui.md`, `scribble-playground.md`
-- `mlops/`:
-  - deployment and lifecycle fundamentals
-- `intelligence-layer/`:
-  - RAG, reasoning-layer direction, chatbot backend, and LangGraph orchestration
+- `data-layer/`
+  - ingestion reliability, feature engineering, schema and query strategy
+- `ml-engine/`
+  - model training, rolling/H2H features, explainability and bet sizing
+- `api-layer/`
+  - FastAPI contract design, route families, reliability patterns
+- `intelligence-layer/`
+  - RAG retrieval, citation guardrails, chatbot orchestration
+- `frontend/`
+  - React architecture, routing, page modules, UX/interaction patterns
+- `mlops/`
+  - monitoring snapshots, escalation, retrain policy and worker lifecycle
+- `infrastructure/`
+  - Docker/runtime setup and operational runbooks
 
-## What To Study Next
+## Fast Revisions
 
-Use this roadmap for future preparation:
+- `interview-2-day-refresh.md` -> short memory refresh when returning after 1-3 days
+- `future-learning-roadmap.md` -> next-step progression once baseline is stable
 
-- [Future Learning Roadmap](future-learning-roadmap.md)
-- [Phase Execution Runbook](../architecture/phase-execution-runbook.md)
+## Current Baseline Snapshot
 
-## Latest Learning Context
+1. End-to-end NBA ingestion + feature pipeline with idempotent reruns.
+2. Prediction serving with SHAP explainability and persisted performance tracking.
+3. Intelligence endpoints with citation-grounded summaries and deterministic risk overlays.
+4. MLOps monitoring snapshots + retrain policy + queue/worker lifecycle endpoints.
+5. Chatbot dual-engine support (`legacy` + `langgraph`) with stream-first SSE UX.
+6. Scribble SQL workspace with read-only query controls, notebooks, and managed views.
+7. React command center (Overview/Pulse/Arena/Lab/Dashboard/Scribble/Chatbot) with sport-context gating for staged multi-sport rollout.
 
-Recently completed and documented:
+## Suggested Study Order
 
-1. Phase 1A: H2H + non-leaky pregame streak reliability.
-2. Phase 1B: Advanced metric completeness and targeted backfill strategy.
-3. Observability hardening: self-healing `pipeline_audit` bootstrap.
-4. Phase 2 backend operations: prediction persistence/performance APIs + bankroll ledger endpoints.
-5. Phase 3A frontend integration: operations console modules wired to live APIs.
-6. Phase 3C redesign: tab-based UX for home, raw data, quality monitoring, and analysis.
-7. Phase 4 foundation: RAG intelligence endpoints + context brief integration.
-8. Phase 5 foundation: MLOps monitoring + retrain policy API surfaces.
-9. Phase 4B hardening batch: source-quality scoring, feed-health telemetry, and Intelligence tab filters.
-10. Phase 5A hardening batch: monitoring snapshot persistence + trend API contract.
-11. Phase 5A hardening batch 2: escalation policy + incident workflow mapping.
-12. Phase 5B batch 1: retrain queue automation with duplicate guard + audit endpoint.
-13. Phase 5B batch 2: retrain worker lifecycle integration (`run-next` endpoint + status transitions).
-14. Phase 6A batch 1: GitHub Actions regression gate for ingestion/routes/config contracts.
-15. Phase 6B batch 2: DB-backed integration tests for ingestion integrity invariants.
-16. Phase 6C batch 3: runtime parity hardening (SSL warning removal + Python 3.11 baseline guidance).
-17. Dashboard UX batch: "Create Dashboard" labels + drag/drop chart builder with multi-aggregate and multi-filter controls.
-18. Dashboard UX hardening: route split (`/dashboard` list + `/dashboard/create` builder), Arena source-context handoff into create page, and custom-dashboard storage metadata.
-19. Phase 7A UI redesign: React + Vite + TypeScript `frontend` scaffold on `ui-redesign` branch — Nike-style navbar, animated SportsMark SVG logo, Overview home with live metric cards + navigation directory, stub pages for all sections. See `frontend/README.md` and `frontend/ui-redesign.md`.
-20. Phase 7B Chatbot: AI chatbot full-stack implementation — `useChatbot` hook + `ChatbotPanel` + `ChatMessage` components (UI), `chat_service.py` hybrid RAG+DB engine + `chat_routes.py` backend (API). See `frontend/chatbot-ui.md` and `intelligence-layer/README.md`.
-21. Phase 7C Scribble: Raw data playground — `scribble_routes.py` read-only SQL API (backend), `TableBrowser` + `SqlLab` + `NotebooksPanel` + `DataTable` components, `useScribble` hooks, localStorage notebooks (frontend). See `frontend/scribble-playground.md`.
-22. UI hardening batch: cross-theme token fixes (`--bg-card`, accent semantics), native date-picker visibility tuning, and section accent modernization for Pulse/Arena/Lab/Dashboard.
-23. Frontend ops hotfix: Vite API proxy alignment (`8000 -> 8001`) to restore accurate navbar system status.
-24. UI follow-up hotfix: date-picker indicator rendering switched to native visible indicator (not background-image) to avoid inline style override gaps.
-25. Phase 7 completion: feature-flagged LangGraph chatbot engine finalized with quality-gate + DB-retry nodes, route-level engine metadata, and offline-safe evaluation harness (`backend/src/intelligence/chat_eval.py`).
-26. Phase 8 completion: chatbot streaming via SSE (`/api/v1/chat/stream`), stream-first frontend hook with non-stream fallback, and Langfuse fail-open decorator hardening for offline/local workflows.
-27. Dashboard creation flow update: all `Create Dashboard` CTAs in Arena + Dashboard now open Grafana builder (`/dashboard/new` by default) via shared frontend helper + env config.
-28. Product branding refresh: user-facing dashboard and API metadata renamed to **GameThread** with updated docs entry points.
-29. Grafana runtime remap: moved Grafana host port from `3000` to `3301`, enabled compose service, and aligned frontend default URL to avoid port conflict.
-30. Grafana starter reporting: provisioned PostgreSQL datasource + two curated dashboards (`League Overview`, `Team & Player Trends`) under `GameThread` folder.
-
-## Suggested Progression
-
-1. Master Data Layer and API Layer first.
-2. Deepen ML Engine with experiment discipline.
-3. Execute Intelligence Layer topics in Phase 4, then MLOps in Phase 5.
+1. Start with `api-layer/README.md` and `architecture/system-design.md`.
+2. Move to `data-layer/` and `ml-engine/` for model/data depth.
+3. Review `intelligence-layer/` and `mlops/` for advanced system design discussion.
+4. Finish with `frontend/` for product delivery and UX architecture framing.

@@ -1,8 +1,10 @@
 # UI Redesign — Learning Notes (`frontend`)
 
-> 📌 **Status**: Active on `ui-redesign` branch. Not yet merged to `main`.
+> 📌 **Status**: Historical migration note. The redesign is now merged and live on `main`.
 > **Commits**: `24312be` (scaffold) · `0e848c9` (logo redesign)
 > **Linear**: SCR-143 · SCR-144
+
+> Note: references below to `ui-redesign` branch capture the original migration strategy at that time.
 
 ---
 

@@ -330,6 +330,42 @@ def _backfill_defensive_rating_from_opponent_points(engine, season: str) -> None
         )
 
 
+# Conference/division are static league metadata and do not depend on season.
+TEAM_CONFERENCE_DIVISION = {
+    "ATL": {"conference": "East", "division": "Southeast"},
+    "BOS": {"conference": "East", "division": "Atlantic"},
+    "BKN": {"conference": "East", "division": "Atlantic"},
+    "BRK": {"conference": "East", "division": "Atlantic"},
+    "CHA": {"conference": "East", "division": "Southeast"},
+    "CHI": {"conference": "East", "division": "Central"},
+    "CLE": {"conference": "East", "division": "Central"},
+    "DET": {"conference": "East", "division": "Central"},
+    "IND": {"conference": "East", "division": "Central"},
+    "MIA": {"conference": "East", "division": "Southeast"},
+    "MIL": {"conference": "East", "division": "Central"},
+    "NYK": {"conference": "East", "division": "Atlantic"},
+    "ORL": {"conference": "East", "division": "Southeast"},
+    "PHI": {"conference": "East", "division": "Atlantic"},
+    "TOR": {"conference": "East", "division": "Atlantic"},
+    "WAS": {"conference": "East", "division": "Southeast"},
+    "DAL": {"conference": "West", "division": "Southwest"},
+    "DEN": {"conference": "West", "division": "Northwest"},
+    "GSW": {"conference": "West", "division": "Pacific"},
+    "HOU": {"conference": "West", "division": "Southwest"},
+    "LAC": {"conference": "West", "division": "Pacific"},
+    "LAL": {"conference": "West", "division": "Pacific"},
+    "MEM": {"conference": "West", "division": "Southwest"},
+    "MIN": {"conference": "West", "division": "Northwest"},
+    "NOP": {"conference": "West", "division": "Southwest"},
+    "OKC": {"conference": "West", "division": "Northwest"},
+    "PHX": {"conference": "West", "division": "Pacific"},
+    "POR": {"conference": "West", "division": "Northwest"},
+    "SAC": {"conference": "West", "division": "Pacific"},
+    "SAS": {"conference": "West", "division": "Southwest"},
+    "UTA": {"conference": "West", "division": "Northwest"},
+}
+
+
 # ==========================================
 # 1. TEAMS INGESTION
 # ==========================================
@@ -351,14 +387,21 @@ def ingest_teams(engine) -> int:
     
     with engine.begin() as conn:
         for team in all_teams:
+            team_meta = TEAM_CONFERENCE_DIVISION.get(team["abbreviation"], {})
             conn.execute(
                 text("""
-                    INSERT INTO teams (team_id, abbreviation, full_name, city, updated_at)
-                    VALUES (:team_id, :abbrev, :full_name, :city, :now)
+                    INSERT INTO teams (
+                        team_id, abbreviation, full_name, city, conference, division, updated_at
+                    )
+                    VALUES (
+                        :team_id, :abbrev, :full_name, :city, :conference, :division, :now
+                    )
                     ON CONFLICT (team_id) DO UPDATE SET
                         abbreviation = EXCLUDED.abbreviation,
                         full_name = EXCLUDED.full_name,
                         city = EXCLUDED.city,
+                        conference = EXCLUDED.conference,
+                        division = EXCLUDED.division,
                         updated_at = EXCLUDED.updated_at
                 """),
                 {
@@ -366,6 +409,8 @@ def ingest_teams(engine) -> int:
                     "abbrev": team["abbreviation"],
                     "full_name": team["full_name"],
                     "city": team["city"],
+                    "conference": team_meta.get("conference"),
+                    "division": team_meta.get("division"),
                     "now": datetime.now(),
                 },
             )

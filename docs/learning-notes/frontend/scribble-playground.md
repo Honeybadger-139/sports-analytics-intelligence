@@ -1,6 +1,6 @@
 # Scribble Playground — Learning Notes
 
-> 📌 **Status**: Implemented on `scribble` branch, merged into `ui-redesign`.
+> 📌 **Status**: Implemented and live on `main` (`/scribble` route).
 > **Commit**: `c96fffd`
 > **Linear**: SCR-146
 

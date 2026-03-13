@@ -90,7 +90,6 @@ erDiagram
         int winner_team_id FK
         boolean is_completed
         varchar_100 venue
-        int attendance
         timestamp created_at
     }
 

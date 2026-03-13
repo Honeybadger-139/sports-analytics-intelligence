@@ -1,76 +1,52 @@
 # Future Learning Roadmap
 
-This roadmap captures learning priorities across all completed and upcoming phases of the Sports Analytics Intelligence Platform.
+This roadmap prioritizes what to study next after the current GameThread baseline.
 
-## Current Baseline (Completed — Phases 0 through 7)
+## Current Baseline (Already Implemented)
 
-1. Structured ingestion resilience (rate limiting, retries, idempotent upserts).
-2. Feature reliability hardening (H2H execution + non-leaky pregame streaks).
-3. Advanced metric completeness with targeted backfill.
-4. Self-healing observability bootstrap for legacy DB volumes.
-5. Data quality contracts and API exposure design.
-6. DB-backed integration testing patterns for ingestion pipelines.
-7. FastAPI route contract testing (including failure-mode behavior).
-8. Prediction persistence and outcome reconciliation (`was_correct` sync).
-9. Model-performance API contracts (accuracy, Brier score, calibration).
-10. Bankroll ledger design (`bets` lifecycle, PnL accounting, Kelly sizing).
-11. Phase 3A frontend integration: operations console wired to live APIs.
-12. Phase 4 RAG intelligence: ChromaDB, Gemini embeddings, citation enforcement.
-13. Phase 5 MLOps: monitoring snapshots, escalation policy, retrain queue.
-14. Phase 6 CI/CD: GitHub Actions regression gate + DB-backed integration tests.
-15. Phase 7A UI redesign: React + Vite + TypeScript `frontend` on `ui-redesign` branch.
-16. Phase 7B Chatbot: hybrid RAG+DB engine, LLMClient Adapter, IntentRouter, off-topic gate.
-17. Phase 7C Scribble: read-only SQL API, DataTable reuse, CustomEvent bus, localStorage notebooks.
-18. Phase 7 completion (LangGraph): feature-flagged dual engine (`legacy|langgraph`), state-graph guard nodes (RAG quality gate + DB retry + finalize contract), and parity evaluation harness (`chat_eval.py`).
+1. Reliable ingestion and feature pipeline with idempotent reruns.
+2. Prediction serving with SHAP explainability and persisted outcomes.
+3. RAG intelligence services with citations and deterministic risk overlays.
+4. Chatbot with dual-engine orchestration (`legacy` + `langgraph`) and SSE streaming.
+5. MLOps monitoring snapshots + retrain policy + retrain worker lifecycle.
+6. React operations console with route-level modules and sport-context gating.
+7. Scribble SQL workspace (safe query execution, notebooks, and managed views).
 
----
+## Level 1 — Strengthen What Exists
 
-## Level 1: Deepen Existing Implementations
+1. Add structured offline evals for intelligence retrieval quality (Recall@K, citation precision).
+2. Add richer chatbot eval metrics (groundedness, SQL correctness, latency percentiles).
+3. Add frontend test coverage for critical hooks (`useChatbot`, `useApi`, `useScribble`).
+4. Add route contract tests for advanced query params and edge-case filters.
+5. Add data-drift feature diagnostics beyond aggregate accuracy/Brier thresholds.
 
-These topics are partially implemented — deepen the interview narrative and edge-case handling.
+## Level 2 — Product/Platform Hardening
 
-1. **RAG evaluation**: How do you measure retrieval quality? Recall@K, MRR, citation accuracy. Add offline eval harness for the intelligence layer.
-2. **LLM prompt engineering**: Structured prompts for NL→SQL (schema injection, few-shot examples, output format constraints). Study hallucination failure modes.
-3. **React performance patterns**: `useMemo`, `useCallback`, `React.memo` — when do they help vs add noise? Apply to the metric cards polling loop.
-4. **Custom hook testing**: How to test `useChatbot` and `useScribble` with React Testing Library + `msw` (Mock Service Worker) for API mocking.
-5. **AbortController patterns**: Cancellation in fetch, streaming responses, timeout vs abort semantics.
+1. Introduce auth/role controls for Scribble and retrain execution endpoints.
+2. Add pagination + cursor strategy for heavy data endpoints.
+3. Add dashboard export/share workflow with versioned snapshots.
+4. Add environment-specific config safety checks at startup.
+5. Add SLO dashboards (p50/p95 latency, error-rate by route family).
 
-## Level 2: Frontend Architecture Deepening
+## Level 3 — Multi-Sport Expansion (Staged)
 
-1. **React Router v6 patterns**: Nested routes, `Outlet`, lazy-loaded routes with `React.lazy` + `Suspense` — apply to Arena and Lab sub-routes.
-2. **Framer Motion advanced**: `useMotionValue`, `useTransform`, scroll-linked animations, shared layout animations (`layoutId`) for smooth page transitions.
-3. **Design system evolution**: Moving from a single `index.css` to CSS Modules or `styled-components` — trade-offs, scope isolation, dynamic theming.
-4. **Accessibility (a11y)**: ARIA roles for the mega-menu flyout, keyboard navigation (Escape to close, Tab through sub-items), focus management.
-5. **Storybook**: Isolate and document `SportsMark`, `DataTable`, `ChatMessage` components independently.
+1. Define adapter contract per sport (ingest -> feature -> prediction -> intelligence).
+2. Implement first non-NBA adapter end-to-end with minimal UI changes.
+3. Replace hard-coded NBA assumptions in route defaults where needed.
+4. Add sport-aware intent routing and schema selection in chatbot paths.
+5. Add cross-sport benchmark dashboard for quality/freshness comparison.
 
-## Level 3: Full-Stack Feature Expansion
+## Level 4 — Senior/Architect Interview Prep
 
-1. **Arena module**: Wire `Today's Predictions`, `Model Performance`, and `Bankroll Tracker` pages to live backend APIs — migrate from stub to live.
-2. **Lab module**: Wire `Data Quality`, `Pipeline Runs`, and `MLOps Monitor` pages — the backend already has all required endpoints.
-3. **Pulse module**: Implement `Top Stories` and `Daily Brief` using the intelligence brief API (`GET /api/v1/intelligence/brief`).
-4. **Streaming refinement**: Add partial citation streaming and explicit progress events (`retrieval_started`, `sql_running`, `finalizing`) on top of current SSE token stream.
-5. **Multi-sport extensibility**: Add `sport` selector to the chatbot UI; extend `IntentRouter` keyword sets for football/cricket.
+1. Prepare a "trade-off ledger": where you chose speed vs rigor and why.
+2. Prepare one resilience incident story (failure, diagnosis, prevention).
+3. Prepare one scaling story (where bottlenecks will appear and mitigation plan).
+4. Prepare one AI-governance story (how guardrails prevent bad outputs).
+5. Prepare one migration story (how to roll out big changes safely with feature flags).
 
-## Level 4: Production & Platform Hardening
+## Suggested Study Flow
 
-1. **Frontend build and deployment**: Vite `npm run build` output, static hosting (Netlify, Vercel, S3+CloudFront), environment variable injection at build time.
-2. **Reverse proxy config**: Nginx or Caddy to serve `frontend/dist/` and proxy `/api/v1/*` to FastAPI — eliminates the Vite dev proxy in production.
-3. **LLM provider migration**: Swap Gemini for Minimax (or OpenAI) via `LLMClient` — document the one-class change process.
-4. **Scribble hardening**: Add PostgreSQL RLS as a second security layer alongside application-layer validation.
-5. **Notebook persistence**: Migrate `useNotebooks` from localStorage to `POST /api/v1/notebooks` for multi-user support.
-
-## Level 5: Senior / Architect Interview Preparation
-
-1. **Strangler fig migration pattern**: Articulate the `frontend` → `frontend` promotion strategy at depth — parallel coexistence, feature flags, traffic splitting.
-2. **Adapter design pattern in practice**: LLMClient as a case study — interface stability vs implementation flexibility, versioning, testing the adapter.
-3. **Intent routing architecture**: Tradeoffs between keyword heuristics, embedding similarity, and LLM classification for intent detection. Cost/latency/accuracy triangle.
-4. **Event-driven UI patterns**: CustomEvent bus vs Zustand vs React Context — when each is appropriate, scalability limits of each.
-5. **API contract evolution**: Adding new fields to existing endpoints (additive change vs breaking change), versioning strategies, client compatibility.
-
-## Recommended Study Flow
-
-1. Deepen Level 1 topics while continuing Phase 7 development.
-2. Tackle Level 2 when wiring Arena/Lab/Pulse stub pages to live data.
-3. Execute Level 3 to complete the full `frontend` feature set before merging to `main`.
-4. Address Level 4 before the `ui-redesign → main` merge (deployment readiness).
-5. Use Level 5 to prepare for senior/architect interview scenarios.
+1. Start with Level 1 to deepen confidence in current architecture.
+2. Move to Level 2 to demonstrate production thinking.
+3. Use Level 3 for future roadmap discussions in interviews.
+4. Finish with Level 4 narrative drills so your answers sound senior and specific.

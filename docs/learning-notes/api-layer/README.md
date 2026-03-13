@@ -1,138 +1,103 @@
 # API Layer — Learning Notes
 
-> 📌 **Status**: Implemented — FastAPI REST API serving predictions, health checks, observability, and bankroll ledger operations.
+> Status: FastAPI backend with route families for prediction, intelligence, MLOps, chat, and Scribble.
 
-## What Is the API Layer?
+## API Philosophy
 
-The API Layer exposes the platform's capabilities as RESTful endpoints using FastAPI. It's the interface between the ML Engine and the outside world (frontend, mobile apps, third-party integrations).
+1. Routes are thin contracts.
+2. Service/store modules own business logic.
+3. Additive response evolution is preferred over breaking changes.
+4. Operational traceability is built into API outputs.
 
-## Implemented Endpoints
+All routes are versioned under `/api/v1`.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/v1/health` | Simple liveness check |
-| `GET /api/v1/teams` | All 30 NBA teams |
-| `GET /api/v1/matches` | Games with filters (season, team, limit) |
-| `GET /api/v1/standings` | Win-loss standings by season |
-| `GET /api/v1/predictions/game/{id}` | ML prediction + SHAP explanation |
-| `GET /api/v1/predictions/today` | Batch predictions for today's scheduled games |
-| `GET /api/v1/predictions/performance` | Historical model accuracy + calibration metrics |
-| `GET /api/v1/predictions/bet-sizing` | Kelly Criterion stake sizing |
-| `POST /api/v1/bets` | Create pending bet in bankroll ledger |
-| `GET /api/v1/bets` | Fetch bet history with filters (`season`, `result`) |
-| `POST /api/v1/bets/{id}/settle` | Settle bet (`win/loss/push`) and compute PnL |
-| `GET /api/v1/bets/summary` | Aggregate bankroll KPIs (PnL, ROI, open/settled mix) |
-| `GET /api/v1/features/{id}` | Computed features for a game |
-| `GET /api/v1/system/status` | Pipeline health + audit trail |
-| `POST /api/v1/chat` | AI chatbot — hybrid RAG+DB query engine (Phase 7B) |
-| `GET /api/v1/chat/health` | Chatbot readiness + engine metadata (`legacy` vs `langgraph`) |
-| `POST /api/v1/chat/stream` | SSE streaming chatbot response (Phase 8) |
-| `POST /api/v1/scribble/query` | Read-only SQL execution for data playground (Phase 7C) |
+## Endpoint Families
 
-## Key Design Patterns
+### A) Core prediction + data endpoints (`routes.py`)
 
-1. **Dependency Injection**: Database sessions via `Depends(get_db)` — FastAPI auto-manages lifecycle
-2. **Lazy Loading**: ML models loaded on first request, not at startup
-3. **CORS Middleware**: Allows frontend to call API from any origin (dev mode)
-4. **API Versioning**: All routes under `/api/v1/` for future backwards compatibility
-5. **Operational Traceability**: Prediction + betting outputs are persisted for reproducible analysis
+- Health and dimensions
+  - `GET /api/v1/health`
+  - `GET /api/v1/teams`
+  - `GET /api/v1/standings`
 
-## Phase 2 Interview Notes
+- Match and feature surfaces
+  - `GET /api/v1/matches`
+  - `GET /api/v1/matches/{game_id}/stats`
+  - `GET /api/v1/features/{game_id}`
+  - `GET /api/v1/players`
+  - `GET /api/v1/players/{player_id}/game-stats`
+  - `GET /api/v1/teams/{abbreviation}/game-stats`
 
-### What Is It?
-Phase 2 turns the API from a stateless prediction surface into an operations surface:
-- prediction outputs are persisted,
-- outcomes are synchronized,
-- bankroll actions are logged and settled.
+- Prediction operations
+  - `GET /api/v1/predictions/game/{game_id}`
+  - `GET /api/v1/predictions/today`
+  - `GET /api/v1/predictions/performance`
+  - `GET /api/v1/predictions/bet-sizing`
 
-### Why It Matters
-Without persistence, you cannot prove model quality or portfolio discipline. Interviewers care about this because real ML systems are judged by production outcomes, not only point-in-time scores.
+- Bet ledger
+  - `POST /api/v1/bets`
+  - `GET /api/v1/bets`
+  - `POST /api/v1/bets/{bet_id}/settle`
+  - `GET /api/v1/bets/summary`
 
-### How It Works (Intuition)
-1. Predict tonight's games and optionally persist model outputs.
-2. After games finish, sync truth labels (`was_correct`) for each stored prediction.
-3. Log betting decisions in a ledger (`bets`) and settle them using deterministic PnL rules.
-4. Expose summary metrics (`accuracy`, `brier`, `ROI`, bankroll curve inputs) through APIs.
+- Raw explorer + ops status
+  - `GET /api/v1/raw/tables`
+  - `GET /api/v1/raw/{table_name}`
+  - `GET /api/v1/quality/overview`
+  - `GET /api/v1/system/status`
 
-### When to Use vs Alternatives
-- Use this API-ledger model when you need transparent audits and frontend portability.
-- A notebook-only flow is faster initially, but weak for interview storytelling and cross-team collaboration.
+### B) Intelligence (`intelligence_routes.py`)
 
-### Senior Manager Perspective
-This design creates a measurable feedback loop: model quality, decision quality, and capital impact all become queryable artifacts. That is the foundation for later monitoring, retraining, and risk policy automation.
+- `GET /api/v1/intelligence/game/{game_id}`
+- `GET /api/v1/intelligence/brief`
 
-### Common Interview Questions
-1. Why persist predictions instead of recalculating later?
-2. How do you prevent data leakage in post-game performance metrics?
-3. Why expose Brier score alongside accuracy?
-4. How would you handle duplicate or amended bets in a real sportsbook integration?
-5. What controls would you add before enabling auto-bet placement?
+Supports RAG retrieval controls (top-k, freshness window) and deterministic risk overlays.
 
-## Phase 7 Additions
+### C) MLOps (`mlops_routes.py`)
 
-### `POST /api/v1/chat` — Chatbot endpoint
+- `GET /api/v1/mlops/monitoring`
+- `GET /api/v1/mlops/monitoring/trend`
+- `GET /api/v1/mlops/retrain/policy`
+- `GET /api/v1/mlops/retrain/jobs`
+- `POST /api/v1/mlops/retrain/worker/run-next`
 
-```python
-# chat_routes.py
-@router.post("/chat")
-async def chat(request: ChatRequest) -> ChatResponse:
-    service = _get_chat_service(db=db, sport=request.sport or "nba")
-    reply = service.reply(message=request.message, history=request.history, session_id=request.session_id)
-    return ChatResponse(reply=reply, intent=intent, engine=service.active_engine)
-```
+### D) Chatbot (`chat_routes.py`)
 
-- **Request**: `{ message, history[], sport? }`
-- **Response**: `{ reply, intent, engine }`
-- HTTP 500 with detail message on unexpected errors (graceful degradation)
-- Registered in `main.py` as `chat_router`
-- Engine selection is feature-flagged via `CHAT_ENGINE` (`legacy` default, `langgraph` optional)
+- `GET /api/v1/chat/health`
+- `POST /api/v1/chat`
+- `POST /api/v1/chat/stream` (SSE)
 
-### `GET /api/v1/chat/health` — Chatbot engine readiness
+Key pattern: stream-first UX with non-stream fallback for compatibility.
 
-- **Response fields** include:
-  - `status`
-  - `llm_available`
-  - `db_connected`
-  - `schema_tables_visible`
-  - `chat_engine_configured`
-  - `chat_engine_active`
-  - `langgraph_available`
-- This endpoint confirms both dependency health and active orchestration path for debugging/demo readiness.
+### E) Scribble (`scribble_routes.py`)
 
-### `POST /api/v1/chat/stream` — SSE response stream
+- Query execution
+  - `POST /api/v1/scribble/query`
 
-- **Request**: same shape as `POST /api/v1/chat`
-- **Response**: `text/event-stream` with events:
-  - `meta` (intent + engine)
-  - `token` (incremental text chunks)
-  - `done` (final reply payload)
-  - `error` (terminal failure payload)
-- Frontend uses stream-first behavior with fallback to non-stream `/chat` when stream endpoint is unavailable.
+- Notebooks
+  - `GET /api/v1/scribble/notebooks`
+  - `POST /api/v1/scribble/notebooks`
+  - `PATCH /api/v1/scribble/notebooks/{id}`
+  - `DELETE /api/v1/scribble/notebooks/{id}`
 
-See `intelligence-layer/README.md` for the full backend architecture.
+- Views
+  - `GET /api/v1/scribble/views`
+  - `POST /api/v1/scribble/views`
+  - `DELETE /api/v1/scribble/views/{view_name}`
 
-### `POST /api/v1/scribble/query` — Safe SQL endpoint
+- AI SQL assistant
+  - `POST /api/v1/scribble/ai-sql`
 
-```python
-# scribble_routes.py
-@router.post("/scribble/query")
-async def run_query(req: QueryRequest, db: Session = Depends(get_db)) -> QueryResponse:
-    # Validate → execute in read-only transaction → return rows
-```
+## Design Patterns Used
 
-- **Request**: `{ sql: str }`
-- **Response**: `{ columns: str[], rows: any[][], row_count: int }`
-- Security layers: regex whitelist, DML blocklist, 500-row cap, 10s timeout, read-only transaction
-- Registered in `main.py` as `scribble_router`
+1. **Dependency injection** with `Depends(get_db)` for DB session lifecycle.
+2. **Lazy init** for expensive clients/models where possible.
+3. **Contract-safe enrichment** (new optional fields instead of breaking response shape).
+4. **Defensive runtime behavior**: explicit error mapping and degraded-mode responses.
 
-See `frontend/scribble-playground.md` for the full security rationale.
+## Interview Angles
 
----
-
-## Interview Angle
-
-> "I designed a stateless REST API that separates model serving from model training. The API lazy-loads model artifacts and uses FastAPI's dependency injection for database session management. This lets us scale horizontally — add more API instances behind a load balancer without shared state."
-
-> "The chat endpoint delegates all intelligence logic to `ChatService` — the route is intentionally thin. Routes are contracts; services are implementations. This separation makes the chatbot logic testable without an HTTP layer."
-
-> "The Scribble SQL endpoint enforces security at the application layer: SELECT-only via regex, DML blocklist, read-only transaction, and a 500-row cap. This is defense-in-depth without requiring infrastructure changes."
+1. "I separated route contracts from service logic so behavior can be tested without HTTP coupling."
+2. "Prediction endpoints persist outcomes so model quality is measured from production artifacts, not only offline notebooks."
+3. "The chat and Scribble paths use strict guardrails to combine LLM utility with operational safety."
+4. "MLOps endpoints expose both current state and trend history, enabling policy-based retrain decisions."

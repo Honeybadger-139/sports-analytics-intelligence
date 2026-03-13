@@ -2,6 +2,16 @@
 
 This is the practical step-by-step guide to execute the project phase by phase without rushing.
 
+## Current Reality Note (2026-03-13)
+
+- This document preserves historical phase logs, including earlier frontend migration steps.
+- Current production frontend is React + Vite + TypeScript (`frontend/src/*`) with routed modules (`Overview`, `Pulse`, `Arena`, `Lab`, `Dashboard`, `Scribble`, `Chatbot`).
+- Multi-sport selectors exist in UI, but live backend data is currently gated to Basketball -> NBA.
+- For the latest architecture state, prefer:
+  - `docs/architecture/system-design.md`
+  - `docs/architecture/data-pipeline.md`
+  - `docs/learning-notes/interview-2-day-refresh.md`
+
 ## Why This Runbook Exists
 - Keep implementation structured and measurable.
 - Prevent "half-done" phases.

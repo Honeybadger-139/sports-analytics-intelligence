@@ -1,215 +1,85 @@
 # Frontend — Learning Notes
 
-> 📌 **Status**: Two parallel implementations:
-> - `frontend/` (vanilla HTML/CSS/JS) — production on `main`, Phase 5 complete
-> - `frontend/` (React + Vite + TypeScript) — staging on `ui-redesign`, Phase 7 active
->
-> See sub-notes: [`ui-redesign.md`](ui-redesign.md) · [`chatbot-ui.md`](chatbot-ui.md) · [`scribble-playground.md`](scribble-playground.md)
+> Status: Current production frontend is React + Vite + TypeScript in `frontend/`.
 
-## What Is the Frontend?
+## What This Frontend Solves
 
-The frontend is the product surface for this ML system. It turns backend APIs into an operator workflow:
+The UI is an operator workflow surface, not a generic dashboard.
 
-1. Read scope and intent (NBA-only) on Home.
-2. Inspect raw Postgres records without mixing feature-engineering tables.
-3. Monitor pipeline quality and load-time metrics.
-4. Run model + bankroll analysis.
-5. Consume citation-grounded intelligence and MLOps signals in dedicated UX surfaces.
+It is organized by intent:
+1. **Overview** -> system snapshot + navigation
+2. **Pulse** -> intelligence briefs, stories, match previews
+3. **Arena** -> predictions, deep dives, model performance
+4. **Lab** -> data quality, pipeline runs, MLOps monitor
+5. **Dashboard** -> created dashboards and Grafana launch path
+6. **Scribble** -> raw table exploration + SQL + notebooks/views
+7. **Chatbot** -> natural-language assistant over live data and context
 
-## Current Implementation (`frontend/index.html`)
+## Runtime Architecture
 
-### 1) Home Tab
-- Clear intro describing dashboard purpose and **NBA-only** scope.
-- Explains each tab’s responsibility to keep usage simple.
+### Router and gating
+- `frontend/src/App.tsx` defines all page routes.
+- Sport context comes from `SportContextProvider`.
+- Live data routes are gated by `isLiveDataSelection(...)`.
+- Current live gate: `sport=nba` and `league=nba`; other contexts render `ComingSoonHold`.
 
-### 2) Raw Data Explorer Tab
-- APIs:
-  - `GET /api/v1/raw/tables`
-  - `GET /api/v1/raw/{table_name}`
-- Shows only raw tables:
-  - `matches`
-  - `teams`
-  - `players`
-  - `team_game_stats`
-  - `player_game_stats`
-  - `player_season_stats`
-- Explicitly excludes `match_features` from explorer.
-- Includes pagination controls and season filtering.
+### Navigation system
+- `frontend/src/components/Navbar.tsx`
+- Nike-style center navigation + animated mega menu (Framer Motion)
+- Right rail includes system-health pill and theme toggle
+- Second row includes sport/league/season context selectors
 
-### 3) Data Quality Tab
-- API: `GET /api/v1/quality/overview`
-- Tracks:
-  - row counts
-  - ingestion/feature load times
-  - quality check payload
-  - top-team performance snapshot
-  - recent run history
+### Data fetching model
+- Shared hooks in `frontend/src/hooks/useApi.ts`, `useChatbot.ts`, `useScribble.ts`
+- `API_BASE=/api/v1` keeps frontend decoupled from host/port changes
+- Critical pages use explicit loading/empty/error states
 
-### 4) Analysis Tab: System Health + Audit
-- KPI cards for DB, pipeline, matches, features, players
-- Audit table from `/api/v1/system/status`
+## Page-Level Notes
 
-### 5) Analysis Tab: Today's Predictions
-- API: `GET /api/v1/predictions/today?persist=false`
-- Shows matchup, consensus model/side, home win probability, confidence
+### Overview
+- Live metric cards from `/api/v1/system/status`
+- Context card reflects live/coming-soon data availability
+- Directory cards deep-link into each module
 
-### 6) Analysis Tab: Match Deep Dive
-- APIs:
-  - `GET /api/v1/matches`
-  - `GET /api/v1/predictions/game/{game_id}`
-  - `GET /api/v1/features/{game_id}`
-- Shows per-game prediction context + top SHAP factors + compact feature snapshot
-- Adds `Context Brief (RAG)` block:
-  - summary from `/api/v1/intelligence/game/{game_id}`
-  - deterministic risk signals
-  - citation table
+### Pulse
+- `Daily Brief` -> `/api/v1/intelligence/brief`
+- `Top Stories` and `Match Previews` connect intelligence + match endpoints
+- Date and filter patterns prioritize analyst triage flow
 
-### 7) Intelligence Tab
-- APIs:
-  - `GET /api/v1/intelligence/brief`
-  - `GET /api/v1/intelligence/game/{game_id}`
-  - `GET /api/v1/mlops/monitoring`
-  - `GET /api/v1/mlops/retrain/policy?dry_run=true`
-- Shows:
-  - daily intelligence brief
-  - brief sort/filter controls (risk level, citation minimum, sort mode)
-  - selected game citation inspector
-  - citation quality signals (stale/noisy flags + quality score)
-  - source quality summary table
-  - MLOps alert summary
-  - trend summary from monitoring snapshots (`/mlops/monitoring/trend`)
-  - action-ready alert table (`recommended_action` from escalation policy)
-  - latest retrain queue status (`/mlops/retrain/jobs`)
-  - retrain policy dry-run outcome
+### Arena
+- `Today's Picks` -> `/api/v1/predictions/today`
+- `Deep Dive` -> predictions + features + team/player stat views
+- `Model Performance` -> `/api/v1/predictions/performance`
 
-### 8) Analysis Tab: Model Performance
-- API: `GET /api/v1/predictions/performance`
-- Displays evaluated games, accuracy, Brier score, and confidence by model
+### Lab
+- `Data Quality` -> `/api/v1/quality/overview`
+- `Pipeline Runs` -> audit histories from status/quality payloads
+- `MLOps Monitor` -> monitoring, trend, retrain policy, job queue
 
-### 9) Analysis Tab: Bankroll Tracker
-- APIs:
-  - `GET /api/v1/bets/summary`
-  - `GET /api/v1/bets`
-- Shows bankroll KPIs and recent settled/pending bets
+### Dashboard + Grafana
+- Internal dashboard list/create flows exist in React routes.
+- Grafana launch helpers centralize environment-aware create URL behavior.
 
-### 10) Theme Toggle (Light/Dark)
-- Header button toggles between light and dark UI modes.
-- Theme preference is persisted in browser `localStorage` using key `sai_theme`.
-- CSS token overrides (`body.theme-dark`) update font and surface colors consistently across modules.
+### Scribble
+- Explorer tab uses raw table catalog/rows APIs.
+- SQL Lab uses read-only query execution endpoint.
+- Notebooks and view management are first-class UX flows.
 
-## Design Decisions (vanilla `frontend/`)
+### Chatbot
+- Stream-first client via `/api/v1/chat/stream`.
+- Fallback to `/api/v1/chat` keeps backward compatibility.
+- Session id persistence supports trace grouping for observability tools.
 
-1. **No frontend framework (yet)**: Vanilla HTML/CSS/JS keeps deployment simple and demonstrates API-first architecture.
-2. **Tab-first information architecture**: separated raw data, quality monitoring, intelligence operations, and analysis tasks into dedicated tabs.
-3. **Resilient states**: Every module handles loading, empty, and error states explicitly.
-4. **Responsive by default**: The same page works across desktop/mobile breakpoints with no separate build.
-5. **Theme via design tokens**: Light/dark switch is implemented with CSS variables rather than duplicated styles.
+## Design Principles
 
----
-
-## `frontend/` — React + Vite + TypeScript Redesign (Phase 7, `ui-redesign` branch)
-
-> Full deep-dive in [`ui-redesign.md`](ui-redesign.md).
-
-### Why the migration
-
-The chatbot, Scribble playground, and future Lab/Arena modules require complex interactive state that is painful to manage in vanilla JS. React components, custom hooks, and Framer Motion animations reduce complexity and allow isolated development and testing per module.
-
-### Tech stack
-
-| Layer | Tool | Reason |
-|---|---|---|
-| Build / dev server | Vite (port 5174) | Sub-second HMR, production bundler, proxy to backend on 8000 |
-| UI framework | React 18 | Component model, hooks, ecosystem (Framer Motion, Recharts) |
-| Language | TypeScript | Compile-time safety across 10+ API shapes and 30+ components |
-| Animations | Framer Motion | Mega-menu flyouts, page transitions |
-
-### Navigation structure (Nike-style)
-
-```
-[SportsMark logo] ← always navigates to Overview
-       ↓
-[Pulse · Arena · Lab · Scribble · Chatbot]   ← centered nav
-       ↓ (hover/click any item)
-[Framer Motion mega-menu flyout with sub-item cards]
-       ↓
-[System status pill · Theme toggle]  ← right side
-```
-
-### Section map
-
-| Section | Status | Sub-items |
-|---|---|---|
-| **Overview** | Live | Metric cards, navigation directory |
-| **Pulse** | Stub | Top Stories, Daily Brief, Match Previews |
-| **Arena** | Stub | Today's Predictions, Deep Dive, Model Performance, Bankroll |
-| **Lab** | Stub | Raw Tables, Data Quality, Pipeline Runs, MLOps |
-| **Scribble** | Live | Explorer, SQL Lab, Notebooks |
-| **Chatbot** | Live | Full-page AI assistant wired to `/api/v1/chat` |
-
-### Dashboard creation flow (Grafana-first)
-
-- Product direction now treats Grafana as the dashboard builder.
-- Any `Create Dashboard` button in Arena or Dashboard opens Grafana create URL (default: `http://localhost:3301/dashboard/new`).
-- `frontend/src/utils/grafana.ts` centralizes this behavior and reads:
-  - `VITE_GRAFANA_URL`
-  - `VITE_GRAFANA_CREATE_PATH`
-- Local route `/dashboard/create` remains as a launcher/fallback that redirects into Grafana.
-
-### Grafana curated dashboards (provisioned)
-
-- Datasource: `GameThread Postgres` (PostgreSQL `sports_analytics`).
-- Folder: `GameThread`.
-- Preloaded dashboards:
-  - `GameThread - League Overview`
-  - `GameThread - Team & Player Trends`
-- Coverage:
-  - season-level KPIs (completed games, home win rate, average scoring/assists)
-  - games-by-date trend and team win-rate ranking
-  - team trends for points/rebounds/assists
-  - player production snapshot with team filter
-
-### Overview home page (two zones)
-
-- **Zone 1 — Live Metric Cards**: DB, Pipeline, Matches, Features, Players, Bankroll, ROI, Open Bets — polled from real backend APIs
-- **Zone 2 — Navigation Directory**: One card per section with description, sub-items, and direct deep-link — serves as onboarding/instructions page
-
-### Design system
-
-- Dark-first base (`#05090F`)
-- Per-section accent colours: orange (Pulse), cyan (Arena), emerald (Lab/Scribble), amber (Chatbot)
-- Fonts: Bebas Neue (display), Syne (UI), Fira Code (data/mono)
-- Full light-mode toggle via CSS custom property overrides
-
-### Branch strategy
-
-```
-main  (production — frontend/ never touched)
-  └── ui-redesign  (staging — frontend/ actively developed)
-        ├── chatbot   (feature sub-branch — merged ✓)
-        └── scribble  (feature sub-branch — merged ✓)
-```
-Merge trigger: UI approved and tested → rename `frontend/` → `frontend/`, merge to `main`.
-
----
-
-## Senior Manager Perspective
-
-The vanilla dashboard demonstrates API-first, operator-intent UI design. The React redesign raises the bar: stateful components, animated navigation, and modular page structure allow each analyst workflow (predictions, data exploration, AI chat) to evolve independently without breaking others.
+1. **Intent-first IA**: each route maps to one analyst job.
+2. **Operational resilience in UX**: failures are surfaced with actionable messaging.
+3. **Type-safe contracts**: API payloads are centrally typed in `src/types.ts`.
+4. **Incremental platform rollout**: multi-sport context can ship before live adapters.
 
 ## Interview Angles
 
-> **On the vanilla frontend**: "I designed the UI around operator intent: raw data inspection, quality monitoring, intelligence retrieval, and model analysis are split into focused tabs with explicit API contracts."
-
-> **On the React migration**: "I used a parallel branch strategy — the strangler fig pattern — to build the new React UI without touching production. Once tested and approved, a single rename + merge promotes it."
-
-> **On the tech stack choice**: "React gives us isolated, testable components for the chatbot state machine and the Scribble SQL editor. Vite's HMR and proxy make development fast. TypeScript prevents runtime bugs across 10+ API contracts."
-
-## Common Interview Questions
-
-1. Why keep the frontend framework-free initially?
-2. What triggered the migration to React?
-3. How do you run both frontends in parallel during development?
-4. How did you prevent Chatbot state from leaking into other routes?
-5. Why use Framer Motion instead of CSS transitions for the mega-menu?
-6. How does the branch strategy prevent production regressions during UI work?
+1. "I organized the UI by operational workflow, not by component taxonomy."
+2. "We use route-level gating so future sports are visible without pretending data is live."
+3. "Chatbot is stream-first with fallback to preserve UX and contract compatibility."
+4. "The frontend depends on API contracts, so backend evolution stays additive and testable."
