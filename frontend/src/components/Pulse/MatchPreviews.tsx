@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useMatches, useTodaysPredictions } from '../../hooks/useApi'
 import type { MatchRow, TodayGamePrediction } from '../../types'
 import GameStatsModal from './GameStatsModal'
+import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#D4551F'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -122,19 +123,25 @@ function MatchRow({ match, index, onSelect }: {
 
       {/* Teams */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.9rem',
-          color: homeWon ? 'var(--text-1)' : 'var(--text-2)',
-        }}>
-          {match.home_team}
-        </span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <NbaTeamLogo team={match.home_team} altLabel={match.home_team} size={22} />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.9rem',
+            color: homeWon ? 'var(--text-1)' : 'var(--text-2)',
+          }}>
+            {match.home_team}
+          </span>
+        </div>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>vs</span>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.9rem',
-          color: !homeWon && completed ? 'var(--text-1)' : 'var(--text-2)',
-        }}>
-          {match.away_team}
-        </span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <NbaTeamLogo team={match.away_team} altLabel={match.away_team} size={22} />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.9rem',
+            color: !homeWon && completed ? 'var(--text-1)' : 'var(--text-2)',
+          }}>
+            {match.away_team}
+          </span>
+        </div>
       </div>
 
       {/* Score */}

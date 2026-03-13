@@ -4,6 +4,7 @@ import { useTeamsList, useTeamGameStats } from '../../hooks/useApi'
 import type { TeamGameLogEntry } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
+import { getNbaTeamLogoUrl } from '../../utils/nbaTeams'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
@@ -114,6 +115,10 @@ export default function TeamStatsView() {
     const allSeasonsSelected = selectedSeasons.length === SEASONS.length
     const seasonLabel = allSeasonsSelected ? 'All seasons' : selectedSeasons.join(', ')
     const hasSeasonScopeFilter = !(selectedSeasons.length === 1 && selectedSeasons[0] === '2025-26')
+    const selectedTeamLogoUrl = useMemo(
+        () => (statsData?.team?.team_id ? getNbaTeamLogoUrl(statsData.team.team_id) : null),
+        [statsData?.team?.team_id],
+    )
 
     function toggleSeason(season: string) {
         setSelectedSeasons(prev => {
@@ -225,8 +230,37 @@ export default function TeamStatsView() {
                                 flexWrap: 'wrap',
                             }}
                         >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                                <NbaTeamLogo team={statsData.team.team_id} altLabel={statsData.team.full_name} size={84} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+                                <div
+                                    style={{
+                                        width: 'clamp(146px, 18vw, 186px)',
+                                        height: 'clamp(92px, 12vw, 122px)',
+                                        borderRadius: 18,
+                                        border: '1px solid color-mix(in srgb, var(--border-mid) 84%, white 16%)',
+                                        background: 'linear-gradient(145deg, color-mix(in srgb, var(--bg-elevated) 94%, white 6%), color-mix(in srgb, var(--bg-panel) 90%, black 10%))',
+                                        boxShadow: '0 14px 32px rgba(0,0,0,0.28)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        overflow: 'hidden',
+                                        padding: '6px 10px',
+                                    }}
+                                >
+                                    {selectedTeamLogoUrl ? (
+                                        <img
+                                            src={selectedTeamLogoUrl}
+                                            alt={`${statsData.team.full_name} logo`}
+                                            style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                objectFit: 'contain',
+                                                filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))',
+                                            }}
+                                        />
+                                    ) : (
+                                        <NbaTeamLogo team={statsData.team.team_id} altLabel={statsData.team.full_name} size={108} />
+                                    )}
+                                </div>
                                 <div>
                                     <p
                                         style={{

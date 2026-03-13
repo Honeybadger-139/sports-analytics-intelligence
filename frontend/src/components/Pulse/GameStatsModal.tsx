@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStats, useGamePrediction } from '../../hooks/useApi'
 import type { PlayerBoxScore, ShapFactor, TeamBoxScore } from '../../types'
+import NbaTeamLogo from '../NbaTeamLogo'
 
 const ACCENT = '#D4551F'
 const BG_OVERLAY = 'rgba(0,0,0,0.75)'
@@ -312,6 +313,8 @@ export default function GameStatsModal({ gameId, onClose }: Props) {
   const { data, loading, error } = useGameStats(gameId)
 
   const homeWon = data?.winner_team_id != null && data.team_stats.home?.team_id === data.winner_team_id
+  const homeLogoTeam = data?.team_stats.home?.team_id ?? data?.home_team ?? null
+  const awayLogoTeam = data?.team_stats.away?.team_id ?? data?.away_team ?? null
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'boxscore', label: 'Box Score' },
@@ -372,16 +375,19 @@ export default function GameStatsModal({ gameId, onClose }: Props) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
                     {/* Home team */}
-                    <div style={{ textAlign: 'left' }}>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
-                        {data.home_team_name}
-                      </p>
-                      <span style={{
-                        fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '2rem',
-                        color: homeWon ? ACCENT : 'var(--text-2)',
-                      }}>
-                        {data.home_score ?? '—'}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <NbaTeamLogo team={homeLogoTeam} altLabel={data.home_team_name} size={34} />
+                      <div style={{ textAlign: 'left' }}>
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
+                          {data.home_team_name}
+                        </p>
+                        <span style={{
+                          fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '2rem',
+                          color: homeWon ? ACCENT : 'var(--text-2)',
+                        }}>
+                          {data.home_score ?? '—'}
+                        </span>
+                      </div>
                     </div>
 
                     <div style={{ textAlign: 'center' }}>
@@ -392,16 +398,19 @@ export default function GameStatsModal({ gameId, onClose }: Props) {
                     </div>
 
                     {/* Away team */}
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
-                        {data.away_team_name}
-                      </p>
-                      <span style={{
-                        fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '2rem',
-                        color: !homeWon ? ACCENT : 'var(--text-2)',
-                      }}>
-                        {data.away_score ?? '—'}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
+                          {data.away_team_name}
+                        </p>
+                        <span style={{
+                          fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '2rem',
+                          color: !homeWon ? ACCENT : 'var(--text-2)',
+                        }}>
+                          {data.away_score ?? '—'}
+                        </span>
+                      </div>
+                      <NbaTeamLogo team={awayLogoTeam} altLabel={data.away_team_name} size={34} />
                     </div>
                   </div>
 
