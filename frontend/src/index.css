@@ -178,6 +178,19 @@ img, svg { display: block; }
 .page-shell {
   padding-top: var(--navbar-h);
   min-height: 100vh;
+  display: block;
+}
+
+.page-shell.full-height {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  .page-shell { min-height: 100dvh; }
+  .page-shell.full-height { height: 100dvh; }
 }
 
 .page-content {
@@ -831,13 +844,14 @@ img, svg { display: block; }
 /* ─── Chatbot ────────────────────────────────────────────── */
 .chatbot-panel {
   display: flex;
-  height: calc(100vh - var(--navbar-h));
+  height: 100%; /* Fill the full-height page-shell */
   overflow: hidden;
 }
 
 /* Sidebar */
 .chatbot-sidebar {
   width: 260px;
+  min-width: 260px; /* Force minimum width */
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -846,6 +860,7 @@ img, svg { display: block; }
   background: var(--bg-surface);
   overflow-y: auto;
   gap: 8px;
+  height: 100%;
 }
 
 .chatbot-sidebar-header {
@@ -1044,6 +1059,7 @@ img, svg { display: block; }
 /* Message list */
 .chatbot-messages {
   flex: 1;
+  min-height: 0; /* CRITICAL: Allows flex child to shrink below content size */
   overflow-y: auto;
   scroll-behavior: smooth;
 }
@@ -1277,6 +1293,12 @@ img, svg { display: block; }
   overflow: hidden;
 }
 
+@supports (height: 100dvh) {
+  .scribble-shell {
+    height: 100dvh;
+  }
+}
+
 /* Topbar */
 .scribble-topbar {
   display: flex;
@@ -1362,6 +1384,15 @@ img, svg { display: block; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.scribble-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Shared form controls */
@@ -1443,7 +1474,8 @@ input[type='date']::-webkit-datetime-edit,
 
 .explorer-layout {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1646,7 +1678,7 @@ input[type='date']::-webkit-datetime-edit,
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-base);
+  background: transparent;
 }
 
 .explorer-empty {
@@ -1666,7 +1698,8 @@ input[type='date']::-webkit-datetime-edit,
 .explorer-rows-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1707,7 +1740,7 @@ input[type='date']::-webkit-datetime-edit,
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  height: 100%;
+  min-height: 0;
 }
 
 .data-table-toolbar {
@@ -1894,14 +1927,17 @@ input[type='date']::-webkit-datetime-edit,
 .sql-lab-layout {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
+  background: transparent;
 }
 
 .sql-editor-pane {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 220px;
   border-bottom: 2px solid var(--border);
   background: var(--bg-surface);
 }
@@ -2058,8 +2094,8 @@ input[type='date']::-webkit-datetime-edit,
 
 .sql-editor-body {
   display: flex;
+  flex: 1;
   min-height: 160px;
-  max-height: 280px;
   overflow: hidden;
 }
 
@@ -2126,7 +2162,54 @@ input[type='date']::-webkit-datetime-edit,
 }
 
 .sql-results-pane {
-  flex: 1;
+  position: relative;
+  flex-shrink: 0;
+  height: 0;
+  overflow: hidden;
+  background: transparent;
+  transition: height 0.16s ease;
+}
+
+.sql-results-pane.open {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -14px 32px rgba(0, 0, 0, 0.32);
+}
+
+.sql-results-pane:not(.open) {
+  border-top: 0;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.sql-results-pane.resizing {
+  transition: none;
+}
+
+.sql-results-resizer {
+  width: 100%;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  cursor: row-resize;
+  padding: 0;
+}
+
+.sql-results-resizer::before {
+  content: '';
+  width: 46px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-mid);
+}
+
+.sql-results-content {
+  height: calc(100% - 14px);
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2136,6 +2219,7 @@ input[type='date']::-webkit-datetime-edit,
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -2201,7 +2285,8 @@ input[type='date']::-webkit-datetime-edit,
 .notebooks-layout {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 

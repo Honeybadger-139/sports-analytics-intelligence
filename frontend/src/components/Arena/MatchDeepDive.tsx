@@ -94,6 +94,7 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
           <span style={{
             fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
             color: isSelected ? ACCENT : 'var(--text-1)',
+            lineHeight: 1,
           }}>
             {match.home_team}
           </span>
@@ -102,6 +103,7 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
           <span style={{
             fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem',
             color: isSelected ? ACCENT : 'var(--text-1)',
+            lineHeight: 1,
           }}>
             {match.away_team}
           </span>
@@ -324,12 +326,12 @@ export default function MatchDeepDive() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <NbaTeamLogo team={pred.home_team} altLabel={pred.home_team_name ?? pred.home_team} size={34} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', lineHeight: 1 }}>
                     {pred.home_team}
                   </span>
                   <span style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>vs</span>
                   <NbaTeamLogo team={pred.away_team} altLabel={pred.away_team_name ?? pred.away_team} size={34} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.4rem', color: 'var(--text-1)', letterSpacing: '0.04em', lineHeight: 1 }}>
                     {pred.away_team}
                   </span>
                 </div>

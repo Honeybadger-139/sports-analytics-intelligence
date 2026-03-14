@@ -57,7 +57,11 @@ const NAV_ITEMS: NavItem[] = [
     path: '/scribble',
     description: 'Raw data playground & SQL lab',
     color: 'var(--accent-scrib)',
-    subItems: [],
+    subItems: [
+      { label: 'SQL Lab',       path: '/scribble', description: 'Query raw tables directly' },
+      { label: 'Notebooks',     path: '/scribble', description: 'Saved analysis playgrounds' },
+      { label: 'Feature Maker', path: '/scribble', description: 'Create custom data attributes' },
+    ],
   },
   {
     id: 'chatbot',
@@ -65,7 +69,11 @@ const NAV_ITEMS: NavItem[] = [
     path: '/chatbot',
     description: 'AI data assistant',
     color: 'var(--accent-chat)',
-    subItems: [],
+    subItems: [
+      { label: 'Data Inquiry',  path: '/chatbot', description: 'Ask questions about live stats' },
+      { label: 'Model Insight', path: '/chatbot', description: 'Understand prediction factors' },
+      { label: 'Draft Help',    path: '/chatbot', description: 'Compare player valuations' },
+    ],
   },
 ]
 

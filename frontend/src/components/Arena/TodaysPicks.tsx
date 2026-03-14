@@ -88,7 +88,7 @@ function GameCard({
             altLabel={game.home_team_name ?? game.home_team}
             size={26}
           />
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em', lineHeight: 1 }}>
             {game.home_team}
           </span>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>vs</span>
@@ -97,7 +97,7 @@ function GameCard({
             altLabel={game.away_team_name ?? game.away_team}
             size={26}
           />
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-1)', letterSpacing: '0.04em', lineHeight: 1 }}>
             {game.away_team}
           </span>
         </div>

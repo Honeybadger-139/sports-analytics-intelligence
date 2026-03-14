@@ -66,7 +66,7 @@ export default function Arena() {
   const activeTab = TABS.find(t => activePath.startsWith(t.path))
 
   return (
-    <div className="page-shell" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="page-shell full-height">
       {/* ── Top bar ── */}
       <div style={{
         borderBottom: '1px solid var(--border)',

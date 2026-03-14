@@ -1,4 +1,4 @@
-import { useState, useEffect, type KeyboardEvent } from 'react'
+import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useSqlQuery, useViews } from '../../hooks/useScribble'
 import DataTable from './DataTable'
@@ -9,6 +9,9 @@ import ViewListPanel from './ViewListPanel'
 import SqlAiChat from './SqlAiChat'
 
 const ACCENT = '#0F9D75'
+const DEFAULT_RESULTS_HEIGHT = 260
+const MIN_RESULTS_HEIGHT = 140
+const MIN_EDITOR_HEIGHT = 220
 
 const EXAMPLE_QUERIES = [
   {
@@ -110,22 +113,77 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [viewListOpen, setViewListOpen] = useState(false)
   const [aiChatOpen, setAiChatOpen] = useState(false)
+  const [isResultsOpen, setIsResultsOpen] = useState(false)
+  const [resultsHeight, setResultsHeight] = useState(0)
+  const [isResizingResults, setIsResizingResults] = useState(false)
+  const layoutRef = useRef<HTMLDivElement | null>(null)
   const { result, loading, error, run, clear } = useSqlQuery()
   const { create: createView, refresh: refreshViews } = useViews()
+  const hasQueryOutput = !!result || !!error
 
   useEffect(() => {
     function onLoad(e: Event) {
       const detail = (e as CustomEvent<string>).detail
-      if (detail) { setSql(detail); clear() }
+      if (detail) {
+        setSql(detail)
+        clear()
+        setIsResultsOpen(false)
+        setResultsHeight(0)
+      }
     }
     window.addEventListener('scribble:load-sql', onLoad)
     return () => window.removeEventListener('scribble:load-sql', onLoad)
   }, [clear])
 
+  useEffect(() => {
+    if (hasQueryOutput) {
+      setIsResultsOpen(true)
+      if (resultsHeight === 0) {
+        setResultsHeight(DEFAULT_RESULTS_HEIGHT)
+      }
+    }
+  }, [hasQueryOutput, resultsHeight])
+
+  useEffect(() => {
+    if (!isResizingResults) return
+
+    function onMouseMove(e: MouseEvent) {
+      const container = layoutRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const nextHeight = rect.bottom - e.clientY
+      const maxHeight = Math.max(MIN_RESULTS_HEIGHT, rect.height - MIN_EDITOR_HEIGHT)
+      setResultsHeight(Math.max(MIN_RESULTS_HEIGHT, Math.min(maxHeight, nextHeight)))
+    }
+
+    function onMouseUp() {
+      setIsResizingResults(false)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isResizingResults])
+
+  function executeQuery() {
+    if (!sql.trim() || loading) return
+    setIsResultsOpen(true)
+    setResultsHeight(prev => (prev > 0 ? prev : DEFAULT_RESULTS_HEIGHT))
+    run(sql)
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
-      run(sql)
+      executeQuery()
     }
     // Tab → 2 spaces
     if (e.key === 'Tab') {
@@ -144,6 +202,8 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   function loadExample(q: (typeof EXAMPLE_QUERIES)[0]) {
     setSql(q.sql)
     clear()
+    setIsResultsOpen(false)
+    setResultsHeight(0)
   }
 
   return (
@@ -164,7 +224,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
         onLoadSql={(sql) => { setSql(sql); clear(); setAiChatOpen(false) }}
       />
 
-      <div className="sql-lab-layout">
+      <div className="sql-lab-layout" ref={layoutRef}>
         {/* Editor pane */}
         <div className="sql-editor-pane">
 
@@ -198,7 +258,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
               </button>
               <button
                 className="sql-run-btn"
-                onClick={() => run(sql)}
+                onClick={executeQuery}
                 disabled={!sql.trim() || loading}
               >
                 {loading ? (
@@ -296,7 +356,12 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
             <textarea
               className="sql-textarea"
               value={sql}
-              onChange={e => { setSql(e.target.value); clear() }}
+              onChange={e => {
+                setSql(e.target.value)
+                clear()
+                setIsResultsOpen(false)
+                setResultsHeight(0)
+              }}
               onKeyDown={handleKeyDown}
               spellCheck={false}
               placeholder="SELECT * FROM matches LIMIT 10"
@@ -316,7 +381,21 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
         </div>
 
         {/* Results pane */}
-        <div className="sql-results-pane">
+        <div
+          className={`sql-results-pane ${isResultsOpen ? 'open' : ''} ${isResizingResults ? 'resizing' : ''}`}
+          style={{ height: isResultsOpen ? `${resultsHeight}px` : '0px' }}
+        >
+          <button
+            type="button"
+            className="sql-results-resizer"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              if (isResultsOpen) setIsResizingResults(true)
+            }}
+            title="Drag to resize results panel"
+            aria-label="Resize results panel"
+          />
+          <div className="sql-results-content">
           <AnimatePresence mode="wait">
             {error && (
               <motion.div
@@ -358,6 +437,18 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
               </motion.div>
             )}
 
+            {!error && !result && loading && (
+              <motion.div
+                key="loading"
+                className="sql-idle"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <div className="sql-idle-icon">⏳</div>
+                <p>Running query…</p>
+              </motion.div>
+            )}
+
             {!error && !result && !loading && (
               <motion.div
                 key="idle"
@@ -370,6 +461,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
         </div>
       </div>
     </>

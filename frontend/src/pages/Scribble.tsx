@@ -30,7 +30,7 @@ export default function Scribble() {
   }
 
   return (
-    <div className="page-shell scribble-shell">
+    <div className="page-shell full-height">
       {/* Page header */}
       <div className="scribble-topbar">
         <div className="scribble-topbar-left">
@@ -63,7 +63,7 @@ export default function Scribble() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
-          style={{ height: '100%' }}
+          className="scribble-tab-content"
         >
           {activeTab === 'explorer' && <TableBrowser />}
 
