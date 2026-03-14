@@ -44,63 +44,102 @@ MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 class Predictor:
     """
     Loads trained models and generates predictions.
-    
+
     🎓 DESIGN PATTERN: Singleton-ish / Service Pattern
         We create one Predictor instance at FastAPI startup and reuse it
         for all requests. Models are loaded into memory once.
+
+    Wave 3: Uses artifact_store for versioned loading and applies calibrators
+    when available so probabilities are empirically accurate.
     """
-    
-    def __init__(self):
+
+    def __init__(self, engine=None):
         self.models = {}
+        self.calibrators: Dict[str, object] = {}
+        self.calibration_methods: Dict[str, str] = {}
         self.ensemble_weights = {}
         self.feature_columns = None
+        self._engine = engine
         self._load_latest_models()
-    
+
     def _load_latest_models(self):
-        """Load the most recently saved models from disk."""
-        logger.info("📦 Loading trained models...")
-        
+        """Load the most recently saved models from disk using the artifact store."""
+        from src.models.artifact_store import load_latest_artifact, get_active_model_dir
+
+        # Resolve the active model directory from DB config (falls back to disk default)
+        if self._engine is not None:
+            active_dir = get_active_model_dir(self._engine, MODEL_DIR)
+        else:
+            active_dir = MODEL_DIR
+
+        logger.info("📦 Loading trained models from: %s", active_dir)
+
         for model_name in ["logistic_regression", "xgboost", "lightgbm"]:
-            pattern = os.path.join(MODEL_DIR, f"{model_name}_*.pkl")
-            files = sorted(glob.glob(pattern))
-            if files:
-                latest = files[-1]
-                self.models[model_name] = joblib.load(latest)
-                logger.info(f"   ✅ Loaded {model_name} from {os.path.basename(latest)}")
-        
+            model = load_latest_artifact(model_name, active_dir)
+            if model is not None:
+                self.models[model_name] = model
+                logger.info("   ✅ Loaded %s", model_name)
+
+            # Load calibrator if available (Wave 3)
+            cal_name = f"{model_name}_calibrator"
+            cal = load_latest_artifact(cal_name, active_dir)
+            if cal is not None:
+                self.calibrators[model_name] = cal
+                # Infer method from object type
+                from sklearn.linear_model import LogisticRegression
+                from sklearn.isotonic import IsotonicRegression
+                if isinstance(cal, IsotonicRegression):
+                    self.calibration_methods[model_name] = "isotonic"
+                else:
+                    self.calibration_methods[model_name] = "platt"
+                logger.info("   📐 Loaded calibrator for %s (method=%s)", model_name, self.calibration_methods[model_name])
+
         # Load ensemble weights
-        weight_files = sorted(glob.glob(os.path.join(MODEL_DIR, "ensemble_weights_*.pkl")))
-        if weight_files:
-            self.ensemble_weights = joblib.load(weight_files[-1])
-            logger.info(f"   ✅ Loaded ensemble weights: {self.ensemble_weights}")
-        
+        weights = load_latest_artifact("ensemble_weights", active_dir)
+        if weights is not None:
+            self.ensemble_weights = weights
+            logger.info("   ✅ Loaded ensemble weights: %s", self.ensemble_weights)
+
         # Import feature columns from trainer
         from src.models.trainer import FEATURE_COLUMNS
         self.feature_columns = FEATURE_COLUMNS
-        
-        logger.info(f"   Total models loaded: {len(self.models)}")
+
+        logger.info("   Total models loaded: %d | calibrators: %d", len(self.models), len(self.calibrators))
     
+    def _get_prob(self, model_name: str, model, features: pd.DataFrame) -> float:
+        """Get probability for one model, applying calibration if available."""
+        from src.models.calibrator import apply_calibration
+
+        cal = self.calibrators.get(model_name)
+        method = self.calibration_methods.get(model_name, "none")
+        if cal is not None:
+            probs = apply_calibration(cal, method, model, features)
+            return float(probs[0])
+        return float(model.predict_proba(features)[:, 1][0])
+
     def predict_game(self, features: pd.DataFrame) -> Dict:
         """
         Generate predictions for a single game.
-        
+
         Args:
             features: DataFrame with home + away team features (1 row)
-        
+
         Returns:
-            Dict with predictions from each model and the ensemble
+            Dict with predictions from each model and the ensemble.
+            Probabilities are calibrated when a calibrator is loaded (Wave 3).
         """
         predictions = {}
-        
+
         for name, model in self.models.items():
-            prob = model.predict_proba(features)[:, 1][0]
+            prob = self._get_prob(name, model, features)
             predictions[name] = {
-                "home_win_prob": round(float(prob), 4),
+                "home_win_prob": round(prob, 4),
                 "away_win_prob": round(float(1 - prob), 4),
                 "prediction": "home" if prob >= 0.5 else "away",
                 "confidence": round(float(max(prob, 1 - prob)), 4),
+                "calibrated": name in self.calibrators,
             }
-        
+
         # Ensemble prediction
         if self.ensemble_weights and len(predictions) > 0:
             probs = []
@@ -110,7 +149,7 @@ class Predictor:
                 if model_key in predictions:
                     probs.append(predictions[model_key]["home_win_prob"])
                     weights.append(weight)
-            
+
             if probs:
                 ensemble_prob = float(np.average(probs, weights=weights))
                 predictions["ensemble"] = {
@@ -118,8 +157,9 @@ class Predictor:
                     "away_win_prob": round(1 - ensemble_prob, 4),
                     "prediction": "home" if ensemble_prob >= 0.5 else "away",
                     "confidence": round(max(ensemble_prob, 1 - ensemble_prob), 4),
+                    "calibrated": len(self.calibrators) > 0,
                 }
-        
+
         return predictions
 
     def explain_game(self, features: pd.DataFrame, top_n: int = 5) -> Dict[str, List[Dict]]:

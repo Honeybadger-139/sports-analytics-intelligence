@@ -71,6 +71,26 @@ async def lifespan(app: FastAPI):
     from scheduler import create_scheduler
     from src.intelligence.langfuse_client import init_langfuse
 
+    # ── Wave 3: Run Alembic migrations on startup ─────────────────────────────
+    try:
+        import subprocess, sys, os as _os
+        alembic_cfg = _os.path.join(_os.path.dirname(__file__), "alembic.ini")
+        if _os.path.exists(alembic_cfg):
+            result = subprocess.run(
+                [sys.executable, "-m", "alembic", "-c", alembic_cfg, "upgrade", "head"],
+                capture_output=True,
+                text=True,
+                cwd=_os.path.dirname(__file__),
+            )
+            if result.returncode == 0:
+                logger.info("🗄️  [lifespan] Alembic migrations applied: %s", result.stdout.strip() or "already up to date")
+            else:
+                logger.warning("⚠️  [lifespan] Alembic migration warning: %s", result.stderr.strip())
+        else:
+            logger.info("🗄️  [lifespan] alembic.ini not found — skipping migration step.")
+    except Exception as _alembic_exc:
+        logger.warning("⚠️  [lifespan] Alembic startup migration failed (non-fatal): %s", _alembic_exc)
+
     # Start Langfuse observability (no-op if keys not set)
     langfuse_ready = init_langfuse()
     if langfuse_ready:
@@ -166,11 +186,15 @@ from src.api.intelligence_routes import router as intelligence_router
 from src.api.mlops_routes import router as mlops_router
 from src.api.chat_routes import router as chat_router
 from src.api.scribble_routes import router as scribble_router
+from src.api.lab_routes import router as lab_router
+from src.api.admin_routes import router as admin_router
 app.include_router(router)
 app.include_router(intelligence_router)
 app.include_router(mlops_router)
 app.include_router(chat_router)
 app.include_router(scribble_router)
+app.include_router(lab_router)    # Wave 3: dead-letter inspection
+app.include_router(admin_router)  # Wave 3: runtime config management
 
 # Serve the production build of the React frontend (frontend/dist/)
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

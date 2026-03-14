@@ -1,0 +1,57 @@
+# ============================================================
+# docker-compose.base.yml — Shared service definitions
+# ============================================================
+# Wave 3: Compose has been split into base / dev / prod.
+#
+# Usage:
+#   Dev:  docker-compose -f docker-compose.base.yml -f docker-compose.dev.yml up
+#   Prod: docker-compose -f docker-compose.base.yml -f docker-compose.prod.yml up
+#
+# The root docker-compose.yml is preserved for backward compatibility
+# (runs the dev profile by default).
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sports-analytics-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sports_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-analyst}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-analytics2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/data/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-analyst} -d ${POSTGRES_DB:-sports_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sports-analytics-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-analyst}:${POSTGRES_PASSWORD:-analytics2026}@postgres:5432/${POSTGRES_DB:-sports_analytics}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CHAT_API_KEY: ${CHAT_API_KEY}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      RAG_MIN_SIMILARITY: ${RAG_MIN_SIMILARITY:-0.4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:

@@ -1,0 +1,53 @@
+# ============================================================
+# docker-compose.prod.yml — Production overrides
+# ============================================================
+# Extends docker-compose.base.yml with:
+#   - No pgAdmin (security risk in prod)
+#   - No Grafana via compose (use hosted Grafana Cloud or separate stack)
+#   - No hot-reload volume mount (immutable image)
+#   - Resource limits for backend and postgres
+#   - Langfuse enabled
+#   - LOG_LEVEL INFO
+#
+# Usage:
+#   docker-compose -f docker-compose.base.yml -f docker-compose.prod.yml up -d
+#
+# Pre-requisites (set in environment or .env.prod):
+#   POSTGRES_PASSWORD   — strong unique password
+#   GEMINI_API_KEY      — production Gemini key
+#   CHAT_API_KEY        — secure random string (min 32 chars)
+#   SLACK_WEBHOOK_URL   — ops alerts
+#   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (optional)
+# ============================================================
+
+services:
+  postgres:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  backend:
+    restart: always
+    # In prod we do NOT mount the source directory — the image is immutable
+    volumes:
+      - ./data:/app/data    # model artifacts + chroma embeddings (persistent)
+      - ./logs:/app/logs    # log files (persistent)
+    environment:
+      LANGFUSE_ENABLED: "true"
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      CHAT_ENGINE: ${CHAT_ENGINE:-langgraph}
+      LOG_LEVEL: INFO
+      MLOPS_ACCURACY_THRESHOLD: ${MLOPS_ACCURACY_THRESHOLD:-0.55}
+      MLOPS_MAX_BRIER: ${MLOPS_MAX_BRIER:-0.25}
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G

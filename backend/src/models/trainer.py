@@ -611,17 +611,65 @@ def run_training_pipeline(
     ensemble_results = create_ensemble(all_models, X, y)
     metadata["validation_summary"] = _validation_summary(all_models, ensemble_results, validation_X, validation_y)
 
-    # Step 4: Save models
+    # Step 4: Probability calibration (Wave 3)
+    calibration_metadata: Dict[str, object] = {}
+    if not validation_X.empty and not validation_y.empty:
+        logger.info("📐 Running probability calibration on validation set...")
+        from src.models.calibrator import calibrate_model
+
+        for model_result in all_models:
+            model_key = model_result["name"].lower().replace(" ", "_")
+            cal_result = calibrate_model(
+                model_result["model"],
+                validation_X,
+                validation_y,
+                uncalibrated_brier=model_result.get("brier_score"),
+            )
+            # Attach calibrator to model_result for artifact save
+            model_result["calibrator"] = cal_result["calibrator"]
+            model_result["calibration_method"] = cal_result["method"]
+            calibration_metadata[model_key] = {
+                "method": cal_result["method"],
+                "raw_brier": cal_result["raw_brier"],
+                "calibrated_brier": cal_result["calibrated_brier"],
+                "platt_brier": cal_result["platt_brier"],
+                "isotonic_brier": cal_result["isotonic_brier"],
+                "improvement": cal_result["improvement"],
+                "n_validation": cal_result["n_validation"],
+            }
+            logger.info(
+                "   📐 %s calibration | method=%s raw_brier=%.4f → cal_brier=%.4f",
+                model_result["name"],
+                cal_result["method"],
+                cal_result["raw_brier"] or 0,
+                cal_result["calibrated_brier"] or 0,
+            )
+        metadata["calibration"] = calibration_metadata
+    else:
+        logger.warning("⚠️  Skipping calibration — no validation data available.")
+        metadata["calibration"] = {}
+
+    # Step 5: Save models (Wave 3 — versioned artifacts via artifact_store)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    from src.models.artifact_store import save_artifact, purge_old_artifacts
+
     for model_result in all_models:
         model_name = model_result["name"].lower().replace(" ", "_")
-        filepath = os.path.join(MODEL_DIR, f"{model_name}_{timestamp}.pkl")
-        joblib.dump(model_result["model"], filepath)
+        filepath = save_artifact(model_result["model"], model_name, MODEL_DIR, timestamp)
         logger.info(f"   💾 Saved {model_result['name']} → {filepath}")
+        purge_old_artifacts(model_name, MODEL_DIR)
+
+        # Save calibrator alongside the model if available
+        cal = model_result.get("calibrator")
+        if cal is not None:
+            cal_name = f"{model_name}_calibrator"
+            save_artifact(cal, cal_name, MODEL_DIR, timestamp)
+            purge_old_artifacts(cal_name, MODEL_DIR)
 
     # Save ensemble weights
-    ensemble_filepath = os.path.join(MODEL_DIR, f"ensemble_weights_{timestamp}.pkl")
-    joblib.dump(ensemble_results["weights"], ensemble_filepath)
+    from src.models.artifact_store import save_artifact as _save
+    ensemble_filepath = _save(ensemble_results["weights"], "ensemble_weights", MODEL_DIR, timestamp)
+    purge_old_artifacts("ensemble_weights", MODEL_DIR)
     metadata_path = os.path.join(MODEL_DIR, f"training_metadata_{timestamp}.json")
     with open(metadata_path, "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
