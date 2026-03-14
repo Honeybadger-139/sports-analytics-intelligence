@@ -136,7 +136,7 @@ def test_fetch_context_documents_with_health_reports_source_statuses(monkeypatch
     </rss>
     """
 
-    def _fake_get(url, timeout):  # noqa: ARG001 - parity with requests.get signature
+    def _fake_get(url, timeout, headers=None):  # noqa: ARG001 - parity with requests.get signature
         if "bad-feed" in url:
             raise RuntimeError("network error")
         return _Resp(xml)

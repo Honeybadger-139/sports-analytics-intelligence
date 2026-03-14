@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useTableList, useTableRows } from '../../hooks/useScribble'
 import DataTable from './DataTable'
@@ -42,9 +42,18 @@ export default function TableBrowser() {
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(50)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // Debounce search to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const { data: tableList, loading: listLoading } = useTableList(season)
-  const { data: tableRows, loading: rowsLoading } = useTableRows(selected, season, limit, offset, search)
+  const { data: tableRows, loading: rowsLoading } = useTableRows(selected, season, limit, offset, debouncedSearch)
 
   function selectTable(table: string) {
     setSelected(table)
@@ -162,7 +171,7 @@ export default function TableBrowser() {
                 <h2 className="explorer-rows-title">{tableRows?.table ?? selected}</h2>
                 <p className="explorer-rows-meta">
                   {tableRows
-                    ? `${tableRows.total.toLocaleString()} ${search.trim() ? 'matching rows' : 'total rows'} · Season ${tableRows.season ?? 'all'}`
+                    ? `${tableRows.total.toLocaleString()} ${debouncedSearch.trim() ? 'matching rows' : 'total rows'} · Season ${tableRows.season ?? 'all'}`
                     : 'Loading…'}
                 </p>
               </div>

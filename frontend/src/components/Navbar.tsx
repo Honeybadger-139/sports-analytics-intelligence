@@ -70,9 +70,9 @@ const NAV_ITEMS: NavItem[] = [
     description: 'AI data assistant',
     color: 'var(--accent-chat)',
     subItems: [
-      { label: 'Data Inquiry',  path: '/chatbot', description: 'Ask questions about live stats' },
-      { label: 'Model Insight', path: '/chatbot', description: 'Understand prediction factors' },
-      { label: 'Draft Help',    path: '/chatbot', description: 'Compare player valuations' },
+      { label: 'Data Inquiry',  path: '/chatbot?intent=data-inquiry',  description: 'Ask questions about live stats' },
+      { label: 'Model Insight', path: '/chatbot/model-insight', description: 'Understand prediction factors' },
+      { label: 'Draft Help',    path: '/chatbot/draft-help',    description: 'Compare player valuations' },
     ],
   },
 ]

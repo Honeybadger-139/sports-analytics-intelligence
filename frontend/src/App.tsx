@@ -10,6 +10,8 @@ import Dashboard from './pages/Dashboard'
 import DashboardCreate from './pages/DashboardCreate'
 import Scribble from './pages/Scribble'
 import Chatbot  from './pages/Chatbot'
+import ModelInsight from './pages/ModelInsight'
+import DraftHelp from './pages/DraftHelp'
 import ComingSoonHold from './components/ComingSoonHold'
 import { useSystemStatus } from './hooks/useApi'
 import { SportContextProvider, useSportContext } from './context/SportContext'
@@ -57,6 +59,8 @@ function AppShell() {
           <Route path="/dashboard" element={isLiveSelection ? <Dashboard /> : <ComingSoonHold section="Dashboard" />} />
           <Route path="/scribble" element={isLiveSelection ? <Scribble /> : <ComingSoonHold section="Scribble" />} />
           <Route path="/chatbot"  element={isLiveSelection ? <Chatbot /> : <ComingSoonHold section="Chatbot" />} />
+          <Route path="/chatbot/model-insight" element={isLiveSelection ? <ModelInsight /> : <ComingSoonHold section="Model Insight" />} />
+          <Route path="/chatbot/draft-help" element={isLiveSelection ? <DraftHelp /> : <ComingSoonHold section="Draft Help" />} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>

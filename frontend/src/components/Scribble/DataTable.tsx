@@ -137,15 +137,10 @@ export default function DataTable({
         </div>
         <span className="data-table-count" style={{ color: accent }}>
           {isServerFilterMode
-            ? rows.length
+            ? `${(total ?? rows.length).toLocaleString()} ${filter ? 'matching rows' : 'total rows'}`
             : filter
-              ? `${sortedRows.length} / ${rows.length}`
-              : rows.length} rows
-          {total !== undefined && (
-            isServerFilterMode
-              ? ` of ${total.toLocaleString()} ${filter ? 'matching' : 'total'}`
-              : (!filter ? ` of ${total.toLocaleString()} total` : '')
-          )}
+              ? `${sortedRows.length} / ${rows.length} rows`
+              : `${rows.length} rows`}
         </span>
       </div>
 

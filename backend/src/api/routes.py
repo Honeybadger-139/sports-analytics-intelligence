@@ -345,7 +345,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR home_team ILIKE :search OR away_team ILIKE :search OR CAST(game_id AS TEXT) ILIKE :search)
                 ORDER BY game_date DESC, game_id DESC
                 LIMIT :limit OFFSET :offset
                 """
@@ -367,7 +367,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR home_team ILIKE :search OR away_team ILIKE :search OR CAST(game_id AS TEXT) ILIKE :search)
                 """
             ),
             {"season": season, "search": search_param},
@@ -383,7 +383,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR abbreviation ILIKE :search OR full_name ILIKE :search OR city ILIKE :search)
                 ORDER BY abbreviation
                 LIMIT :limit OFFSET :offset
                 """
@@ -399,7 +399,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR abbreviation ILIKE :search OR full_name ILIKE :search OR city ILIKE :search)
                 """
             ),
             {"search": search_param},
@@ -416,7 +416,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR full_name ILIKE :search OR team_abbreviation ILIKE :search)
                 ORDER BY player_id DESC
                 LIMIT :limit OFFSET :offset
                 """
@@ -433,7 +433,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR full_name ILIKE :search OR team_abbreviation ILIKE :search)
                 """
             ),
             {"search": search_param},
@@ -456,7 +456,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR team_abbreviation ILIKE :search)
                 ORDER BY game_date DESC, game_id DESC, team_id
                 LIMIT :limit OFFSET :offset
                 """
@@ -479,7 +479,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR team_abbreviation ILIKE :search)
                 """
             ),
             {"season": season, "search": search_param},
@@ -504,7 +504,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR player_name ILIKE :search OR team_abbreviation ILIKE :search)
                 ORDER BY game_date DESC, game_id DESC, player_id
                 LIMIT :limit OFFSET :offset
                 """
@@ -529,7 +529,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR player_name ILIKE :search OR team_abbreviation ILIKE :search)
                 """
             ),
             {"season": season, "search": search_param},
@@ -551,7 +551,7 @@ async def get_raw_table_rows(
                 )
                 SELECT *
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR player_name ILIKE :search OR team_abbreviation ILIKE :search)
                 ORDER BY season DESC, player_id DESC
                 LIMIT :limit OFFSET :offset
                 """
@@ -573,7 +573,7 @@ async def get_raw_table_rows(
                 )
                 SELECT COUNT(*)
                 FROM base
-                WHERE (:search IS NULL OR CAST(row_to_json(base) AS text) ILIKE :search)
+                WHERE (:search IS NULL OR player_name ILIKE :search OR team_abbreviation ILIKE :search)
                 """
             ),
             {"season": season, "search": search_param},

@@ -12,16 +12,31 @@ const SUGGESTED = [
   "Which players have the highest impact on model confidence?",
 ]
 
-export default function ChatbotPanel() {
+interface ChatbotPanelProps {
+  starterPrompt?: string
+  starterKey?: string
+}
+
+export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanelProps) {
   const { messages, isLoading, sendMessage, clearHistory } = useChatbot()
   const [draft, setDraft] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
+  const starterRunRef  = useRef<string | null>(null)
   const hasSentOnce    = messages.length > 1
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
+
+  useEffect(() => {
+    if (!starterPrompt || !starterKey || isLoading) return
+    if (starterRunRef.current === starterKey) return
+
+    // Ensure each intent starter runs at most once per intent selection.
+    starterRunRef.current = starterKey
+    sendMessage(starterPrompt)
+  }, [starterPrompt, starterKey, isLoading, sendMessage])
 
   function autoResize() {
     const el = textareaRef.current
