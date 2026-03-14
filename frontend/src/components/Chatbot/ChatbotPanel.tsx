@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import ChatMessage from './ChatMessage'
 import { useChatbot } from '../../hooks/useChatbot'
+import styles from './Chatbot.module.css'
 
 const SUGGESTED = [
   "Which NBA team has the best win rate this season?",
@@ -68,26 +69,26 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
   }
 
   return (
-    <div className="chatbot-panel">
+    <div className={styles['chatbot-panel']}>
       {/* ── Sidebar ── */}
-      <aside className="chatbot-sidebar">
-        <div className="chatbot-sidebar-header">
-          <div className="chatbot-sidebar-dot" />
+      <aside className={styles['chatbot-sidebar']}>
+        <div className={styles['chatbot-sidebar-header']}>
+          <div className={styles['chatbot-sidebar-dot']} />
           <span>AI Assistant</span>
         </div>
 
-        <p className="chatbot-sidebar-label">About</p>
-        <p className="chatbot-sidebar-desc">
+        <p className={styles['chatbot-sidebar-label']}>About</p>
+        <p className={styles['chatbot-sidebar-desc']}>
           Ask plain-English questions about your live NBA datasets, model predictions, data quality,
           and bankroll performance.
         </p>
 
-        <p className="chatbot-sidebar-label" style={{ marginTop: 24 }}>Suggested</p>
-        <div className="chatbot-suggestions">
+        <p className={styles['chatbot-sidebar-label']} style={{ marginTop: 24 }}>Suggested</p>
+        <div className={styles['chatbot-suggestions']}>
           {SUGGESTED.map(q => (
             <button
               key={q}
-              className="chatbot-suggestion-btn"
+              className={styles['chatbot-suggestion-btn']}
               onClick={() => useSuggestion(q)}
             >
               {q}
@@ -96,7 +97,7 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
         </div>
 
         {hasSentOnce && (
-          <button className="chatbot-clear-btn" onClick={clearHistory}>
+          <button className={styles['chatbot-clear-btn']} onClick={clearHistory}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M2 2l8 8M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
@@ -104,8 +105,8 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
           </button>
         )}
 
-        <div className="chatbot-sidebar-footer">
-          <span className="chatbot-live-badge">
+        <div className={styles['chatbot-sidebar-footer']}>
+          <span className={styles['chatbot-live-badge']}>
             <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
               <circle cx="4" cy="4" r="3.5" fill="#10B981" opacity="0.3" />
               <circle cx="4" cy="4" r="2" fill="#10B981" />
@@ -116,18 +117,18 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
       </aside>
 
       {/* ── Main chat area ── */}
-      <div className="chatbot-main">
+      <div className={styles['chatbot-main']}>
         {/* Header */}
-        <div className="chatbot-header">
-          <div className="chatbot-header-left">
-            <div className="chatbot-header-icon">💬</div>
+        <div className={styles['chatbot-header']}>
+          <div className={styles['chatbot-header-left']}>
+            <div className={styles['chatbot-header-icon']}>💬</div>
             <div>
-              <h1 className="chatbot-title">Chatbot</h1>
-              <p className="chatbot-subtitle">GameThread · Powered by your live data</p>
+              <h1 className={styles['chatbot-title']}>Chatbot</h1>
+              <p className={styles['chatbot-subtitle']}>GameThread · Powered by your live data</p>
             </div>
           </div>
           {hasSentOnce && (
-            <button className="chatbot-header-clear" onClick={clearHistory} title="Clear history">
+            <button className={styles['chatbot-header-clear']} onClick={clearHistory} title="Clear history">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
@@ -136,8 +137,8 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
         </div>
 
         {/* Messages */}
-        <div className="chatbot-messages">
-          <div className="chatbot-messages-inner">
+        <div className={styles['chatbot-messages']}>
+          <div className={styles['chatbot-messages-inner']}>
             {messages.map(msg => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
@@ -145,22 +146,22 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
             <AnimatePresence>
               {isLoading && (
                 <motion.div
-                  className="chat-msg-row chat-msg-row--ai"
+                  className={`${styles['chat-msg-row']} ${styles['chat-msg-row--ai']}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 8 }}
                   transition={{ duration: 0.18 }}
                 >
-                  <div className="chat-avatar">
+                  <div className={styles['chat-avatar']}>
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.3" />
                       <path d="M4.5 7h5M7 4.5v5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                     </svg>
                   </div>
-                  <div className="chat-bubble chat-bubble--ai chat-bubble--typing">
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
+                  <div className={`${styles['chat-bubble']} ${styles['chat-bubble--ai']} ${styles['chat-bubble--typing']}`}>
+                    <span className={styles['typing-dot']} />
+                    <span className={styles['typing-dot']} />
+                    <span className={styles['typing-dot']} />
                   </div>
                 </motion.div>
               )}
@@ -171,11 +172,11 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
         </div>
 
         {/* Input area */}
-        <div className="chatbot-input-area">
-          <div className="chatbot-input-box">
+        <div className={styles['chatbot-input-area']}>
+          <div className={styles['chatbot-input-box']}>
             <textarea
               ref={textareaRef}
-              className="chatbot-textarea"
+              className={styles['chatbot-textarea']}
               placeholder="Ask about teams, predictions, data quality, bankroll…"
               value={draft}
               rows={1}
@@ -184,7 +185,7 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
               disabled={isLoading}
             />
             <button
-              className="chatbot-send-btn"
+              className={styles['chatbot-send-btn']}
               onClick={submit}
               disabled={!draft.trim() || isLoading}
               aria-label="Send message"
@@ -194,7 +195,7 @@ export default function ChatbotPanel({ starterPrompt, starterKey }: ChatbotPanel
               </svg>
             </button>
           </div>
-          <p className="chatbot-input-hint">
+          <p className={styles['chatbot-input-hint']}>
             Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
           </p>
         </div>

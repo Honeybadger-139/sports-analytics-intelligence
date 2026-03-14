@@ -5,6 +5,7 @@ import SportsMark from './SportsMark'
 import type { NavItem } from '../types'
 import { useSportContext } from '../context/SportContext'
 import { isLiveDataSelection, type SportId } from '../config/sports'
+import styles from './Navbar.module.css'
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -108,6 +109,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
   const activeSection = location.pathname.split('/')[1] || ''
   const openItem = NAV_ITEMS.find(n => n.id === openId)
 
+  // status-pill is a globally shared class (used in multiple pages)
   const pillClass =
     systemStatus === 'healthy'  ? 'status-pill healthy'  :
     systemStatus === 'error'    ? 'status-pill error'    :
@@ -122,15 +124,15 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
 
   return (
     <>
-      <div className="navbar-shell" ref={navRef}>
-        <nav className="navbar navbar-main">
+      <div className={styles['navbar-shell']} ref={navRef}>
+        <nav className={`${styles.navbar} ${styles['navbar-main']}`}>
           {/* Logo */}
-          <button className="navbar-logo" onClick={() => navigate('/')} aria-label="Go to Overview">
+          <button className={styles['navbar-logo']} onClick={() => navigate('/')} aria-label="Go to Overview">
             <SportsMark size={38} />
           </button>
 
           {/* Primary nav */}
-          <div className="navbar-nav">
+          <div className={styles['navbar-nav']}>
             {NAV_ITEMS.map(item => {
               const isActive = activeSection === item.id
               const isOpen   = openId === item.id
@@ -139,7 +141,11 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
               return (
                 <button
                   key={item.id}
-                  className={`nav-item ${isActive ? 'active' : ''} ${isOpen ? 'open' : ''}`}
+                  className={[
+                    styles['nav-item'],
+                    isActive ? styles.active : '',
+                    isOpen   ? styles.open   : '',
+                  ].join(' ')}
                   onClick={() => {
                     if (hasMenu) {
                       setOpenId(isOpen ? null : item.id)
@@ -150,7 +156,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                   style={{ '--item-color': item.color } as React.CSSProperties}
                 >
                   <span
-                    className="nav-item-dot"
+                    className={styles['nav-item-dot']}
                     style={{ background: item.color, opacity: isActive || isOpen ? 1 : 0.4 }}
                   />
                   {item.label}
@@ -169,7 +175,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                     </span>
                   )}
                   {hasMenu && (
-                    <svg className="nav-item-chevron" viewBox="0 0 12 12" fill="none">
+                    <svg className={styles['nav-item-chevron']} viewBox="0 0 12 12" fill="none">
                       <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
@@ -179,12 +185,13 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
           </div>
 
           {/* Right side */}
-          <div className="navbar-right">
+          <div className={styles['navbar-right']}>
+            {/* status-pill stays global — shared class used on other pages too */}
             <div className={pillClass}>
               <span className="dot" />
               {pillLabel}
             </div>
-            <button className="theme-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+            <button className={styles['theme-btn']} onClick={onToggleTheme} aria-label="Toggle theme">
               {theme === 'dark' ? (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4" />
@@ -206,10 +213,10 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
           </div>
         </nav>
 
-        <div className="navbar-context-row">
-          <div className="navbar-context-row-inner">
-            <div className="navbar-context">
-              <label className="navbar-context-field">
+        <div className={styles['navbar-context-row']}>
+          <div className={styles['navbar-context-row-inner']}>
+            <div className={styles['navbar-context']}>
+              <label className={styles['navbar-context-field']}>
                 <span>Sport</span>
                 <select
                   value={selection.sport}
@@ -223,7 +230,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                 </select>
               </label>
 
-              <label className="navbar-context-field">
+              <label className={styles['navbar-context-field']}>
                 <span>League</span>
                 <select
                   value={selection.league}
@@ -237,7 +244,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                 </select>
               </label>
 
-              <label className="navbar-context-field">
+              <label className={styles['navbar-context-field']}>
                 <span>Season</span>
                 <select
                   value={selection.season}
@@ -251,7 +258,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                 </select>
               </label>
 
-              <span className={`navbar-context-status ${isLiveContext ? 'live' : 'planned'}`}>
+              <span className={`${styles['navbar-context-status']} ${isLiveContext ? styles.live : styles.planned}`}>
                 {isLiveContext ? 'Live Data' : 'Coming Soon'}
               </span>
             </div>
@@ -263,32 +270,32 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
       <AnimatePresence>
         {openItem && (
           <motion.div
-            className="mega-menu-overlay"
+            className={styles['mega-menu-overlay']}
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
-            <div className="mega-menu-inner">
-              <div className="mega-menu-header">
+            <div className={styles['mega-menu-inner']}>
+              <div className={styles['mega-menu-header']}>
                 <span
-                  className="mega-menu-title"
+                  className={styles['mega-menu-title']}
                   style={{ color: openItem.color }}
                 >
                   {openItem.label}
                 </span>
-                <span className="mega-menu-desc">{openItem.description}</span>
+                <span className={styles['mega-menu-desc']}>{openItem.description}</span>
               </div>
-              <div className="mega-menu-grid">
+              <div className={styles['mega-menu-grid']}>
                 {openItem.subItems.map(sub => (
                   <button
                     key={sub.path}
-                    className="mega-sub-item"
+                    className={styles['mega-sub-item']}
                     onClick={() => { navigate(sub.path); close() }}
                     style={{ '--card-border-hover': openItem.color } as React.CSSProperties}
                   >
-                    <span className="mega-sub-item-label">{sub.label}</span>
-                    <span className="mega-sub-item-desc">{sub.description}</span>
+                    <span className={styles['mega-sub-item-label']}>{sub.label}</span>
+                    <span className={styles['mega-sub-item-desc']}>{sub.description}</span>
                   </button>
                 ))}
               </div>

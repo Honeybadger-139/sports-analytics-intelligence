@@ -4,6 +4,7 @@ import { useSystemStatus } from '../hooks/useApi'
 import { NAV_ITEMS } from '../components/Navbar'
 import { findSportOption, isLiveDataSelection } from '../config/sports'
 import { useSportContext } from '../context/SportContext'
+import styles from './Overview.module.css'
 
 function fmt(n: number | undefined | null, decimals = 0) {
   if (n == null) return '--'
@@ -88,18 +89,18 @@ export default function Overview() {
 
         {/* Hero */}
         <motion.div
-          className="overview-hero"
+          className={styles['overview-hero']}
           variants={stagger}
           initial="hidden"
           animate="show"
         >
-          <motion.p className="overview-eyebrow" variants={fadeUp}>
+          <motion.p className={styles['overview-eyebrow']} variants={fadeUp}>
             {today} · {sport.label} · {league} · {selection.season}
           </motion.p>
-          <motion.h1 className="overview-title" variants={fadeUp}>
+          <motion.h1 className={styles['overview-title']} variants={fadeUp}>
             GameThread<br />Command Center
           </motion.h1>
-          <motion.p className="overview-subtitle" variants={fadeUp}>
+          <motion.p className={styles['overview-subtitle']} variants={fadeUp}>
             {isLiveSelection
               ? 'Basketball · NBA prediction engine, feature engineering, model monitoring, deep-dive analytics, and AI intelligence.'
               : 'Selected sport/league is in rollout. Core workflows are visible, while live metrics are currently enabled only for Basketball · NBA.'}
@@ -147,10 +148,10 @@ export default function Overview() {
         </motion.div>
 
         {/* Metric cards */}
-        <div className="metrics-section">
-          <p className="section-label">Live System Metrics</p>
+        <div className={styles['metrics-section']}>
+          <p className={styles['section-label']}>Live System Metrics</p>
           <motion.div
-            className="metrics-grid"
+            className={styles['metrics-grid']}
             variants={stagger}
             initial="hidden"
             animate="show"
@@ -158,26 +159,30 @@ export default function Overview() {
             {metrics.map(m => (
               <motion.div
                 key={m.label}
-                className="metric-card"
+                className={styles['metric-card']}
                 variants={fadeUp}
                 style={{ '--card-accent': m.accent } as React.CSSProperties}
               >
-                <p className="metric-card-label">{m.label}</p>
-                <p className={`metric-card-value ${m.mono ? 'mono' : ''} ${m.valueClass ?? ''}`}>
+                <p className={styles['metric-card-label']}>{m.label}</p>
+                <p className={[
+                  styles['metric-card-value'],
+                  m.mono ? styles.mono : '',
+                  m.valueClass ? styles[m.valueClass] : '',
+                ].join(' ')}>
                   {m.value}
                 </p>
-                <p className="metric-card-meta">{m.meta}</p>
+                <p className={styles['metric-card-meta']}>{m.meta}</p>
               </motion.div>
             ))}
           </motion.div>
         </div>
 
         {/* Navigation Directory */}
-        <div className="directory-section">
-          <p className="section-label">What's in this dashboard</p>
+        <div className={styles['directory-section']}>
+          <p className={styles['section-label']}>What's in this dashboard</p>
 
           <motion.div
-            className="directory-grid"
+            className={styles['directory-grid']}
             variants={stagger}
             initial="hidden"
             animate="show"
@@ -188,7 +193,7 @@ export default function Overview() {
           </motion.div>
 
           <motion.div
-            className="directory-grid-bottom"
+            className={styles['directory-grid-bottom']}
             variants={stagger}
             initial="hidden"
             animate="show"
@@ -224,27 +229,27 @@ function DirectoryCard({ item, onNavigate, disabled = false }: DirectoryCardProp
 
   return (
     <motion.div
-      className="dir-card"
+      className={styles['dir-card']}
       variants={fadeUp}
       style={{
         '--card-color': item.color,
         '--card-glow': item.color,
       } as React.CSSProperties}
     >
-      <div className="dir-card-top">
-        <span className="dir-card-badge">{item.label}</span>
-        {isComingSoon && <span className="dir-card-coming">Coming Soon</span>}
+      <div className={styles['dir-card-top']}>
+        <span className={styles['dir-card-badge']}>{item.label}</span>
+        {isComingSoon && <span className={styles['dir-card-coming']}>Coming Soon</span>}
       </div>
 
-      <h2 className="dir-card-title">{item.label}</h2>
-      <p className="dir-card-desc">{descriptions[item.id]}</p>
+      <h2 className={styles['dir-card-title']}>{item.label}</h2>
+      <p className={styles['dir-card-desc']}>{descriptions[item.id]}</p>
 
       {item.subItems.length > 0 && (
-        <div className="dir-subitems">
+        <div className={styles['dir-subitems']}>
           {item.subItems.map(sub => (
             <button
               key={sub.path}
-              className="dir-subitem"
+              className={styles['dir-subitem']}
               onClick={() => {
                 if (!isComingSoon) onNavigate(sub.path)
               }}
@@ -259,11 +264,11 @@ function DirectoryCard({ item, onNavigate, disabled = false }: DirectoryCardProp
                 width: '100%',
               }}
             >
-              <span className="dir-subitem-dot" style={{ background: item.color }} />
+              <span className={styles['dir-subitem-dot']} style={{ background: item.color }} />
               <span>
-                <span className="dir-subitem-name">{sub.label}</span>
+                <span className={styles['dir-subitem-name']}>{sub.label}</span>
                 {' '}
-                <span className="dir-subitem-desc">{sub.description}</span>
+                <span className={styles['dir-subitem-desc']}>{sub.description}</span>
               </span>
             </button>
           ))}
@@ -272,14 +277,14 @@ function DirectoryCard({ item, onNavigate, disabled = false }: DirectoryCardProp
 
       {isComingSoon ? (
         <span
-          className="dir-card-link disabled"
+          className={`${styles['dir-card-link']} ${styles.disabled}`}
           style={{ '--card-color': item.color } as React.CSSProperties}
         >
           In Development
         </span>
       ) : (
         <button
-          className="dir-card-link"
+          className={styles['dir-card-link']}
           onClick={() => onNavigate(item.path)}
           style={{ '--card-color': item.color } as React.CSSProperties}
         >
