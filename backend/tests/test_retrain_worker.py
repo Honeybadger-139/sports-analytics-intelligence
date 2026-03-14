@@ -2,6 +2,8 @@
 Unit tests for retrain worker lifecycle handling.
 """
 
+from types import SimpleNamespace
+
 from src.mlops import retrain_worker as retrain_worker_module
 
 
@@ -62,9 +64,37 @@ def test_worker_failure_sets_failed_status(monkeypatch):
     monkeypatch.setattr(retrain_worker_module, "_summarize_training_output", _raise)
 
     # Monkeypatch run_training_pipeline import path by injecting fake module attr call.
-    trainer_stub = __import__("types").SimpleNamespace(run_training_pipeline=lambda season: {"ensemble": {}})
+    trainer_stub = SimpleNamespace(
+        run_training_pipeline=lambda season, cutoff_date=None, validation_season=None: {"ensemble": {}}
+    )
     monkeypatch.setitem(__import__("sys").modules, "src.models.trainer", trainer_stub)
 
     payload = retrain_worker_module.process_next_retrain_job(_FakeDB(), season="2025-26", execute=True)
     assert payload["status"] == "failed"
     assert payload["job"]["status"] == "failed"
+
+
+def test_dispatch_next_retrain_job_starts_background_processing(monkeypatch):
+    job = {"id": 22, "season": "2025-26", "status": "processing"}
+    recorded = {}
+
+    monkeypatch.setattr(retrain_worker_module, "claim_next_retrain_job", lambda engine, season=None: job)
+
+    class _FakeThread:
+        def __init__(self, target, args, daemon):
+            recorded["target"] = target
+            recorded["args"] = args
+            recorded["daemon"] = daemon
+
+        def start(self):
+            recorded["started"] = True
+
+    monkeypatch.setattr(retrain_worker_module.threading, "Thread", _FakeThread)
+
+    payload = retrain_worker_module.dispatch_next_retrain_job(_FakeDB(), season="2025-26", execute=False)
+
+    assert payload["status"] == "processing"
+    assert payload["job"]["id"] == 22
+    assert recorded["started"] is True
+    assert recorded["args"] == (job, False)
+    assert recorded["daemon"] is True

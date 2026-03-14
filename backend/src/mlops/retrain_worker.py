@@ -4,10 +4,14 @@ Worker utilities for executing queued retrain jobs.
 
 from __future__ import annotations
 
+import threading
+from datetime import datetime
 from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
+from src import config
+from src.data.db import SessionLocal
 from src.data.intelligence_audit_store import record_intelligence_audit
 from src.data.retrain_store import claim_next_retrain_job, finalize_retrain_job
 
@@ -31,30 +35,16 @@ def _summarize_training_output(payload: Dict) -> Dict:
     return summary
 
 
-def process_next_retrain_job(db: Session, *, season: Optional[str] = None, execute: bool = False) -> Dict:
-    """
-    Claim and process the oldest queued retrain job.
-
-    execute=False keeps this safe for first-run validation by completing with
-    a simulation marker. execute=True runs the actual training pipeline.
-    """
-    engine = db.get_bind() if hasattr(db, "get_bind") else None
-    if engine is None:
-        raise RuntimeError("Database engine unavailable")
-
-    job = claim_next_retrain_job(engine, season=season)
-    if not job:
-        return {
-            "status": "noop",
-            "message": "No queued retrain jobs available.",
-            "job": None,
-        }
-
+def _run_claimed_retrain_job(engine, job: Dict, *, execute: bool = False) -> Dict:
     try:
         if execute:
             from src.models.trainer import run_training_pipeline
 
-            training_output = run_training_pipeline(season=job["season"])
+            training_output = run_training_pipeline(
+                season=job["season"],
+                cutoff_date=datetime.utcnow().date().isoformat(),
+                validation_season=config.CURRENT_SEASON,
+            )
             if not training_output:
                 raise RuntimeError("Training pipeline returned no output")
             run_details = {
@@ -116,3 +106,57 @@ def process_next_retrain_job(db: Session, *, season: Optional[str] = None, execu
             "message": f"Retrain job failed: {exc}",
             "job": failed,
         }
+
+
+def process_next_retrain_job(db: Session, *, season: Optional[str] = None, execute: bool = False) -> Dict:
+    """
+    Claim and process the oldest queued retrain job synchronously.
+
+    Used in tests and manual non-background execution paths.
+    """
+    engine = db.get_bind() if hasattr(db, "get_bind") else None
+    if engine is None:
+        raise RuntimeError("Database engine unavailable")
+
+    job = claim_next_retrain_job(engine, season=season)
+    if not job:
+        return {
+            "status": "noop",
+            "message": "No queued retrain jobs available.",
+            "job": None,
+        }
+    return _run_claimed_retrain_job(engine, job, execute=execute)
+
+
+def _background_runner(job: Dict, execute: bool) -> None:
+    db = SessionLocal()
+    try:
+        engine = db.get_bind()
+        _run_claimed_retrain_job(engine, job, execute=execute)
+    finally:
+        db.close()
+
+
+def dispatch_next_retrain_job(db: Session, *, season: Optional[str] = None, execute: bool = False) -> Dict:
+    """
+    Claim a queued retrain job and process it in the background.
+    """
+    engine = db.get_bind() if hasattr(db, "get_bind") else None
+    if engine is None:
+        raise RuntimeError("Database engine unavailable")
+
+    job = claim_next_retrain_job(engine, season=season)
+    if not job:
+        return {
+            "status": "noop",
+            "message": "No queued retrain jobs available.",
+            "job": None,
+        }
+
+    threading.Thread(target=_background_runner, args=(job, execute), daemon=True).start()
+    return {
+        "status": "processing",
+        "message": "Retrain job started in background.",
+        "job": job,
+        "run_details": {"mode": "execute" if execute else "simulate"},
+    }

@@ -134,6 +134,8 @@ LLM_FALLBACK_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 # - langgraph: LangGraph state machine wrapping RAG/DB/off-topic flow
 CHAT_ENGINE: str = _env_chat_engine()
 CHAT_API_KEY: str = os.getenv("CHAT_API_KEY", "")
+CHAT_RATE_LIMIT: str = os.getenv("CHAT_RATE_LIMIT", "20/minute")
+SCRIBBLE_RATE_LIMIT: str = os.getenv("SCRIBBLE_RATE_LIMIT", "30/minute")
 
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))

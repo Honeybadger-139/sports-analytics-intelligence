@@ -14,12 +14,14 @@ class _FakeSession:
     def __init__(self):
         self.insert_attempts = 0
         self.queries = []
+        self.params = []
         self.commits = 0
         self.rollbacks = 0
 
     def execute(self, query, _params=None):
         q = str(query)
         self.queries.append(q)
+        self.params.append(_params)
 
         if "INSERT INTO predictions" in q:
             self.insert_attempts += 1
@@ -45,14 +47,20 @@ def test_persist_game_predictions_bootstraps_missing_table():
         "xgboost": {"home_win_prob": 0.61, "away_win_prob": 0.39, "confidence": 0.61},
         "ensemble": {"home_win_prob": 0.58, "away_win_prob": 0.42, "confidence": 0.58},
     }
+    shap_factors = {
+        "xgboost": [{"feature": "win_pct_last_10", "shap_value": 0.12, "direction": "positive"}],
+        "ensemble": [{"feature": "avg_off_rating_last_5", "shap_value": -0.07, "direction": "negative"}],
+    }
 
-    count = prediction_store.persist_game_predictions(db, "001", predictions)
+    count = prediction_store.persist_game_predictions(db, "001", predictions, shap_factors_by_model=shap_factors)
 
     assert count == 2
     assert db.insert_attempts == 3  # 1 fail + 2 successful inserts after bootstrap
     assert db.rollbacks == 1
     joined = "\n".join(db.queries)
     assert "CREATE TABLE IF NOT EXISTS predictions" in joined
+    insert_params = [params for query, params in zip(db.queries, db.params) if "INSERT INTO predictions" in query and params]
+    assert insert_params[0]["shap_factors"] == '[{"feature": "win_pct_last_10", "shap_value": 0.12, "direction": "positive"}]'
 
 
 def test_sync_prediction_outcomes_returns_rowcount():

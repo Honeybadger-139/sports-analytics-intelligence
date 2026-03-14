@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
+import ErrorBoundary from '../components/ErrorBoundary'
+import SkeletonCard from '../components/SkeletonCard'
 
 const TodaysPicks = lazy(() => import('../components/Arena/TodaysPicks'))
 const DeepDive = lazy(() => import('../components/Arena/DeepDive'))
@@ -49,11 +51,10 @@ const TABS = [
 
 function LoadingFallback() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--text-2)', gap: 10, fontSize: '0.85rem' }}>
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="10" />
-      </svg>
-      Loading…
+    <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '28px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+      <SkeletonCard height={180} />
+      <SkeletonCard height={180} />
+      <SkeletonCard height={180} />
     </div>
   )
 }
@@ -156,11 +157,13 @@ export default function Arena() {
             transition={{ duration: 0.2 }}
             style={{ height: '100%' }}
           >
-            <Suspense fallback={<LoadingFallback />}>
-              {activeTab.id === 'predictions' && <TodaysPicks />}
-              {activeTab.id === 'deep-dive' && <DeepDive />}
-              {activeTab.id === 'performance' && <ModelPerformance />}
-            </Suspense>
+            <ErrorBoundary section={`Arena · ${activeTab.label}`}>
+              <Suspense fallback={<LoadingFallback />}>
+                {activeTab.id === 'predictions' && <TodaysPicks />}
+                {activeTab.id === 'deep-dive' && <DeepDive />}
+                {activeTab.id === 'performance' && <ModelPerformance />}
+              </Suspense>
+            </ErrorBoundary>
           </motion.div>
         )}
       </div>

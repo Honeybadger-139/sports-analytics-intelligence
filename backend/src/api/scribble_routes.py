@@ -29,13 +29,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from src.data.db import get_db
 from src.intelligence.chat_service import LLMClient, _fetch_schema_context, _extract_sql
+from src.rate_limit import limit
+from src import config
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +136,9 @@ class QueryResponse(BaseModel):
 
 
 @router.post("/query", response_model=QueryResponse)
+@limit(config.SCRIBBLE_RATE_LIMIT)
 async def execute_query(
+    request: Request,
     payload: QueryRequest,
     db: Session = Depends(get_db),
 ):
@@ -512,7 +516,9 @@ class AiSqlResponse(BaseModel):
 
 
 @router.post("/ai-sql", response_model=AiSqlResponse)
+@limit(config.SCRIBBLE_RATE_LIMIT)
 async def generate_sql(
+    request: Request,
     payload: AiSqlRequest,
     db: Session = Depends(get_db),
 ):

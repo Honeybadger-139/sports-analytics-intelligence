@@ -196,11 +196,11 @@ class TestMlopsRoutes:
     def test_retrain_worker_run_next_endpoint(self, monkeypatch):
         monkeypatch.setattr(
             mlops_routes_module,
-            "process_next_retrain_job",
+            "dispatch_next_retrain_job",
             lambda _db, season, execute: {
-                "status": "completed",
+                "status": "processing",
                 "message": "ok",
-                "job": {"id": 99, "season": season, "status": "completed"},
+                "job": {"id": 99, "season": season, "status": "processing"},
                 "run_details": {"mode": "simulate" if not execute else "execute"},
             },
         )
@@ -212,5 +212,5 @@ class TestMlopsRoutes:
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["status"] == "completed"
+        assert payload["status"] == "processing"
         assert payload["job"]["id"] == 99

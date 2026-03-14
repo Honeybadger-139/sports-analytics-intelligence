@@ -66,6 +66,11 @@
   --content-w: 1440px;
 }
 
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ─── Light theme ─────────────────────────────────────────── */
 body.theme-light {
   --bg-base:     #F3F6FC;

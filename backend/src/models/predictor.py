@@ -121,6 +121,14 @@ class Predictor:
                 }
         
         return predictions
+
+    def explain_game(self, features: pd.DataFrame, top_n: int = 5) -> Dict[str, List[Dict]]:
+        from src.models.explainability import top_shap_factors
+
+        explanations: Dict[str, List[Dict]] = {}
+        for name, model in self.models.items():
+            explanations[name] = top_shap_factors(model, features, name, top_n=top_n)
+        return explanations
     
     def predict_today(self, engine) -> List[Dict]:
         """
@@ -178,6 +186,7 @@ class Predictor:
         for _, row in df.iterrows():
             features = row[self.feature_columns].fillna(0).to_frame().T.astype(float)
             predictions = self.predict_game(features)
+            shap_factors = self.explain_game(features, top_n=5)
             
             results.append({
                 "game_id": row["game_id"],
@@ -187,6 +196,7 @@ class Predictor:
                 "away_team": row["away_team"],
                 "away_team_name": row["away_team_name"],
                 "predictions": predictions,
+                "shap_factors": shap_factors,
             })
         
         return results

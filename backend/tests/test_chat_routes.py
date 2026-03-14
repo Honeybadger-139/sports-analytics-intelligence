@@ -21,6 +21,13 @@ def _override_get_db():
     yield _FakeDB()
 
 
+def _reset_rate_limits():
+    limiter = getattr(app.state, "limiter", None)
+    storage = getattr(limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+
+
 def test_get_chat_service_legacy(monkeypatch):
     monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
 
@@ -162,3 +169,27 @@ def test_chat_stream_endpoint_returns_503_when_api_key_not_configured(monkeypatc
         app.dependency_overrides.pop(get_db, None)
 
     assert response.status_code == 503
+
+
+def test_chat_endpoint_rate_limits_after_twenty_requests(monkeypatch):
+    _reset_rate_limits()
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+
+    class _FakeService:
+        active_engine = "legacy"
+
+        def reply(self, message, history, session_id=None):
+            return message
+
+    monkeypatch.setattr(chat_routes_module, "_get_chat_service", lambda db, sport: _FakeService())
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        for _ in range(20):
+            response = client.post("/api/v1/chat", json={"message": "ping", "history": []})
+            assert response.status_code == 200
+        limited = client.post("/api/v1/chat", json={"message": "ping", "history": []})
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        _reset_rate_limits()
+
+    assert limited.status_code == 429

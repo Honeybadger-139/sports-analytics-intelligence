@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type {
   SystemStatus,
   BankrollSummary,
@@ -13,6 +13,11 @@ import type {
   GamePredictionResponse,
   ModelPerformanceResponse,
   GameStatsResponse,
+  PlayersListResponse,
+  PlayerGameLogEntry,
+  PlayerGameLogResponse,
+  TeamGameLogEntry,
+  TeamGameLogResponse,
 } from '../types'
 
 const API_BASE = '/api/v1'
@@ -23,254 +28,133 @@ async function fetchJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   return res.json()
 }
 
+function useRefreshableQuery<T>(options: {
+  queryKey: unknown[]
+  path: string
+  enabled?: boolean
+  staleTime?: number
+  refetchInterval?: number
+  errorMessage?: string
+}) {
+  const query = useQuery({
+    queryKey: options.queryKey,
+    queryFn: ({ signal }) => fetchJSON<T>(options.path, signal),
+    enabled: options.enabled,
+    staleTime: options.staleTime,
+    refetchInterval: options.refetchInterval,
+  })
+
+  return {
+    data: (query.data ?? null) as T | null,
+    loading: query.isLoading,
+    error: query.isError ? (options.errorMessage ?? 'Request failed') : null,
+    refresh: () => {
+      void query.refetch()
+    },
+    disabled: false,
+  }
+}
+
 export function useSystemStatus() {
-  const [data, setData] = useState<SystemStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<SystemStatus>('/system/status', signal)
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        setError('Could not reach the API')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    const interval = setInterval(() => load(ctrl.signal), 60_000)
-    return () => {
-      ctrl.abort()
-      clearInterval(interval)
-    }
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<SystemStatus>({
+    queryKey: ['system-status'],
+    path: '/system/status',
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    errorMessage: 'Could not reach the API',
+  })
 }
 
 export function useBankrollSummary(season = '2025-26') {
-  const [data, setData] = useState<BankrollSummary | null>(null)
-  const [loading, setLoading] = useState(true)
+  const query = useQuery({
+    queryKey: ['bankroll-summary', season],
+    queryFn: ({ signal }) => fetchJSON<{ summary: BankrollSummary }>(`/bets/summary?season=${encodeURIComponent(season)}`, signal),
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    fetchJSON<{ summary: BankrollSummary }>(
-      `/bets/summary?season=${encodeURIComponent(season)}`,
-      ctrl.signal
-    )
-      .then(res => setData(res.summary))
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [season])
-
-  return { data, loading }
+  return { data: query.data?.summary ?? null, loading: query.isLoading }
 }
 
-// ── Lab hooks ────────────────────────────────────────────────────────────────
-
 export function useQualityOverview(season = '2025-26') {
-  const [data, setData] = useState<QualityOverview | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<QualityOverview>(
-        `/quality/overview?season=${encodeURIComponent(season)}&recent_limit=50`,
-        signal,
-      )
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError('Failed to load quality data')
-    } finally {
-      setLoading(false)
-    }
-  }, [season])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<QualityOverview>({
+    queryKey: ['quality-overview', season],
+    path: `/quality/overview?season=${encodeURIComponent(season)}&recent_limit=50`,
+    staleTime: 60_000,
+    errorMessage: 'Failed to load quality data',
+  })
 }
 
 export function useMLOpsMonitoring(season = '2025-26') {
-  const [data, setData] = useState<MLOpsMonitoringOverview | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<MLOpsMonitoringOverview>(
-        `/mlops/monitoring?season=${encodeURIComponent(season)}`,
-        signal,
-      )
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError('Failed to load MLOps monitoring')
-    } finally {
-      setLoading(false)
-    }
-  }, [season])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<MLOpsMonitoringOverview>({
+    queryKey: ['mlops-monitoring', season],
+    path: `/mlops/monitoring?season=${encodeURIComponent(season)}`,
+    staleTime: 15_000,
+    errorMessage: 'Failed to load MLOps monitoring',
+  })
 }
 
 export function useMLOpsMonitoringTrend(season = '2025-26', days = 14) {
-  const [data, setData] = useState<MLOpsMonitoringTrend | null>(null)
-  const [loading, setLoading] = useState(true)
+  const query = useQuery({
+    queryKey: ['mlops-monitoring-trend', season, days],
+    queryFn: ({ signal }) => fetchJSON<MLOpsMonitoringTrend>(`/mlops/monitoring/trend?season=${encodeURIComponent(season)}&days=${days}`, signal),
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    fetchJSON<MLOpsMonitoringTrend>(
-      `/mlops/monitoring/trend?season=${encodeURIComponent(season)}&days=${days}`,
-      ctrl.signal,
-    )
-      .then(setData)
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [season, days])
-
-  return { data, loading }
+  return { data: query.data ?? null, loading: query.isLoading }
 }
 
 export function useMLOpsRetrainPolicy(season = '2025-26') {
-  const [data, setData] = useState<RetrainPolicyResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<RetrainPolicyResult>(
-        `/mlops/retrain/policy?season=${encodeURIComponent(season)}&dry_run=true`,
-        signal,
-      )
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError('Failed to load retrain policy')
-    } finally {
-      setLoading(false)
-    }
-  }, [season])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<RetrainPolicyResult>({
+    queryKey: ['mlops-retrain-policy', season],
+    path: `/mlops/retrain/policy?season=${encodeURIComponent(season)}&dry_run=true`,
+    staleTime: 15_000,
+    errorMessage: 'Failed to load retrain policy',
+  })
 }
 
 export function useMLOpsRetrainJobs(season = '2025-26') {
-  const [data, setData] = useState<RetrainJobsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const query = useQuery({
+    queryKey: ['mlops-retrain-jobs', season],
+    queryFn: ({ signal }) => fetchJSON<RetrainJobsResponse>(`/mlops/retrain/jobs?season=${encodeURIComponent(season)}&limit=20`, signal),
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    fetchJSON<RetrainJobsResponse>(
-      `/mlops/retrain/jobs?season=${encodeURIComponent(season)}&limit=20`,
-      ctrl.signal,
-    )
-      .then(setData)
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [season])
-
-  return { data, loading }
+  return { data: query.data ?? null, loading: query.isLoading }
 }
 
-// ── Pulse hooks ───────────────────────────────────────────────────────────────
-
 export function useDailyBrief(season = '2025-26', briefDate?: string) {
-  const [data, setData] = useState<DailyBriefResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [disabled, setDisabled] = useState(false)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const query = useQuery({
+    queryKey: ['daily-brief', season, briefDate ?? null],
+    queryFn: ({ signal }) => {
       const dateParam = briefDate ? `&date=${briefDate}` : ''
-      const result = await fetchJSON<DailyBriefResponse>(
-        `/intelligence/brief?season=${encodeURIComponent(season)}${dateParam}`,
-        signal,
-      )
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return
-      const msg = (err as Error).message ?? ''
-      if (msg.includes('503')) {
-        setDisabled(true)
-        setError('Intelligence layer is disabled (INTELLIGENCE_ENABLED=false)')
-      } else {
-        setError('Failed to load daily brief')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [season, briefDate])
+      return fetchJSON<DailyBriefResponse>(`/intelligence/brief?season=${encodeURIComponent(season)}${dateParam}`, signal)
+    },
+    staleTime: 0,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, disabled, refresh: load }
+  const message = query.error instanceof Error ? query.error.message : ''
+  const disabled = message.includes('503')
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError
+      ? (disabled ? 'Intelligence layer is disabled (INTELLIGENCE_ENABLED=false)' : 'Failed to load daily brief')
+      : null,
+    disabled,
+    refresh: () => {
+      void query.refetch()
+    },
+  }
 }
 
 export function useTodaysPredictions() {
-  const [data, setData] = useState<TodayPredictionsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<TodayPredictionsResponse>('/predictions/today?persist=false', signal)
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError('Failed to load predictions')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<TodayPredictionsResponse>({
+    queryKey: ['todays-predictions'],
+    path: '/predictions/today?persist=false',
+    staleTime: 0,
+    errorMessage: 'Failed to load predictions',
+  })
 }
 
 export function useMatches(
@@ -281,142 +165,77 @@ export function useMatches(
   dateFrom?: string,
   dateTo?: string,
 ) {
-  const [data, setData] = useState<MatchesResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const query = useQuery({
+    queryKey: ['matches', season, limit, teamSearch ?? '', date ?? '', dateFrom ?? '', dateTo ?? ''],
+    queryFn: ({ signal }) => {
+      let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
+      if (teamSearch) url += `&team_search=${encodeURIComponent(teamSearch)}`
+      if (date) url += `&date=${encodeURIComponent(date)}`
+      if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
+      if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
+      return fetchJSON<MatchesResponse>(url, signal)
+    },
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
-    if (teamSearch) url += `&team_search=${encodeURIComponent(teamSearch)}`
-    if (date) url += `&date=${encodeURIComponent(date)}`
-    if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
-    if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
-    fetchJSON<MatchesResponse>(url, ctrl.signal)
-      .then(setData)
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [season, limit, teamSearch, date, dateFrom, dateTo])
-
-  return { data, loading }
+  return { data: query.data ?? null, loading: query.isLoading }
 }
 
 export function useGameStats(gameId: string | null) {
-  const [data, setData] = useState<GameStatsResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const query = useQuery({
+    queryKey: ['game-stats', gameId],
+    queryFn: ({ signal }) => fetchJSON<GameStatsResponse>(`/matches/${gameId}/stats`, signal),
+    enabled: Boolean(gameId),
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    if (!gameId) { setData(null); return }
-    const ctrl = new AbortController()
-    setLoading(true)
-    setError(null)
-    fetchJSON<GameStatsResponse>(`/matches/${gameId}/stats`, ctrl.signal)
-      .then(setData)
-      .catch(err => {
-        if ((err as Error).name !== 'AbortError') setError('Failed to load game stats')
-      })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [gameId])
-
-  return { data, loading, error }
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError ? 'Failed to load game stats' : null,
+  }
 }
 
-// ── Arena hooks ───────────────────────────────────────────────────────────────
-
 export function useGamePrediction(gameId: string | null) {
-  const [data, setData] = useState<GamePredictionResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const query = useQuery({
+    queryKey: ['game-prediction', gameId],
+    queryFn: ({ signal }) => fetchJSON<GamePredictionResponse>(`/predictions/game/${gameId}`, signal),
+    enabled: Boolean(gameId),
+    staleTime: 0,
+  })
 
-  useEffect(() => {
-    if (!gameId) {
-      setData(null)
-      setError(null)
-      setLoading(false)
-      return
-    }
-    const ctrl = new AbortController()
-    setLoading(true)
-    setData(null)
-    setError(null)
-    fetchJSON<GamePredictionResponse>(`/predictions/game/${gameId}`, ctrl.signal)
-      .then(setData)
-      .catch(err => {
-        if ((err as Error).name !== 'AbortError') {
-          setData(null)
-          setError('Failed to load prediction')
-        }
-      })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [gameId])
-
-  return { data, loading, error }
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError ? 'Failed to load prediction' : null,
+  }
 }
 
 export function useModelPerformance(season = '2025-26') {
-  const [data, setData] = useState<ModelPerformanceResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fetchJSON<ModelPerformanceResponse>(
-        `/predictions/performance?season=${encodeURIComponent(season)}`,
-        signal,
-      )
-      setData(result)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError('Failed to load model performance')
-    } finally {
-      setLoading(false)
-    }
-  }, [season])
-
-  useEffect(() => {
-    const ctrl = new AbortController()
-    load(ctrl.signal)
-    return () => ctrl.abort()
-  }, [load])
-
-  return { data, loading, error, refresh: load }
+  return useRefreshableQuery<ModelPerformanceResponse>({
+    queryKey: ['model-performance', season],
+    path: `/predictions/performance?season=${encodeURIComponent(season)}`,
+    staleTime: 0,
+    errorMessage: 'Failed to load model performance',
+  })
 }
 
-// ── Deep Dive hooks ──────────────────────────────────────────────────────────
-
-import type {
-  PlayersListResponse,
-  PlayerGameLogEntry,
-  PlayerGameLogResponse,
-  TeamGameLogEntry,
-  TeamGameLogResponse,
-} from '../types'
-
 export function usePlayers(search: string, team?: string, limit = 50) {
-  const [data, setData] = useState<PlayersListResponse | null>(null)
-  const [loading, setLoading] = useState(false)
   const normalizedSearch = search.trim().replace(/\s+/g, ' ')
+  const enabled = normalizedSearch.length >= 2 || Boolean(team)
+  const query = useQuery({
+    queryKey: ['players', normalizedSearch, team ?? '', limit],
+    queryFn: ({ signal }) => {
+      let url = `/players?limit=${limit}`
+      if (normalizedSearch.length >= 2) url += `&search=${encodeURIComponent(normalizedSearch)}`
+      if (team) url += `&team=${encodeURIComponent(team)}`
+      return fetchJSON<PlayersListResponse>(url, signal)
+    },
+    enabled,
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const hasSearch = normalizedSearch.length >= 2
-    if (!hasSearch && !team) { setData(null); setLoading(false); return }
-    const ctrl = new AbortController()
-    setLoading(true)
-    let url = `/players?limit=${limit}`
-    if (hasSearch) url += `&search=${encodeURIComponent(normalizedSearch)}`
-    if (team) url += `&team=${encodeURIComponent(team)}`
-    fetchJSON<PlayersListResponse>(url, ctrl.signal)
-      .then(setData)
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [normalizedSearch, team, limit])
-
-  return { data, loading }
+  return { data: query.data ?? null, loading: query.isLoading }
 }
 
 export interface PlayerGameStatsFilters {
@@ -431,131 +250,108 @@ export function usePlayerGameStats(
   seasons: string[] = ['2025-26'],
   filters: PlayerGameStatsFilters = {},
 ) {
-  const [data, setData] = useState<PlayerGameLogResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const limit = filters.limit ?? 50
   const opponent = filters.opponent?.trim()
   const dateFrom = filters.dateFrom
   const dateTo = filters.dateTo
 
-  useEffect(() => {
-    if (!playerId) { setData(null); return }
-    if (!seasons.length) { setData(null); return }
-    const ctrl = new AbortController()
-    setLoading(true)
-    setError(null)
-    Promise.all(
-      seasons.map(async (seasonValue) => {
-        let url = `/players/${playerId}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`
-        if (opponent) url += `&opponent=${encodeURIComponent(opponent)}`
-        if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
-        if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
-        return fetchJSON<PlayerGameLogResponse>(url, ctrl.signal)
-      }),
-    )
-      .then((responses) => {
-        if (!responses.length) {
-          setData(null)
-          return
+  const query = useQuery({
+    queryKey: ['player-game-stats', playerId, seasons.join(','), limit, opponent ?? '', dateFrom ?? '', dateTo ?? ''],
+    queryFn: async ({ signal }) => {
+      const responses = await Promise.all(
+        seasons.map(async (seasonValue) => {
+          let url = `/players/${playerId}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`
+          if (opponent) url += `&opponent=${encodeURIComponent(opponent)}`
+          if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
+          if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
+          return fetchJSON<PlayerGameLogResponse>(url, signal)
+        }),
+      )
+
+      if (!responses.length) return null
+
+      const games = responses
+        .flatMap(r => r.games)
+        .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
+
+      const averages = (() => {
+        if (!games.length) return {}
+        const keys: Array<keyof PlayerGameLogEntry> = ['points', 'rebounds', 'assists', 'steals', 'blocks', 'turnovers']
+        const round1 = (value: number) => Math.round(value * 10) / 10
+        const acc: Record<string, number> = { games_played: games.length }
+        for (const key of keys) {
+          const sum = games.reduce((total, game) => total + Number(game[key] ?? 0), 0)
+          acc[String(key)] = round1(sum / games.length)
         }
+        return acc
+      })()
 
-        const games = responses
-          .flatMap(r => r.games)
-          .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
+      return {
+        player: responses[0].player,
+        season: seasons.length === 1 ? seasons[0] : seasons.join(','),
+        averages,
+        games,
+      } as PlayerGameLogResponse
+    },
+    enabled: Boolean(playerId) && seasons.length > 0,
+    staleTime: 60_000,
+  })
 
-        const averages = (() => {
-          if (!games.length) return {}
-          const keys: Array<keyof PlayerGameLogEntry> = ['points', 'rebounds', 'assists', 'steals', 'blocks', 'turnovers']
-          const round1 = (value: number) => Math.round(value * 10) / 10
-          const acc: Record<string, number> = { games_played: games.length }
-          for (const key of keys) {
-            const sum = games.reduce((total, g) => total + Number(g[key] ?? 0), 0)
-            acc[String(key)] = round1(sum / games.length)
-          }
-          return acc
-        })()
-
-        setData({
-          player: responses[0].player,
-          season: seasons.length === 1 ? seasons[0] : seasons.join(','),
-          averages,
-          games,
-        })
-      })
-      .catch(err => {
-        if ((err as Error).name !== 'AbortError') setError('Failed to load player stats')
-      })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [playerId, seasons, limit, opponent, dateFrom, dateTo])
-
-  return { data, loading, error }
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError ? 'Failed to load player stats' : null,
+  }
 }
 
 export function useTeamGameStats(abbreviation: string | null, seasons: string[] = ['2025-26'], limit = 50) {
-  const [data, setData] = useState<TeamGameLogResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!abbreviation) { setData(null); return }
-    if (!seasons.length) { setData(null); return }
-    const ctrl = new AbortController()
-    setLoading(true)
-    setError(null)
-    Promise.all(
-      seasons.map((seasonValue) =>
-        fetchJSON<TeamGameLogResponse>(
-          `/teams/${encodeURIComponent(abbreviation)}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`,
-          ctrl.signal,
+  const query = useQuery({
+    queryKey: ['team-game-stats', abbreviation, seasons.join(','), limit],
+    queryFn: async ({ signal }) => {
+      const responses = await Promise.all(
+        seasons.map((seasonValue) =>
+          fetchJSON<TeamGameLogResponse>(
+            `/teams/${encodeURIComponent(abbreviation as string)}/game-stats?season=${encodeURIComponent(seasonValue)}&limit=${limit}`,
+            signal,
+          ),
         ),
-      ),
-    )
-      .then((responses) => {
-        if (!responses.length) {
-          setData(null)
-          return
-        }
+      )
 
-        const games = responses
-          .flatMap(r => r.games)
-          .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
+      if (!responses.length) return null
 
-        const wins = games.filter(g => g.result === 'W').length
-        const losses = games.filter(g => g.result === 'L').length
+      const games = responses
+        .flatMap(r => r.games)
+        .sort((a, b) => String(b.game_date).localeCompare(String(a.game_date)))
 
-        setData({
-          team: responses[0].team,
-          season: seasons.length === 1 ? seasons[0] : seasons.join(','),
-          record: { wins, losses, games: games.length },
-          games: games as TeamGameLogEntry[],
-        })
-      })
-      .catch(err => {
-        if ((err as Error).name !== 'AbortError') setError('Failed to load team stats')
-      })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [abbreviation, seasons, limit])
+      const wins = games.filter(g => g.result === 'W').length
+      const losses = games.filter(g => g.result === 'L').length
 
-  return { data, loading, error }
+      return {
+        team: responses[0].team,
+        season: seasons.length === 1 ? seasons[0] : seasons.join(','),
+        record: { wins, losses, games: games.length },
+        games: games as TeamGameLogEntry[],
+      } as TeamGameLogResponse
+    },
+    enabled: Boolean(abbreviation) && seasons.length > 0,
+    staleTime: 60_000,
+  })
+
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError ? 'Failed to load team stats' : null,
+  }
 }
 
 export function useTeamsList() {
-  const [data, setData] = useState<{ teams: Array<{ team_id: number; abbreviation: string; full_name: string; city: string }>; count: number } | null>(null)
-  const [loading, setLoading] = useState(true)
+  const query = useQuery({
+    queryKey: ['teams-list'],
+    queryFn: ({ signal }) => fetchJSON<{ teams: Array<{ team_id: number; abbreviation: string; full_name: string; city: string }>; count: number }>('/teams', signal),
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    fetchJSON<typeof data>('/teams', ctrl.signal)
-      .then(setData)
-      .catch(() => { })
-      .finally(() => setLoading(false))
-    return () => ctrl.abort()
-  }, [])
-
-  return { data, loading }
+  return { data: query.data ?? null, loading: query.isLoading }
 }
 
 export { fetchJSON }

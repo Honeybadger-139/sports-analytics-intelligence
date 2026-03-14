@@ -84,6 +84,7 @@ def _persist_predictions_for_games(db: Session, games: list) -> int:
             db,
             game_id=str(game["game_id"]),
             predictions=game.get("predictions", {}),
+            shap_factors_by_model=game.get("shap_factors"),
         )
     return persisted
 
@@ -175,6 +176,7 @@ def _bootstrap_predictions_from_completed_games(
             }
             features = pd.DataFrame([feature_payload], columns=feature_cols)
             predictions = predictor.predict_game(features)
+            shap_factors = predictor.explain_game(features, top_n=5)
 
             predicted_at = None
             game_date = row.get("game_date")
@@ -189,6 +191,7 @@ def _bootstrap_predictions_from_completed_games(
                 db,
                 game_id=game_id,
                 predictions=predictions,
+                shap_factors_by_model=shap_factors,
                 predicted_at=predicted_at,
             )
             games_bootstrapped += 1
@@ -262,6 +265,28 @@ def _model_artifact_snapshot() -> Dict:
 
     active = artifacts[-1]["name"] if artifacts else None
     return {"active_artifact": active, "artifacts": artifacts}
+
+
+def _load_persisted_shap_factors(db: Session, game_id: str) -> Dict[str, list]:
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT model_name, shap_factors
+                FROM predictions
+                WHERE game_id = :game_id
+                """
+            ),
+            {"game_id": game_id},
+        ).fetchall()
+    except Exception:
+        return {}
+
+    payload: Dict[str, list] = {}
+    for row in rows:
+        factors = _normalize_json_field(row.shap_factors)
+        payload[row.model_name] = factors if isinstance(factors, list) else []
+    return payload
 
 
 def _db_health_payload(db: Session) -> Dict:
@@ -1061,13 +1086,17 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
     features = pd.DataFrame([{col: float(row_dict.get(col, 0) or 0) for col in feature_cols}])
     
     predictions = predictor.predict_game(features)
-    
-    # SHAP explanation for the best model
-    from src.models.explainability import explain_prediction
-    explanation = {}
-    if "xgboost" in predictor.models:
-        explanation = explain_prediction(predictor.models["xgboost"], features, "xgboost")
-    
+    shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
+    if not shap_factors_by_model:
+        shap_factors_by_model = predictor.explain_game(features, top_n=5)
+        persist_game_predictions(
+            db,
+            game_id=game_id,
+            predictions=predictions,
+            shap_factors_by_model=shap_factors_by_model,
+        )
+        shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
+
     return {
         "game_id": game_id,
         "home_team": row_dict["home_team"],
@@ -1075,7 +1104,7 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
         "away_team": row_dict["away_team"],
         "away_team_name": row_dict["away_team_name"],
         "predictions": predictions,
-        "explanation": explanation,
+        "explanation": shap_factors_by_model,
     }
 
 

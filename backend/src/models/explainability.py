@@ -163,3 +163,17 @@ def explain_prediction(model, features: pd.DataFrame, model_name: str = "xgboost
             "all_factors": [],
             "error": str(e),
         }
+
+
+def top_shap_factors(model, features: pd.DataFrame, model_name: str = "xgboost", top_n: int = 5) -> List[Dict]:
+    explanation = explain_prediction(model, features, model_name)
+    factors = explanation.get("all_factors") or explanation.get("top_factors") or []
+    return [
+        {
+            "feature": item.get("feature"),
+            "display_name": item.get("display_name"),
+            "shap_value": item.get("shap_value"),
+            "direction": item.get("direction"),
+        }
+        for item in factors[:top_n]
+    ]

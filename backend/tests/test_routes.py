@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from main import app
 from src.data.db import get_db
 from src.api import routes as routes_module
+from src.models import trainer as trainer_module
 
 
 client = TestClient(app)
@@ -40,6 +41,11 @@ class TestHealthEndpoints:
         response = client.get("/metrics")
         assert response.status_code == 200
         assert "text/plain" in response.headers.get("content-type", "")
+
+    def test_root_includes_trace_id_header(self):
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response.headers.get("x-trace-id")
 
     def test_subsystem_health_endpoints(self, monkeypatch):
         class _Result:
@@ -160,6 +166,102 @@ class TestPredictionEndpoints:
         assert payload["count"] == 1
         assert payload["persisted_rows"] == 1
         assert payload["games"][0]["game_id"] == "001"
+
+    def test_prediction_game_returns_persisted_shap_factors(self, monkeypatch):
+        class _FakePredictor:
+            feature_columns = trainer_module.FEATURE_COLUMNS
+
+            def predict_game(self, _features):
+                return {
+                    "xgboost": {
+                        "home_win_prob": 0.61,
+                        "away_win_prob": 0.39,
+                        "prediction": "home",
+                        "confidence": 0.61,
+                    }
+                }
+
+            def explain_game(self, _features, top_n=5):
+                raise AssertionError("persisted SHAP factors should be reused when available")
+
+        class _PredictionRow:
+            def __init__(self):
+                self._mapping = {
+                    "game_id": "001",
+                    "home_team": "LAL",
+                    "home_team_name": "Los Angeles Lakers",
+                    "away_team": "BOS",
+                    "away_team_name": "Boston Celtics",
+                    "win_pct_last_5": 0.6,
+                    "win_pct_last_10": 0.7,
+                    "avg_point_diff_last_5": 5.2,
+                    "avg_point_diff_last_10": 4.8,
+                    "is_home": 1,
+                    "days_rest": 2,
+                    "is_back_to_back": 0,
+                    "avg_off_rating_last_5": 112.5,
+                    "avg_def_rating_last_5": 108.3,
+                    "avg_pace_last_5": 100.2,
+                    "avg_efg_last_5": 0.545,
+                    "h2h_win_pct": 0.6,
+                    "h2h_avg_margin": 3.5,
+                    "current_streak": 3,
+                    "opp_win_pct_last_5": 0.4,
+                    "opp_win_pct_last_10": 0.5,
+                    "opp_avg_point_diff_last_5": -2.1,
+                    "opp_avg_point_diff_last_10": -1.5,
+                    "opp_days_rest": 1,
+                    "opp_is_back_to_back": 1,
+                    "opp_avg_off_rating_last_5": 108.1,
+                    "opp_avg_def_rating_last_5": 112.4,
+                    "opp_avg_pace_last_5": 98.7,
+                    "opp_avg_efg_last_5": 0.49,
+                }
+
+        class _ShapRow:
+            model_name = "xgboost"
+            shap_factors = [
+                {
+                    "feature": "win_pct_last_10",
+                    "shap_value": 0.12,
+                    "direction": "positive",
+                }
+            ]
+
+        class _Result:
+            def __init__(self, *, one=None, many=None):
+                self._one = one
+                self._many = many or []
+
+            def fetchone(self):
+                return self._one
+
+            def fetchall(self):
+                return self._many
+
+        class _FakeDB:
+            def execute(self, query, params=None):
+                q = str(query)
+                if "FROM matches m" in q:
+                    return _Result(one=_PredictionRow())
+                if "FROM predictions" in q:
+                    return _Result(many=[_ShapRow()])
+                raise AssertionError(f"Unexpected query: {q} {params}")
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        monkeypatch.setattr(routes_module, "get_predictor", lambda: _FakePredictor())
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/predictions/game/001")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["predictions"]["xgboost"]["home_win_prob"] == 0.61
+        assert payload["explanation"]["xgboost"][0]["feature"] == "win_pct_last_10"
 
     def test_predictions_performance_returns_summary(self, monkeypatch):
         class _Result:

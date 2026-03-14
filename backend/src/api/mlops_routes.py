@@ -14,7 +14,7 @@ from src.data.db import get_db
 from src.data.retrain_store import list_retrain_jobs
 from src.mlops.monitoring import get_monitoring_overview, get_monitoring_trend
 from src.mlops.retrain_policy import evaluate_retrain_need
-from src.mlops.retrain_worker import process_next_retrain_job
+from src.mlops.retrain_worker import dispatch_next_retrain_job
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def mlops_retrain_worker_run_next(
     db: Session = Depends(get_db),
 ):
     try:
-        return process_next_retrain_job(db, season=season, execute=execute)
+        return dispatch_next_retrain_job(db, season=season, execute=execute)
     except Exception as exc:
         logger.error("Failed to process next retrain job: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to process next retrain job") from exc

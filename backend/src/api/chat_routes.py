@@ -12,7 +12,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from sqlalchemy import text
 from src.data.db import get_db
 from src.intelligence.chat_service import ChatService, LLMClient
 from src.intelligence.langgraph_chat_service import LangGraphChatService
+from src.rate_limit import limit
 from src import config
 
 logger = logging.getLogger(__name__)
@@ -170,7 +171,9 @@ async def chat_health(db: Session = Depends(get_db)):
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limit(config.CHAT_RATE_LIMIT)
 async def chat(
+    request: Request,
     payload: ChatRequest,
     db: Session = Depends(get_db),
 ):
@@ -215,7 +218,9 @@ async def chat(
 
 
 @router.post("/chat/stream")
+@limit(config.CHAT_RATE_LIMIT)
 async def chat_stream(
+    request: Request,
     payload: ChatRequest,
     _auth: None = Depends(_require_chat_api_key),
     db: Session = Depends(get_db),

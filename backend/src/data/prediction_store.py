@@ -2,6 +2,7 @@
 Prediction persistence and outcome synchronization utilities.
 """
 
+import json
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -29,6 +30,7 @@ def ensure_predictions_table(db: Session) -> None:
                 home_win_prob DECIMAL(5,4),
                 away_win_prob DECIMAL(5,4),
                 confidence DECIMAL(5,4),
+                shap_factors JSONB,
                 predicted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 was_correct BOOLEAN,
                 UNIQUE (game_id, model_name)
@@ -44,6 +46,7 @@ def ensure_predictions_table(db: Session) -> None:
             """
         )
     )
+    db.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS shap_factors JSONB"))
     db.commit()
 
 
@@ -51,6 +54,7 @@ def persist_game_predictions(
     db: Session,
     game_id: str,
     predictions: Dict[str, Dict],
+    shap_factors_by_model: Optional[Dict[str, list]] = None,
     predicted_at: Optional[datetime] = None,
 ) -> int:
     """
@@ -69,15 +73,16 @@ def persist_game_predictions(
                     text(
                         """
                         INSERT INTO predictions (
-                            game_id, model_name, home_win_prob, away_win_prob, confidence, predicted_at
+                            game_id, model_name, home_win_prob, away_win_prob, confidence, shap_factors, predicted_at
                         )
                         VALUES (
-                            :game_id, :model_name, :home_win_prob, :away_win_prob, :confidence, :predicted_at
+                            :game_id, :model_name, :home_win_prob, :away_win_prob, :confidence, CAST(:shap_factors AS JSONB), :predicted_at
                         )
                         ON CONFLICT (game_id, model_name) DO UPDATE SET
                             home_win_prob = EXCLUDED.home_win_prob,
                             away_win_prob = EXCLUDED.away_win_prob,
                             confidence = EXCLUDED.confidence,
+                            shap_factors = EXCLUDED.shap_factors,
                             predicted_at = EXCLUDED.predicted_at
                         """
                     ),
@@ -87,6 +92,7 @@ def persist_game_predictions(
                         "home_win_prob": payload.get("home_win_prob"),
                         "away_win_prob": payload.get("away_win_prob"),
                         "confidence": payload.get("confidence"),
+                        "shap_factors": json.dumps((shap_factors_by_model or {}).get(model_name) or []),
                         "predicted_at": predicted_at,
                     },
                 )

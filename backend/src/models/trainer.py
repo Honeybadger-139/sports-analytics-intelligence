@@ -36,6 +36,7 @@ Architecture Decision: See docs/decisions/decision-log.md
 """
 
 import os
+import json
 import logging
 import joblib
 from datetime import datetime
@@ -58,6 +59,8 @@ import xgboost as xgb
 import lightgbm as lgb
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+
+from src import config
 
 load_dotenv()
 
@@ -111,7 +114,13 @@ def get_engine():
     return create_engine(database_url)
 
 
-def load_training_data(engine, season: str = "2024-25") -> Tuple[pd.DataFrame, pd.Series]:
+def load_training_dataset(
+    engine,
+    season: Optional[str] = "2024-25",
+    *,
+    cutoff_date: Optional[str] = None,
+    validation_season: Optional[str] = None,
+) -> Dict[str, object]:
     """
     Load features + target from PostgreSQL, combining home and away team features.
 
@@ -126,16 +135,15 @@ def load_training_data(engine, season: str = "2024-25") -> Tuple[pd.DataFrame, p
         This framing means our model predicts: "Given home team's form vs
         away team's form, will the home team win?"
 
-    Returns:
-        X: Feature DataFrame
-        y: Target Series (1 = home win, 0 = away win)
     """
-    logger.info(f"📥 Loading training data for season {season}...")
+    validation_season = validation_season or config.CURRENT_SEASON
+    logger.info("📥 Loading training data | season=%s | cutoff_date=%s | validation_season=%s", season, cutoff_date, validation_season)
 
     query = text("""
         SELECT
             m.game_id,
             m.game_date,
+            m.season,
             m.home_team_id,
             m.away_team_id,
             CASE WHEN m.winner_team_id = m.home_team_id THEN 1 ELSE 0 END as home_win,
@@ -168,13 +176,17 @@ def load_training_data(engine, season: str = "2024-25") -> Tuple[pd.DataFrame, p
         FROM matches m
         JOIN match_features hf ON m.game_id = hf.game_id AND m.home_team_id = hf.team_id
         JOIN match_features af ON m.game_id = af.game_id AND m.away_team_id = af.team_id
-        WHERE m.season = :season
-            AND m.is_completed = TRUE
+        WHERE m.is_completed = TRUE
+          AND (
+            :season IS NULL
+            OR m.season = :season
+            OR (:validation_season IS NOT NULL AND m.season = :validation_season)
+          )
         ORDER BY m.game_date ASC
     """)
 
     with engine.connect() as conn:
-        df = pd.read_sql(query, conn, params={"season": season})
+        df = pd.read_sql(query, conn, params={"season": season, "validation_season": validation_season})
 
     logger.info(f"   Loaded {len(df)} games with features")
 
@@ -186,13 +198,49 @@ def load_training_data(engine, season: str = "2024-25") -> Tuple[pd.DataFrame, p
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    X = df[FEATURE_COLUMNS].astype(float)
-    y = df["home_win"].astype(int)
+    if not df.empty:
+        df["game_date"] = pd.to_datetime(df["game_date"])
+
+    train_mask = pd.Series([True] * len(df), index=df.index)
+    validation_mask = pd.Series([False] * len(df), index=df.index)
+    cutoff_timestamp = pd.to_datetime(cutoff_date) if cutoff_date else None
+    if cutoff_timestamp is not None:
+        train_mask = df["game_date"] < cutoff_timestamp
+        validation_mask = (df["season"] == validation_season) & (df["game_date"] >= cutoff_timestamp)
+    elif validation_season:
+        validation_mask = df["season"] == validation_season
+        train_mask = ~validation_mask
+
+    train_df = df.loc[train_mask].copy()
+    validation_df = df.loc[validation_mask].copy()
+
+    X = train_df[FEATURE_COLUMNS].astype(float)
+    y = train_df["home_win"].astype(int)
+    validation_X = validation_df[FEATURE_COLUMNS].astype(float) if not validation_df.empty else pd.DataFrame(columns=FEATURE_COLUMNS)
+    validation_y = validation_df["home_win"].astype(int) if not validation_df.empty else pd.Series(dtype=int)
 
     logger.info(f"   Features shape: {X.shape}")
     logger.info(f"   Home win rate: {y.mean():.3f}")
+    logger.info("   Validation shape: %s", validation_X.shape)
 
-    return X, y
+    return {
+        "train_X": X,
+        "train_y": y,
+        "validation_X": validation_X,
+        "validation_y": validation_y,
+        "metadata": {
+            "season": season,
+            "cutoff_date": cutoff_timestamp.date().isoformat() if cutoff_timestamp is not None else None,
+            "validation_season": validation_season,
+            "training_games": int(len(train_df)),
+            "validation_games": int(len(validation_df)),
+        },
+    }
+
+
+def load_training_data(engine, season: str = "2024-25") -> Tuple[pd.DataFrame, pd.Series]:
+    dataset = load_training_dataset(engine, season=season)
+    return dataset["train_X"], dataset["train_y"]
 
 
 def train_logistic_regression(X: pd.DataFrame, y: pd.Series) -> Dict:
@@ -473,7 +521,45 @@ def create_ensemble(models: list, X: pd.DataFrame, y: pd.Series) -> Dict:
     return results
 
 
-def run_training_pipeline(season: str = "2024-25"):
+def _validation_summary(models: list, ensemble_results: Dict, validation_X: pd.DataFrame, validation_y: pd.Series) -> Dict:
+    if validation_X.empty or validation_y.empty:
+        return {
+            "games": 0,
+            "models": {},
+            "ensemble": {},
+        }
+
+    summary: Dict[str, Dict] = {"games": int(len(validation_X)), "models": {}, "ensemble": {}}
+    y_true = validation_y.to_numpy()
+    probs = []
+    weights = []
+    for model_result in models:
+        model = model_result["model"]
+        prob = model.predict_proba(validation_X)[:, 1]
+        pred = (prob >= 0.5).astype(int)
+        key = model_result["name"].lower().replace(" ", "_")
+        summary["models"][key] = {
+            "accuracy": round(float(accuracy_score(y_true, pred)), 4),
+            "brier_score": round(float(brier_score_loss(y_true, prob)), 4),
+        }
+        probs.append(prob)
+        weights.append(ensemble_results["weights"][model_result["name"]])
+
+    ensemble_prob = np.average(probs, axis=0, weights=weights)
+    ensemble_pred = (ensemble_prob >= 0.5).astype(int)
+    summary["ensemble"] = {
+        "accuracy": round(float(accuracy_score(y_true, ensemble_pred)), 4),
+        "brier_score": round(float(brier_score_loss(y_true, ensemble_prob)), 4),
+    }
+    return summary
+
+
+def run_training_pipeline(
+    season: Optional[str] = "2024-25",
+    *,
+    cutoff_date: Optional[str] = None,
+    validation_season: Optional[str] = None,
+):
     """
     Run the full model training pipeline.
 
@@ -499,7 +585,17 @@ def run_training_pipeline(season: str = "2024-25"):
     logger.info("=" * 60)
 
     # Step 1: Load data
-    X, y = load_training_data(engine, season=season)
+    dataset = load_training_dataset(
+        engine,
+        season=season,
+        cutoff_date=cutoff_date,
+        validation_season=validation_season,
+    )
+    X = dataset["train_X"]
+    y = dataset["train_y"]
+    validation_X = dataset["validation_X"]
+    validation_y = dataset["validation_y"]
+    metadata = dict(dataset["metadata"])
 
     if len(X) < 50:
         logger.error("❌ Not enough data for training. Need at least 50 games.")
@@ -513,6 +609,7 @@ def run_training_pipeline(season: str = "2024-25"):
     # Step 3: Ensemble
     all_models = [lr_results, xgb_results, lgb_results]
     ensemble_results = create_ensemble(all_models, X, y)
+    metadata["validation_summary"] = _validation_summary(all_models, ensemble_results, validation_X, validation_y)
 
     # Step 4: Save models
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -525,6 +622,10 @@ def run_training_pipeline(season: str = "2024-25"):
     # Save ensemble weights
     ensemble_filepath = os.path.join(MODEL_DIR, f"ensemble_weights_{timestamp}.pkl")
     joblib.dump(ensemble_results["weights"], ensemble_filepath)
+    metadata_path = os.path.join(MODEL_DIR, f"training_metadata_{timestamp}.json")
+    with open(metadata_path, "w", encoding="utf-8") as handle:
+        json.dump(metadata, handle, indent=2)
+    logger.info("   🧾 Saved training metadata → %s", metadata_path)
 
     # Step 5: Comparison report
     logger.info("\n" + "=" * 60)
@@ -555,6 +656,7 @@ def run_training_pipeline(season: str = "2024-25"):
         "lightgbm": lgb_results,
         "ensemble": ensemble_results,
         "feature_columns": FEATURE_COLUMNS,
+        "metadata": metadata,
     }
 
 

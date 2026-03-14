@@ -15,13 +15,25 @@ Architecture Decision:
 
 import logging
 import signal
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
+
+from src.logging_setup import configure_logging, trace_id_var
+from src.rate_limit import (
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
+    limiter,
+    rate_limit_available,
+)
+
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +121,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 _configure_metrics(app)
+if limiter is not None:
+    app.state.limiter = limiter
+if rate_limit_available and RateLimitExceeded is not None and _rate_limit_exceeded_handler is not None:
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware — allows the HTML frontend to call the API
 app.add_middleware(
@@ -118,6 +134,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_trace_context(request: Request, call_next):
+    trace_id = str(uuid.uuid4())
+    token = trace_id_var.set(trace_id)
+    started = time.perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+        response.headers["X-Trace-Id"] = trace_id
+        return response
+    finally:
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        logging.getLogger("gamethread.request").info(
+            "request_completed",
+            extra={
+                "trace_id": trace_id,
+                "route": request.url.path,
+                "duration_ms": duration_ms,
+                "status_code": getattr(response, "status_code", 500),
+                "method": request.method,
+            },
+        )
+        trace_id_var.reset(token)
 
 # Include API routes
 from src.api.routes import router

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import Navbar from './components/Navbar'
@@ -18,6 +19,7 @@ import { SportContextProvider, useSportContext } from './context/SportContext'
 import { isLiveDataSelection } from './config/sports'
 
 const THEME_KEY = 'sai_v2_theme'
+const queryClient = new QueryClient()
 
 function AppShell() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -70,10 +72,12 @@ function AppShell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <SportContextProvider>
-        <AppShell />
-      </SportContextProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <SportContextProvider>
+          <AppShell />
+        </SportContextProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   )
 }
