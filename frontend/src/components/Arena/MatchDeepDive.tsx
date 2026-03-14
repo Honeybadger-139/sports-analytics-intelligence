@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useLocation } from 'react-router-dom'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
 import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
@@ -122,15 +123,49 @@ function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: 
 }
 
 export default function MatchDeepDive() {
-  const [season, setSeason] = useState('2025-26')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const location = useLocation()
+  const incomingContext = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return {
+      season: params.get('season'),
+      gameId: params.get('game_id'),
+      teamSearch: params.get('team_search'),
+    }
+  }, [location.search])
+
+  const [season, setSeason] = useState(() => {
+    const incomingSeason = incomingContext.season
+    if (incomingSeason && SEASONS.includes(incomingSeason)) return incomingSeason
+    return '2025-26'
+  })
+  const [selectedId, setSelectedId] = useState<string | null>(() => incomingContext.gameId)
 
   // Filters
-  const [teamSearch, setTeamSearch] = useState('')
+  const [teamSearch, setTeamSearch] = useState(() => incomingContext.teamSearch ?? '')
   const [dateMode, setDateMode] = useState<'exact' | 'range' | 'all'>('all')
   const [exactDate, setExactDate] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+
+  useEffect(() => {
+    const incomingSeason = incomingContext.season
+    if (incomingSeason && SEASONS.includes(incomingSeason)) {
+      setSeason(incomingSeason)
+    }
+
+    const incomingTeam = incomingContext.teamSearch ?? ''
+    setTeamSearch(incomingTeam)
+
+    const incomingGameId = incomingContext.gameId
+    if (incomingGameId) {
+      // Ensure URL-driven match context is not hidden by stale date filters.
+      setDateMode('all')
+      setExactDate('')
+      setStartDate('')
+      setEndDate('')
+    }
+    setSelectedId(incomingGameId ?? null)
+  }, [incomingContext])
 
   const { data: matchData, loading: matchLoading } = useMatches(
     season,

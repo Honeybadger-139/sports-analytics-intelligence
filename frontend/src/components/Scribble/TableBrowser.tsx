@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useTableList, useTableRows } from '../../hooks/useScribble'
 import DataTable from './DataTable'
@@ -61,7 +61,16 @@ export default function TableBrowser() {
     setSearch('')
   }
 
-  const columns = tableRows?.rows.length ? Object.keys(tableRows.rows[0]) : []
+  const lastColumns = useRef<Record<string, string[]>>({})
+  const rowsList = tableRows?.rows ?? []
+  const currentCols = rowsList.length ? Object.keys(rowsList[0]) : []
+  
+  // Persist columns for this table so search filtering doesn't hide them
+  if (selected && currentCols.length) {
+    lastColumns.current[selected] = currentCols
+  }
+
+  const columns = currentCols.length ? currentCols : (selected ? lastColumns.current[selected] ?? [] : [])
 
   return (
     <div className="explorer-layout">
@@ -189,7 +198,7 @@ export default function TableBrowser() {
 
             <DataTable
               columns={columns}
-              rows={tableRows?.rows ?? []}
+              rows={rowsList}
               total={tableRows?.total}
               offset={offset}
               limit={limit}

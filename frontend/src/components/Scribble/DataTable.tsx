@@ -97,7 +97,7 @@ export default function DataTable({
         })
       : filteredRows
 
-  if (!columns.length) return null
+  // No early return on empty columns to prevent UI collapse during filtering
 
   return (
     <div className="data-table-wrap">

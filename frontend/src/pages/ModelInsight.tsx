@@ -98,6 +98,16 @@ export default function ModelInsight() {
   )
   const maxAbs = rankedFactors.length ? Math.max(...rankedFactors.map(f => Math.abs(f.shap_value))) : 1
 
+  function openFullDeepDive() {
+    const params = new URLSearchParams()
+    if (selectedGameId) params.set('game_id', selectedGameId)
+    if (season) params.set('season', season)
+    if (teamSearch.trim()) params.set('team_search', teamSearch.trim())
+
+    const query = params.toString()
+    navigate(query ? `/arena/deep-dive?${query}` : '/arena/deep-dive')
+  }
+
   return (
     <div className="page-shell">
       <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '28px' }}>
@@ -114,7 +124,7 @@ export default function ModelInsight() {
             </p>
           </div>
           <button
-            onClick={() => navigate('/arena/deep-dive')}
+            onClick={openFullDeepDive}
             style={{
               padding: '8px 12px',
               borderRadius: 'var(--r-sm)',
@@ -260,4 +270,3 @@ export default function ModelInsight() {
     </div>
   )
 }
-

@@ -1489,6 +1489,7 @@ input[type='date']::-webkit-datetime-edit,
   background: var(--bg-surface);
   overflow-y: auto;
   gap: 4px;
+  min-height: 0;
 }
 
 .explorer-sidebar-header { margin-bottom: 4px; }
@@ -1678,6 +1679,7 @@ input[type='date']::-webkit-datetime-edit,
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
   background: transparent;
 }
 
