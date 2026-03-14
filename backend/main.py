@@ -14,14 +14,32 @@ Architecture Decision:
 """
 
 import logging
+import signal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_metrics(app: FastAPI) -> None:
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+
+        Instrumentator().instrument(app).expose(app)
+    except Exception as exc:
+        logger.warning("Prometheus instrumentator unavailable, exposing fallback /metrics endpoint: %s", exc)
+
+        @app.get("/metrics", include_in_schema=False)
+        async def metrics_fallback():
+            return PlainTextResponse(
+                "gamethread_metrics_available 0\n",
+                media_type="text/plain; version=0.0.4",
+            )
 
 
 @asynccontextmanager
@@ -53,6 +71,15 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info("⏰ [lifespan] Daily pipeline scheduler started.")
 
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def _handle_sigterm(signum, frame):  # type: ignore[unused-arg]
+        logger.info("🛑 [lifespan] SIGTERM received, waiting for scheduler jobs to finish.")
+        if callable(previous_sigterm):
+            previous_sigterm(signum, frame)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     yield
 
     # Flush any pending Langfuse traces before shutdown
@@ -63,8 +90,16 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    scheduler.shutdown(wait=False)
-    logger.info("🛑 [lifespan] Daily pipeline scheduler stopped.")
+    try:
+        job_state = [job.id for job in scheduler.get_jobs()]
+        scheduler.shutdown(wait=True)
+        logger.info("🛑 [lifespan] Daily pipeline scheduler stopped. final_jobs=%s", job_state)
+    except Exception as exc:
+        logger.warning("🛑 [lifespan] Scheduler shutdown encountered an issue: %s", exc)
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+
+    logger.info("🛑 [lifespan] Shutdown complete.")
 
 
 app = FastAPI(
@@ -73,6 +108,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+_configure_metrics(app)
 
 # CORS middleware — allows the HTML frontend to call the API
 app.add_middleware(

@@ -26,6 +26,7 @@ from src.data.prediction_store import (
     sync_prediction_outcomes,
 )
 from src import config
+from src.intelligence.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +262,43 @@ def _model_artifact_snapshot() -> Dict:
 
     active = artifacts[-1]["name"] if artifacts else None
     return {"active_artifact": active, "artifacts": artifacts}
+
+
+def _db_health_payload(db: Session) -> Dict:
+    db.execute(text("SELECT 1"))
+    match_count = int(db.execute(text("SELECT COUNT(*) FROM matches")).scalar() or 0)
+    return {
+        "status": "ok",
+        "match_count": match_count,
+    }
+
+
+def _ml_health_payload() -> Dict:
+    snapshot = _model_artifact_snapshot()
+    active_name = snapshot.get("active_artifact")
+    last_trained_at = None
+    if active_name:
+        active = next((item for item in snapshot["artifacts"] if item["name"] == active_name), None)
+        if active:
+            last_trained_at = active.get("modified_at")
+    status = "ok" if active_name else "missing"
+    return {
+        "status": status,
+        "active_artifact": active_name,
+        "last_trained_at": last_trained_at,
+        "artifact_count": len(snapshot.get("artifacts", [])),
+    }
+
+
+def _rag_health_payload() -> Dict:
+    store = VectorStore()
+    count = store.count()
+    status = "ok" if count > 0 else "empty"
+    return {
+        "status": status,
+        "collection": config.RAG_COLLECTION,
+        "document_count": count,
+    }
 
 
 @router.get("/raw/tables")
@@ -772,6 +810,44 @@ async def get_quality_overview(
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@router.get("/health/db")
+async def db_health(db: Session = Depends(get_db)):
+    try:
+        return _db_health_payload(db)
+    except Exception as exc:
+        logger.error("DB health check failed: %s", exc)
+        raise HTTPException(status_code=500, detail="DB health check failed") from exc
+
+
+@router.get("/health/ml")
+async def ml_health():
+    return _ml_health_payload()
+
+
+@router.get("/health/rag")
+async def rag_health():
+    try:
+        return _rag_health_payload()
+    except Exception as exc:
+        logger.error("RAG health check failed: %s", exc)
+        raise HTTPException(status_code=500, detail="RAG health check failed") from exc
+
+
+@router.get("/health/all")
+async def all_health(db: Session = Depends(get_db)):
+    checks = {
+        "db": _db_health_payload(db),
+        "ml": _ml_health_payload(),
+        "rag": _rag_health_payload(),
+    }
+    overall = "ok"
+    if any(item["status"] == "missing" for item in checks.values()):
+        overall = "degraded"
+    if any(item["status"] == "empty" for item in checks.values()):
+        overall = "degraded"
+    return {"status": overall, "checks": checks, "timestamp": datetime.now().isoformat()}
 
 
 @router.get("/teams")

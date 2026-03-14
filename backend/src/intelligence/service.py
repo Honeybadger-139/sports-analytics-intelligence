@@ -225,13 +225,18 @@ class IntelligenceService:
                     }
                 )
 
-        inserted = self.vector_store.upsert(payload)
+        upsert_stats = self.vector_store.upsert_with_stats(payload)
         record_intelligence_audit(
             self.db.get_bind(),
             module="indexer",
-            status="success" if inserted else "degraded",
-            records_processed=inserted,
-            details={"sources": sources, "store_count": self.vector_store.count(), "feed_health": health},
+            status="success" if upsert_stats["processed"] else "degraded",
+            records_processed=upsert_stats["processed"],
+            details={
+                "sources": sources,
+                "store_count": self.vector_store.count(),
+                "feed_health": health,
+                "upsert": upsert_stats,
+            },
         )
 
     @staticmethod
@@ -280,6 +285,21 @@ class IntelligenceService:
             max_age_hours=max_age_hours,
             team_filter=[game["home_team"], game["away_team"]],
         )
+        max_similarity = retrieval_stats.get("max_similarity")
+        if max_similarity is not None and max_similarity < config.RAG_MIN_SIMILARITY:
+            retrieval_stats["docs_used"] = 0
+            retrieval_stats["source_quality"] = []
+            return {
+                "game_id": str(game["game_id"]),
+                "season": str(game["season"]),
+                "generated_at": datetime.utcnow().isoformat(),
+                "summary": "No relevant context found for this query.",
+                "risk_signals": [],
+                "citations": [],
+                "retrieval": retrieval_stats,
+                "coverage_status": "insufficient",
+                "feed_health": self._feed_health,
+            }
         scored_docs = [_score_doc_quality(doc, max_age_hours) for doc in docs]
         scored_docs.sort(key=lambda row: float(row.get("quality_score") or 0.0), reverse=True)
         docs = [

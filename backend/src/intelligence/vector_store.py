@@ -20,7 +20,10 @@ class VectorStore:
         self._impl = _build_store()
 
     def upsert(self, records: List[Dict]) -> int:
-        return self._impl.upsert(records)
+        return self.upsert_with_stats(records)["processed"]
+
+    def upsert_with_stats(self, records: List[Dict]) -> Dict[str, int]:
+        return self._impl.upsert_with_stats(records)
 
     def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
         return self._impl.query(query_embedding=query_embedding, top_k=top_k)
@@ -44,10 +47,16 @@ class _ChromaStore:
         self._client = chromadb_module.PersistentClient(path=str(config.RAG_CHROMA_DIR))
         self._collection = self._client.get_or_create_collection(name=config.RAG_COLLECTION)
 
-    def upsert(self, records: List[Dict]) -> int:
+    def upsert_with_stats(self, records: List[Dict]) -> Dict[str, int]:
         if not records:
-            return 0
+            return {"processed": 0, "created": 0, "updated": 0}
         ids = [record["doc_id"] for record in records]
+        existing_ids = set()
+        try:
+            existing = self._collection.get(ids=ids, include=[])
+            existing_ids = set(existing.get("ids", []))
+        except Exception:
+            existing_ids = set()
         documents = [record["content"] for record in records]
         embeddings = [record["embedding"] for record in records]
         metadatas = [
@@ -62,7 +71,10 @@ class _ChromaStore:
             for record in records
         ]
         self._collection.upsert(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
-        return len(records)
+        unique_ids = set(ids)
+        created = len([doc_id for doc_id in unique_ids if doc_id not in existing_ids])
+        updated = len(unique_ids) - created
+        return {"processed": len(records), "created": created, "updated": updated}
 
     def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
         if self.count() == 0:
@@ -111,15 +123,19 @@ class _JsonVectorStore:
     def _save(self, payload: List[Dict]) -> None:
         self._path.write_text(json.dumps(payload), encoding="utf-8")
 
-    def upsert(self, records: List[Dict]) -> int:
+    def upsert_with_stats(self, records: List[Dict]) -> Dict[str, int]:
         if not records:
-            return 0
+            return {"processed": 0, "created": 0, "updated": 0}
         existing = {row["doc_id"]: row for row in self._load()}
+        existing_ids = set(existing)
         for record in records:
             existing[record["doc_id"]] = record
         merged = list(existing.values())
         self._save(merged)
-        return len(records)
+        unique_ids = {record["doc_id"] for record in records}
+        created = len([doc_id for doc_id in unique_ids if doc_id not in existing_ids])
+        updated = len(unique_ids) - created
+        return {"processed": len(records), "created": created, "updated": updated}
 
     def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
         rows = self._load()

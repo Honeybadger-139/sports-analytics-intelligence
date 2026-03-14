@@ -67,6 +67,7 @@ RAG_COLLECTION = os.getenv("RAG_COLLECTION", "nba_context_v1")
 RAG_SUMMARY_MODEL = os.getenv("RAG_SUMMARY_MODEL", "gemini-2.0-flash")
 RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "models/embedding-001")
 RAG_REQUEST_TIMEOUT_SECONDS = int(os.getenv("RAG_REQUEST_TIMEOUT_SECONDS", "8"))
+RAG_MIN_SIMILARITY = float(os.getenv("RAG_MIN_SIMILARITY", "0.4"))
 RAG_CHROMA_DIR = pathlib.Path(os.getenv("RAG_CHROMA_DIR", str(DATA_DIR / "chroma")))
 RAG_CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -125,17 +126,22 @@ LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 LANGFUSE_DEBUG: bool = _env_bool("LANGFUSE_DEBUG", False)
+LLM_FALLBACK_LOG_PATH = pathlib.Path(os.getenv("LLM_FALLBACK_LOG_PATH", str(LOG_DIR / "llm_calls.jsonl")))
+LLM_FALLBACK_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Chatbot engine (Phase 7A)
 # - legacy   : existing custom orchestration
 # - langgraph: LangGraph state machine wrapping RAG/DB/off-topic flow
 CHAT_ENGINE: str = _env_chat_engine()
+CHAT_API_KEY: str = os.getenv("CHAT_API_KEY", "")
 
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))
 MLOPS_MAX_BRIER = float(os.getenv("MLOPS_MAX_BRIER", "0.25"))
 MLOPS_NEW_LABEL_MIN = int(os.getenv("MLOPS_NEW_LABEL_MIN", "40"))
 MLOPS_FRESHNESS_DAYS = int(os.getenv("MLOPS_FRESHNESS_DAYS", "2"))
+SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
+SLACK_ALERT_DEDUP_SECONDS = int(os.getenv("SLACK_ALERT_DEDUP_SECONDS", "21600"))
 
 # ==========================================
 # 💡 INTERVIEW ANGLE:

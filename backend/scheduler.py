@@ -229,22 +229,23 @@ def run_rag_ingestion_job() -> None:
                     "embedding": embedding_client.embed_document(content),
                 })
 
-        inserted = vector_store.upsert(payload)
+        upsert_stats = vector_store.upsert_with_stats(payload)
         elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
         logger.info(
-            "✅ [rag-scheduler] Upserted %d chunks into ChromaDB in %.1fs | store total: %d",
-            inserted, elapsed, vector_store.count(),
+            "✅ [rag-scheduler] Upserted %d chunks into ChromaDB in %.1fs | new=%d updated=%d | store total: %d",
+            upsert_stats["processed"], elapsed, upsert_stats["created"], upsert_stats["updated"], vector_store.count(),
         )
         record_intelligence_audit(
             db.get_bind(),
             module="rag_scheduler",
             status="success",
-            records_processed=inserted,
+            records_processed=upsert_stats["processed"],
             details={
                 "sources": sources,
                 "store_count": vector_store.count(),
                 "feed_health": health,
                 "elapsed_seconds": round(elapsed, 2),
+                "upsert": upsert_stats,
             },
         )
     except Exception as exc:

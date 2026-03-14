@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
@@ -183,11 +184,22 @@ class LLMClient:
     @observe(name="llm.generate", as_type="generation", capture_input=False, capture_output=False)
     def generate(self, prompt: str, *, max_tokens: int = 400, _span_name: str = "llm.generate") -> Optional[str]:
         """Generate a text response. Returns None if LLM is unavailable."""
+        started = time.perf_counter()
         if not self._genai:
+            record_generation(
+                name=_span_name,
+                prompt=prompt,
+                output=None,
+                model=self._model_name,
+                latency_ms=(time.perf_counter() - started) * 1000,
+                intent=_span_name,
+                success=False,
+            )
             return None
         output_text: Optional[str] = None
         input_tokens: Optional[int] = None
         output_tokens: Optional[int] = None
+        success = False
         try:
             model = self._genai.GenerativeModel(self._model_name)  # type: ignore[union-attr]
             response = model.generate_content(
@@ -195,6 +207,7 @@ class LLMClient:
                 generation_config={"temperature": 0.25, "max_output_tokens": max_tokens},
             )
             output_text = (response.text or "").strip() or None
+            success = output_text is not None
 
             # Extract token usage from Gemini response metadata if available
             if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -212,6 +225,9 @@ class LLMClient:
                 model=self._model_name,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                latency_ms=(time.perf_counter() - started) * 1000,
+                intent=_span_name,
+                success=success,
             )
         return output_text
 

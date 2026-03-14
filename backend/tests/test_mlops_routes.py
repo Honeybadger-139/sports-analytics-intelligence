@@ -151,7 +151,11 @@ class TestMlopsRoutes:
         assert payload["window_days"] == 14
         assert len(payload["points"]) == 1
 
-    def test_monitoring_escalation_policy(self):
+    def test_monitoring_escalation_policy(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.mlops.monitoring.notify_critical_escalation",
+            lambda season, alerts, escalation: escalation["state"] == "incident",
+        )
         app.dependency_overrides[get_db] = _override_escalation_db
         try:
             response = client.get("/api/v1/mlops/monitoring?season=2025-26")
@@ -162,6 +166,7 @@ class TestMlopsRoutes:
         payload = response.json()
         assert payload["escalation"]["state"] in {"watch", "incident"}
         assert any(alert["recommended_action"] in {"investigate_now", "open_incident"} for alert in payload["alerts"])
+        assert payload["notification"]["slack_dispatched"] is True
 
     def test_retrain_policy_execute_mode_shape(self):
         app.dependency_overrides[get_db] = _override_get_db

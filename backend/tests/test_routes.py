@@ -36,6 +36,59 @@ class TestHealthEndpoints:
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
 
+    def test_metrics_endpoint_exposed(self):
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        assert "text/plain" in response.headers.get("content-type", "")
+
+    def test_subsystem_health_endpoints(self, monkeypatch):
+        class _Result:
+            def __init__(self, scalar_value=None):
+                self._scalar_value = scalar_value
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT 1" in q:
+                    return _Result(1)
+                if "COUNT(*) FROM matches" in q:
+                    return _Result(12)
+                return _Result(0)
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        monkeypatch.setattr(routes_module, "_model_artifact_snapshot", lambda: {
+            "active_artifact": "xgb_2026-03-14.pkl",
+            "artifacts": [{"name": "xgb_2026-03-14.pkl", "modified_at": "2026-03-14T10:00:00"}],
+        })
+
+        class _FakeVectorStore:
+            def count(self):
+                return 8
+
+        monkeypatch.setattr(routes_module, "VectorStore", lambda: _FakeVectorStore())
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            db_response = client.get("/api/v1/health/db")
+            ml_response = client.get("/api/v1/health/ml")
+            rag_response = client.get("/api/v1/health/rag")
+            all_response = client.get("/api/v1/health/all")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert db_response.status_code == 200
+        assert db_response.json()["match_count"] == 12
+        assert ml_response.status_code == 200
+        assert ml_response.json()["active_artifact"] == "xgb_2026-03-14.pkl"
+        assert rag_response.status_code == 200
+        assert rag_response.json()["document_count"] == 8
+        assert all_response.status_code == 200
+        assert all_response.json()["status"] == "ok"
+
 
 class TestPredictionEndpoints:
     """Tests for prediction-related endpoints (shape validation)."""

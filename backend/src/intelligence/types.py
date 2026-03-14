@@ -64,6 +64,7 @@ class RetrievalStats(BaseModel):
     docs_considered: int = 0
     docs_used: int = 0
     freshness_window_hours: int = 0
+    max_similarity: Optional[float] = None
     source_quality: List[SourceQuality] = Field(default_factory=list)
 
 

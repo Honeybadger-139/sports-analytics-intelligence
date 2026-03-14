@@ -103,6 +103,7 @@ def test_chat_health_includes_engine_fields(monkeypatch):
 
 def test_chat_stream_endpoint_emits_sse_events(monkeypatch):
     monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
 
     class _FakeService:
         active_engine = "legacy"
@@ -120,6 +121,7 @@ def test_chat_stream_endpoint_emits_sse_events(monkeypatch):
                 "history": [],
                 "session_id": "session-stream-1",
             },
+            headers={"X-API-Key": "wave1-secret"},
         )
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -131,3 +133,32 @@ def test_chat_stream_endpoint_emits_sse_events(monkeypatch):
     assert "event: token" in body
     assert "event: done" in body
     assert "Streaming response payload." in body
+
+
+def test_chat_stream_endpoint_requires_api_key(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat/stream",
+            json={"message": "No auth", "history": []},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 401
+    assert "X-API-Key" in response.json()["detail"]
+
+
+def test_chat_stream_endpoint_returns_503_when_api_key_not_configured(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "")
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat/stream",
+            json={"message": "No config", "history": []},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 503

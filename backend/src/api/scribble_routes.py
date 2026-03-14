@@ -6,7 +6,7 @@ Security contract for /query:
   - Forbidden DML/DDL keywords are rejected at the application layer.
   - Queries are executed inside a read-only transaction (SET TRANSACTION READ ONLY).
   - Row limit is enforced server-side: any query exceeding MAX_ROWS is silently capped.
-  - Execution time is bounded by a PostgreSQL statement_timeout (10 s).
+  - Execution time is bounded by a PostgreSQL statement_timeout (5 s).
 
 Notebooks:
   - Stored in PostgreSQL (scribble_notebooks table) — persistent across browsers/devices.
@@ -71,7 +71,7 @@ def _ensure_notebooks_table(db: Session) -> None:
         logger.error("Failed to ensure scribble_notebooks table: %s", exc)
 
 MAX_ROWS = 500
-STATEMENT_TIMEOUT_MS = 10_000  # 10 seconds
+STATEMENT_TIMEOUT_MS = 5_000  # 5 seconds
 
 # Reject anything that is not a SELECT or a CTE (WITH ... SELECT)
 _SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
@@ -143,7 +143,7 @@ async def execute_query(
 
     - Only SELECT statements are accepted.
     - Results are capped at 500 rows.
-    - Queries time out after 10 seconds.
+    - Queries time out after 5 seconds.
     - Runs inside a read-only transaction for full safety.
     """
     sql = _validate(payload.sql)

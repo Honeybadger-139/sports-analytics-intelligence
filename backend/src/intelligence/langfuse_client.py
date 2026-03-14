@@ -26,9 +26,11 @@ Langfuse dashboard will show:
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
 import os
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,33 @@ def _tracing_enabled() -> bool:
     from src import config
 
     return bool(config.LANGFUSE_ENABLED and config.LANGFUSE_SECRET_KEY)
+
+
+def _write_fallback_log(
+    *,
+    model: str,
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+    latency_ms: Optional[float],
+    intent: Optional[str],
+    success: bool,
+) -> None:
+    from src import config
+
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "model": model,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "latency_ms": round(latency_ms, 2) if latency_ms is not None else None,
+        "intent": intent or "unknown",
+        "success": success,
+    }
+    try:
+        with config.LLM_FALLBACK_LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except Exception as exc:
+        logger.debug("fallback LLM log write failed: %s", exc)
 
 
 def observe(*args, **kwargs):
@@ -161,6 +190,9 @@ def record_generation(
     model: str,
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
+    latency_ms: Optional[float] = None,
+    intent: Optional[str] = None,
+    success: bool = True,
 ) -> None:
     """
     Record an LLM generation span within the currently active trace.
@@ -169,6 +201,14 @@ def record_generation(
     model name, and token counts for every Gemini call.
     """
     if not _initialized:
+        _write_fallback_log(
+            model=model,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            latency_ms=latency_ms,
+            intent=intent or name,
+            success=success,
+        )
         return
     try:
         from langfuse import get_client
@@ -190,3 +230,11 @@ def record_generation(
             pass  # span is closed on context manager exit
     except Exception as exc:
         logger.debug("record_generation: could not record Langfuse span — %s", exc)
+        _write_fallback_log(
+            model=model,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            latency_ms=latency_ms,
+            intent=intent or name,
+            success=success,
+        )

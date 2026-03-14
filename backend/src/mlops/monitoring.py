@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
 from src.data.mlops_store import fetch_monitoring_trend, record_monitoring_snapshot
+from src.mlops.notifications import notify_critical_escalation
 
 
 def _days_since(value) -> int | None:
@@ -205,6 +206,9 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
         "alerts": alerts,
         "escalation": _escalation_summary(alerts),
     }
+    payload["notification"] = {
+        "slack_dispatched": notify_critical_escalation(season, alerts, payload["escalation"]),
+    }
 
     engine = db.get_bind() if hasattr(db, "get_bind") else None
     if engine is not None:
@@ -217,6 +221,7 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
                 "season": season,
                 "alerts": alerts,
                 "thresholds": payload["thresholds"],
+                "notification": payload["notification"],
             },
         )
         record_monitoring_snapshot(engine, season=season, payload=payload)

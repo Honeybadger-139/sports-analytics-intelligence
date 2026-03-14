@@ -13,6 +13,7 @@ from src.intelligence.rules import derive_risk_signals
 from src.intelligence.service import _score_doc_quality
 from src.intelligence.types import ContextDocument
 from src.intelligence.retriever import ContextRetriever
+from src.intelligence.vector_store import _JsonVectorStore
 
 
 class _EmbeddingClient:
@@ -54,6 +55,25 @@ def test_parse_feed_content_handles_missing_title_and_url():
     assert "LAL" in docs[0].team_tags
 
 
+def test_parse_feed_content_uses_stable_sha256_doc_id():
+    xml = """
+    <rss>
+      <channel>
+        <item>
+          <title>Lakers injury update</title>
+          <link>https://example.com/story</link>
+          <description>Questionable before tipoff.</description>
+          <pubDate>Sat, 28 Feb 2026 10:00:00 GMT</pubDate>
+        </item>
+      </channel>
+    </rss>
+    """
+    docs_a = parse_feed_content(xml, "https://example.com/rss")
+    docs_b = parse_feed_content(xml, "https://example.com/rss")
+    assert docs_a[0].doc_id == docs_b[0].doc_id
+    assert len(docs_a[0].doc_id) == 64
+
+
 def test_retriever_applies_freshness_and_topk():
     now = datetime.now(tz=timezone.utc)
     rows = [
@@ -92,6 +112,7 @@ def test_retriever_applies_freshness_and_topk():
     assert docs[0]["doc_id"] == "fresh-a"
     assert stats["docs_considered"] == 2
     assert stats["docs_used"] == 1
+    assert stats["max_similarity"] == 0.9
 
 
 def test_chunk_context_document_overlap_boundaries_are_deterministic():
@@ -224,3 +245,51 @@ def test_rules_emit_injury_conflict_when_high_and_medium_signals_present():
     ids = {signal["id"] for signal in signals}
     assert "injury_high" in ids
     assert "injury_signal_conflict" in ids
+
+
+def test_json_vector_store_reports_created_vs_updated(tmp_path):
+    store = _JsonVectorStore(tmp_path, "wave1")
+    first = store.upsert_with_stats(
+        [
+            {
+                "doc_id": "a",
+                "content": "alpha",
+                "embedding": [1.0, 0.0],
+                "source": "example.com",
+                "title": "Alpha",
+                "url": "https://example.com/a",
+                "published_at": datetime.now(tz=timezone.utc).isoformat(),
+                "team_tags": [],
+                "player_tags": [],
+            }
+        ]
+    )
+    second = store.upsert_with_stats(
+        [
+            {
+                "doc_id": "a",
+                "content": "alpha-updated",
+                "embedding": [1.0, 0.0],
+                "source": "example.com",
+                "title": "Alpha",
+                "url": "https://example.com/a",
+                "published_at": datetime.now(tz=timezone.utc).isoformat(),
+                "team_tags": [],
+                "player_tags": [],
+            },
+            {
+                "doc_id": "b",
+                "content": "beta",
+                "embedding": [0.0, 1.0],
+                "source": "example.com",
+                "title": "Beta",
+                "url": "https://example.com/b",
+                "published_at": datetime.now(tz=timezone.utc).isoformat(),
+                "team_tags": [],
+                "player_tags": [],
+            },
+        ]
+    )
+
+    assert first == {"processed": 1, "created": 1, "updated": 0}
+    assert second == {"processed": 2, "created": 1, "updated": 1}

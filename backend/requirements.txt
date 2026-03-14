@@ -36,6 +36,7 @@ apscheduler>=3.10.0
 
 # === Observability ===
 langfuse>=3.7.0
+prometheus-fastapi-instrumentator==7.0.0
 
 # === Utilities ===
 python-dotenv==1.0.1
@@ -47,3 +48,4 @@ urllib3<2  # Keep compatibility with local LibreSSL-linked Python runtimes
 # === Testing ===
 pytest==8.3.4
 pytest-asyncio==0.25.2
+pytest-cov==6.0.0

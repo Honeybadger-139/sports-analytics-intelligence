@@ -40,10 +40,14 @@ class ContextRetriever:
                 "docs_considered": 0,
                 "docs_used": 0,
                 "freshness_window_hours": max_age_hours,
+                "max_similarity": None,
             }
 
         query_embedding = self.embedding_client.embed_query(query_text)
         candidates = self.store.query(query_embedding=query_embedding, top_k=max(top_k * 3, top_k))
+        max_similarity = None
+        if candidates:
+            max_similarity = max(float(row.get("score") or 0.0) for row in candidates)
 
         freshness_cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=max_age_hours)
         filtered: List[Dict] = []
@@ -63,4 +67,5 @@ class ContextRetriever:
             "docs_considered": considered,
             "docs_used": len(filtered),
             "freshness_window_hours": max_age_hours,
+            "max_similarity": round(max_similarity, 4) if max_similarity is not None else None,
         }

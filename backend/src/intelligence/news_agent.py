@@ -84,7 +84,7 @@ def _extract_team_tags(text: str) -> List[str]:
 
 def _doc_id(*parts: str) -> str:
     payload = "||".join(parts)
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _host(url: str) -> str:
@@ -142,7 +142,7 @@ def parse_feed_content(xml_content: str, source_url: str, max_items: int = 40) -
         team_tags = _extract_team_tags(combined_text)
         player_tags: List[str] = []
 
-        doc_id = _doc_id(title or "untitled", link or source_url, published_at.isoformat())
+        doc_id = _doc_id(link or source_url, title or "untitled")
         documents.append(
             ContextDocument(
                 doc_id=doc_id,

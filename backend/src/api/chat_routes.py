@@ -12,7 +12,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -97,6 +97,19 @@ def _chunk_reply(reply: str, chunk_size: int = 24) -> List[str]:
     if not text_value:
         return []
     return [text_value[i : i + chunk_size] for i in range(0, len(text_value), chunk_size)]
+
+
+def _require_chat_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
+    if not config.CHAT_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat streaming is disabled until CHAT_API_KEY is configured.",
+        )
+    if x_api_key != config.CHAT_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-API-Key.",
+        )
 
 
 @router.get("/chat/health", response_model=ChatHealthResponse)
@@ -204,6 +217,7 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     payload: ChatRequest,
+    _auth: None = Depends(_require_chat_api_key),
     db: Session = Depends(get_db),
 ):
     """
