@@ -41,37 +41,38 @@ class _FakeDB:
         return _FakeEngine()
 
 
-def test_retrain_policy_queues_job_when_execute_mode(monkeypatch):
-    monkeypatch.setattr(retrain_policy_module, "find_recent_active_retrain_job", lambda *args, **kwargs: None)
+def test_retrain_policy_submits_vertex_pipeline_when_execute_mode(monkeypatch):
     monkeypatch.setattr(
         retrain_policy_module,
-        "create_retrain_job",
-        lambda *args, **kwargs: {"id": 101, "season": "2025-26", "status": "queued"},
+        "_submit_vertex_pipeline_job",
+        lambda **kwargs: {
+            "submitted": True,
+            "resource_name": "projects/p/models/123",
+            "display_name": "retrain-20260320-120000",
+            "project_id": "sports-analytics-intelligence",
+        },
     )
     monkeypatch.setattr(retrain_policy_module, "record_intelligence_audit", lambda *args, **kwargs: None)
 
     payload = retrain_policy_module.evaluate_retrain_need(_FakeDB(), "2025-26", dry_run=False)
     assert payload["should_retrain"] is True
-    assert payload["action"] == "queued-retrain"
-    assert payload["execution"]["duplicate_guard_triggered"] is False
-    assert payload["execution"]["retrain_job"]["id"] == 101
+    assert payload["action"] == "queue-retrain"
+    assert payload["execution"]["pipeline_job"]["submitted"] is True
+    assert payload["execution"]["pipeline_job"]["resource_name"] == "projects/p/models/123"
 
 
-def test_retrain_policy_duplicate_guard(monkeypatch):
-    monkeypatch.setattr(
-        retrain_policy_module,
-        "find_recent_active_retrain_job",
-        lambda *args, **kwargs: {"id": 88, "season": "2025-26", "status": "queued"},
-    )
-    monkeypatch.setattr(
-        retrain_policy_module,
-        "create_retrain_job",
-        lambda *args, **kwargs: {"id": 101, "season": "2025-26", "status": "queued"},
-    )
+def test_retrain_policy_dry_run_skips_submission(monkeypatch):
+    called = {"count": 0}
+
+    def _should_not_run(**kwargs):
+        called["count"] += 1
+        return {"submitted": True}
+
+    monkeypatch.setattr(retrain_policy_module, "_submit_vertex_pipeline_job", _should_not_run)
     monkeypatch.setattr(retrain_policy_module, "record_intelligence_audit", lambda *args, **kwargs: None)
 
-    payload = retrain_policy_module.evaluate_retrain_need(_FakeDB(), "2025-26", dry_run=False)
+    payload = retrain_policy_module.evaluate_retrain_need(_FakeDB(), "2025-26", dry_run=True)
     assert payload["should_retrain"] is True
-    assert payload["action"] == "already-queued"
-    assert payload["execution"]["duplicate_guard_triggered"] is True
-    assert payload["execution"]["retrain_job"]["id"] == 88
+    assert payload["action"] == "dry-run-noop"
+    assert payload["execution"]["pipeline_job"] is None
+    assert called["count"] == 0

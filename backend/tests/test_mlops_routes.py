@@ -125,6 +125,10 @@ class TestMlopsRoutes:
         assert payload["metrics"]["evaluated_predictions"] == 120
         assert "alerts" in payload
         assert "escalation" in payload
+        assert "feature_drift_score" in payload
+        assert "drift_detected" in payload
+        assert payload["drift_baseline_period"] == "30 days"
+        assert payload["drift_live_period"] == "7 days"
 
     def test_retrain_policy_dry_run(self):
         app.dependency_overrides[get_db] = _override_get_db
