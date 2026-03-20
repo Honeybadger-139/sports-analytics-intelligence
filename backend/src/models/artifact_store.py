@@ -47,6 +47,205 @@ ARTIFACT_RETENTION_COUNT: int = 3
 MODEL_NAMES = ("logistic_regression", "xgboost", "lightgbm", "ensemble_weights")
 
 
+def _latest_path(pattern: str) -> Optional[str]:
+    files = sorted(glob.glob(pattern))
+    if not files:
+        return None
+    return files[-1]
+
+
+def _gcs_project_id() -> Optional[str]:
+    return os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+
+
+def _gcs_bucket_name(bucket_name: Optional[str] = None) -> Optional[str]:
+    return bucket_name or os.getenv("GCS_MODELS_BUCKET")
+
+
+def upload_artifact_to_gcs(
+    local_path: str,
+    model_name: str,
+    timestamp: str,
+    bucket_name: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Upload a local artifact to GCS using the standard model artifact layout.
+    """
+    if not local_path or not os.path.exists(local_path):
+        logger.warning("[artifact_store] Local artifact missing, cannot upload: %s", local_path)
+        return None
+
+    bucket_name = _gcs_bucket_name(bucket_name)
+    if not bucket_name:
+        logger.warning("[artifact_store] GCS_MODELS_BUCKET not set; skipping upload for %s", local_path)
+        return None
+
+    try:
+        from google.cloud import storage
+
+        client = storage.Client(project=_gcs_project_id())
+        object_name = f"models/{model_name}/{timestamp}/{os.path.basename(local_path)}"
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(object_name)
+        blob.upload_from_filename(local_path)
+        gcs_uri = f"gs://{bucket_name}/{object_name}"
+        logger.info("[artifact_store] Uploaded %s → %s", local_path, gcs_uri)
+        return gcs_uri
+    except Exception as exc:
+        logger.warning(
+            "[artifact_store] Skipping GCS upload for %s (%s): %s",
+            model_name,
+            local_path,
+            exc,
+        )
+        return None
+
+
+def download_artifact_from_gcs(
+    model_name: str,
+    bucket_name: Optional[str],
+    local_dir: str,
+) -> Optional[str]:
+    """
+    Download the latest timestamped artifact bundle for a model from GCS.
+    """
+    bucket_name = _gcs_bucket_name(bucket_name)
+    if not bucket_name:
+        logger.warning("[artifact_store] GCS_MODELS_BUCKET not set; cannot download %s", model_name)
+        return None
+
+    try:
+        from google.cloud import storage
+
+        client = storage.Client(project=_gcs_project_id())
+        prefix = f"models/{model_name}/"
+        blobs = list(client.list_blobs(bucket_name, prefix=prefix))
+        if not blobs:
+            logger.warning("[artifact_store] No GCS artifacts found for %s in gs://%s", model_name, bucket_name)
+            return None
+
+        timestamps: Dict[str, List[Any]] = {}
+        for blob in blobs:
+            parts = blob.name.split("/")
+            if len(parts) < 4:
+                continue
+            timestamp = parts[2]
+            timestamps.setdefault(timestamp, []).append(blob)
+
+        if not timestamps:
+            logger.warning("[artifact_store] No timestamped GCS artifacts found for %s", model_name)
+            return None
+
+        latest_timestamp = max(timestamps.keys())
+        os.makedirs(local_dir, exist_ok=True)
+        downloaded_paths: List[str] = []
+        for blob in sorted(timestamps[latest_timestamp], key=lambda item: item.name):
+            local_path = os.path.join(local_dir, os.path.basename(blob.name))
+            blob.download_to_filename(local_path)
+            downloaded_paths.append(local_path)
+
+        preferred_path = next((path for path in downloaded_paths if path.endswith(".pkl")), None)
+        if preferred_path is None:
+            preferred_path = next((path for path in downloaded_paths if path.endswith(".json")), None)
+        if preferred_path is None and downloaded_paths:
+            preferred_path = downloaded_paths[0]
+
+        logger.info(
+            "[artifact_store] Downloaded %d artifacts for %s from gs://%s/%s",
+            len(downloaded_paths),
+            model_name,
+            bucket_name,
+            latest_timestamp,
+        )
+        return preferred_path
+    except Exception as exc:
+        logger.warning(
+            "[artifact_store] Skipping GCS download for %s from gs://%s: %s",
+            model_name,
+            bucket_name,
+            exc,
+        )
+        return None
+
+
+def get_latest_artifact_path(model_name: str, model_dir: str) -> Optional[str]:
+    """Return the newest saved pickle path for a model name."""
+    return _latest_path(os.path.join(model_dir, f"{model_name}_*.pkl"))
+
+
+def get_latest_version_info_path(model_dir: str) -> Optional[str]:
+    """Return the newest version-info JSON path."""
+    return _latest_path(os.path.join(model_dir, "version_info_*.json"))
+
+
+def export_to_onnx(model: Any, model_name: str, model_dir: str, timestamp: str) -> Optional[str]:
+    """
+    Best-effort export of a trained model to ONNX-compatible artifact storage.
+
+    This is intentionally non-blocking: if conversion fails or the dependency
+    stack is unavailable, we log a warning and continue training/serving.
+    """
+    if model_name.endswith("_calibrator") or model_name == "ensemble_weights":
+        return None
+
+    os.makedirs(model_dir, exist_ok=True)
+    target_path = os.path.join(model_dir, f"{model_name}_{timestamp}.onnx")
+
+    try:
+        if model_name == "xgboost" and hasattr(model, "save_model"):
+            model.save_model(target_path)
+            logger.info("📦 [artifact_store] Exported %s → %s", model_name, target_path)
+            return target_path
+
+        if model_name == "lightgbm":
+            booster = getattr(model, "booster_", None) or getattr(model, "booster", None)
+            if booster is not None and hasattr(booster, "save_model"):
+                booster.save_model(target_path)
+                logger.info("📦 [artifact_store] Exported %s → %s", model_name, target_path)
+                return target_path
+            if hasattr(model, "save_model"):
+                model.save_model(target_path)
+                logger.info("📦 [artifact_store] Exported %s → %s", model_name, target_path)
+                return target_path
+
+        try:
+            from skl2onnx import convert_sklearn
+            from skl2onnx.common.data_types import FloatTensorType
+        except Exception as exc:
+            raise RuntimeError(f"skl2onnx unavailable: {exc}") from exc
+
+        if hasattr(model, "named_steps"):
+            n_features = getattr(model, "n_features_in_", None)
+            if not n_features:
+                try:
+                    n_features = len(getattr(model, "feature_names_in_", [])) or None
+                except Exception:
+                    n_features = None
+            if not n_features:
+                n_features = 1
+            initial_types = [("input", FloatTensorType([None, int(n_features)]))]
+            onnx_model = convert_sklearn(model, initial_types=initial_types)
+            with open(target_path, "wb") as handle:
+                handle.write(onnx_model.SerializeToString())
+            logger.info("📦 [artifact_store] Exported %s → %s", model_name, target_path)
+            return target_path
+    except Exception as exc:
+        logger.warning(
+            "[artifact_store] ONNX export skipped for %s (%s): %s",
+            model_name,
+            type(model).__name__,
+            exc,
+        )
+        return None
+
+    logger.warning(
+        "[artifact_store] ONNX export not supported for %s (%s)",
+        model_name,
+        type(model).__name__,
+    )
+    return None
+
+
 def save_artifact(model: Any, model_name: str, model_dir: str, timestamp: str) -> str:
     """
     Save a model artifact with a dated filename.
@@ -67,6 +266,8 @@ def save_artifact(model: Any, model_name: str, model_dir: str, timestamp: str) -
     filepath = os.path.join(model_dir, filename)
     joblib.dump(model, filepath)
     logger.info("💾 [artifact_store] Saved %s → %s", model_name, filepath)
+    upload_artifact_to_gcs(filepath, model_name, timestamp, os.getenv("GCS_MODELS_BUCKET"))
+    export_to_onnx(model, model_name, model_dir, timestamp)
     return filepath
 
 

@@ -1,4 +1,7 @@
 import os
+import pathlib
+from typing import Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -8,11 +11,43 @@ load_dotenv()
 # 🌍 PROJECT CONFIGURATION
 # ==========================================
 
+def load_secret_from_manager(secret_id: str, project_id: Optional[str]) -> Optional[str]:
+    """Load a secret value from Google Secret Manager when running in GCP."""
+    if not project_id:
+        return None
+
+    try:
+        from google.cloud import secretmanager
+    except Exception:
+        return None
+
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        secret_name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+        response = client.access_secret_version(name=secret_name)
+        return response.payload.data.decode("utf-8")
+    except Exception:
+        return None
+
+
+def get_config_value(env_var: str, secret_id: Optional[str] = None, default: Optional[str] = None) -> Optional[str]:
+    """Read a config value from env first, then Secret Manager if available."""
+    value = os.getenv(env_var)
+    if value:
+        return value
+
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+    if secret_id and project_id:
+        value = load_secret_from_manager(secret_id, project_id)
+        if value:
+            os.environ[env_var] = value
+            return value
+
+    return default
+
+
 # Database
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://analyst:analytics2026@localhost:5432/sports_analytics",
-)
+DATABASE_URL = get_config_value("DATABASE_URL", "DATABASE_URL")
 
 # API Settings
 # We use a 2s delay because NBA.com is very sensitive to scraping.
@@ -25,8 +60,6 @@ BASE_BACKOFF = 10
 # Change this to pull different seasons (e.g., "2023-24")
 CURRENT_SEASON = "2025-26"
 
-# Directory Paths
-import pathlib
 _BACKEND_ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOG_DIR = _BACKEND_ROOT / "logs"
 MODEL_DIR = _BACKEND_ROOT / "models"
@@ -60,7 +93,7 @@ def _env_chat_engine(name: str = "CHAT_ENGINE", default: str = "legacy") -> str:
 
 # Intelligence (Phase 4)
 INTELLIGENCE_ENABLED = _env_bool("INTELLIGENCE_ENABLED", True)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = get_config_value("GEMINI_API_KEY", "GEMINI_API_KEY", "")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
 RAG_MAX_AGE_HOURS = int(os.getenv("RAG_MAX_AGE_HOURS", "120"))
 RAG_COLLECTION = os.getenv("RAG_COLLECTION", "nba_context_v1")
@@ -123,7 +156,7 @@ RAG_SCHEDULE_HOURS: list[int] = _env_int_list(
 # disabled and the chatbot continues to work normally.
 LANGFUSE_ENABLED: bool = _env_bool("LANGFUSE_ENABLED", False)
 LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
-LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_SECRET_KEY: str = get_config_value("LANGFUSE_SECRET_KEY", "LANGFUSE_SECRET_KEY", "") or ""
 LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 LANGFUSE_DEBUG: bool = _env_bool("LANGFUSE_DEBUG", False)
 LLM_FALLBACK_LOG_PATH = pathlib.Path(os.getenv("LLM_FALLBACK_LOG_PATH", str(LOG_DIR / "llm_calls.jsonl")))
@@ -136,6 +169,8 @@ CHAT_ENGINE: str = _env_chat_engine()
 CHAT_API_KEY: str = os.getenv("CHAT_API_KEY", "")
 CHAT_RATE_LIMIT: str = os.getenv("CHAT_RATE_LIMIT", "20/minute")
 SCRIBBLE_RATE_LIMIT: str = os.getenv("SCRIBBLE_RATE_LIMIT", "30/minute")
+
+PREFECT_API_KEY: str = get_config_value("PREFECT_API_KEY", "PREFECT_API_KEY", "") or ""
 
 # MLOps (Phase 5)
 MLOPS_ACCURACY_THRESHOLD = float(os.getenv("MLOPS_ACCURACY_THRESHOLD", "0.55"))

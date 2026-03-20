@@ -38,12 +38,14 @@ Architecture Decision: See docs/decisions/decision-log.md
 import os
 import json
 import logging
+import sys
 import joblib
 from datetime import datetime
 from typing import Dict, Tuple, Optional
 
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
@@ -90,6 +92,7 @@ FEATURE_COLUMNS = [
     "avg_efg_last_5",
     "h2h_win_pct",
     "h2h_avg_margin",
+    "h2h_data_available",
     "current_streak",
     # Opponent features (prefixed with opp_)
     "opp_win_pct_last_5",
@@ -105,12 +108,54 @@ FEATURE_COLUMNS = [
 ]
 
 
+def _impute_training_features(df: pd.DataFrame, season: Optional[str] = None) -> pd.DataFrame:
+    """Apply domain-aware imputation rules to training features."""
+    df = df.copy()
+    season_source = df if season is None or "season" not in df.columns else df[df["season"] == season]
+
+    if "h2h_win_pct" in df.columns:
+        df["h2h_data_available"] = df["h2h_win_pct"].notna().astype(int)
+    else:
+        df["h2h_data_available"] = 0
+
+    median_impute_columns = {
+        "avg_off_rating_last_5",
+        "avg_def_rating_last_5",
+        "opp_avg_off_rating_last_5",
+        "opp_avg_def_rating_last_5",
+    }
+
+    for col in FEATURE_COLUMNS:
+        if col not in df.columns:
+            continue
+
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if col == "h2h_win_pct":
+            df[col] = df[col].fillna(0.5)
+        elif col == "h2h_avg_margin":
+            df[col] = df[col].fillna(-0.5)
+        elif col in median_impute_columns:
+            median_series = pd.to_numeric(season_source[col], errors="coerce") if col in season_source.columns else pd.Series(dtype=float)
+            median_value = median_series.median()
+            if pd.isna(median_value):
+                median_value = 0.0
+            df[col] = df[col].fillna(float(median_value))
+        elif col != "h2h_data_available":
+            df[col] = df[col].fillna(0)
+
+    df["h2h_data_available"] = pd.to_numeric(
+        df["h2h_data_available"], errors="coerce"
+    ).fillna(0).astype(int)
+
+    return df
+
+
 def get_engine():
     """Create SQLAlchemy engine."""
-    database_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://analyst:analytics2026@localhost:5432/sports_analytics",
-    )
+    database_url = config.DATABASE_URL or os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set")
     return create_engine(database_url)
 
 
@@ -161,6 +206,7 @@ def load_training_dataset(
             hf.avg_efg_last_5,
             hf.h2h_win_pct,
             hf.h2h_avg_margin,
+            CASE WHEN hf.h2h_win_pct IS NOT NULL THEN 1 ELSE 0 END as h2h_data_available,
             hf.current_streak,
             -- Away team features (prefixed opp_)
             af.win_pct_last_5 as opp_win_pct_last_5,
@@ -190,13 +236,8 @@ def load_training_dataset(
 
     logger.info(f"   Loaded {len(df)} games with features")
 
-    # Handle NaN values
-    df = df.fillna(0)
-
-    # Convert numeric columns
-    for col in FEATURE_COLUMNS:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    # Apply domain-aware imputation instead of blanket fillna(0)
+    df = _impute_training_features(df, season=season)
 
     if not df.empty:
         df["game_date"] = pd.to_datetime(df["game_date"])
@@ -649,10 +690,28 @@ def run_training_pipeline(
         logger.warning("⚠️  Skipping calibration — no validation data available.")
         metadata["calibration"] = {}
 
-    # Step 5: Save models (Wave 3 — versioned artifacts via artifact_store)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    from src.models.artifact_store import save_artifact, purge_old_artifacts
+    from src.models.artifact_store import save_artifact, purge_old_artifacts, upload_artifact_to_gcs
 
+    version_info = {
+        "python": sys.version,
+        "sklearn": sklearn.__version__,
+        "xgboost": xgb.__version__,
+        "lightgbm": lgb.__version__,
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "trained_at": timestamp,
+        "feature_columns": FEATURE_COLUMNS,
+    }
+    metadata["library_versions"] = version_info
+
+    version_info_path = os.path.join(MODEL_DIR, f"version_info_{timestamp}.json")
+    with open(version_info_path, "w", encoding="utf-8") as handle:
+        json.dump(version_info, handle, indent=2)
+    logger.info("   🧾 Saved version metadata → %s", version_info_path)
+    upload_artifact_to_gcs(version_info_path, "version_info", timestamp, os.getenv("GCS_MODELS_BUCKET"))
+
+    # Step 5: Save models (Wave 3 — versioned artifacts via artifact_store)
     for model_result in all_models:
         model_name = model_result["name"].lower().replace(" ", "_")
         filepath = save_artifact(model_result["model"], model_name, MODEL_DIR, timestamp)
@@ -674,6 +733,7 @@ def run_training_pipeline(
     with open(metadata_path, "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
     logger.info("   🧾 Saved training metadata → %s", metadata_path)
+    upload_artifact_to_gcs(metadata_path, "training_metadata", timestamp, os.getenv("GCS_MODELS_BUCKET"))
 
     # Step 5: Comparison report
     logger.info("\n" + "=" * 60)

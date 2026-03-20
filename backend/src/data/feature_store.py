@@ -48,6 +48,7 @@ import os
 import json
 import time
 from datetime import datetime
+import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
@@ -130,6 +131,203 @@ def record_audit(engine, module: str, status: str, processed: int = 0, inserted:
 def get_engine():
     """Create SQLAlchemy engine from centralized config."""
     return create_engine(config.DATABASE_URL)
+
+
+def ensure_h2h_data_available_column(engine):
+    """Add the H2H availability flag column if the table is behind the code."""
+    if not hasattr(engine, "begin"):
+        logger.warning(
+            json.dumps(
+                {
+                    "schema_update": "skipped",
+                    "reason": "engine_missing_begin",
+                    "table": "match_features",
+                },
+                default=str,
+            )
+        )
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            ALTER TABLE match_features
+            ADD COLUMN IF NOT EXISTS h2h_data_available INTEGER DEFAULT 0
+        """))
+
+
+def validate_raw_data(engine, seasons):
+    """
+    Validate raw tables before computing features.
+
+    Returns a summary dict when validation passes. On failure, logs a
+    structured error payload, writes a validation audit row, and raises.
+    """
+    if not seasons:
+        seasons = [config.CURRENT_SEASON]
+
+    if not hasattr(engine, "connect"):
+        payload = {
+            "validation": "skipped",
+            "reason": "engine_missing_connect",
+            "seasons": seasons,
+        }
+        logger.warning(json.dumps(payload, default=str))
+        return payload
+
+    season_stats = []
+    failures = []
+    current_date = datetime.utcnow().date()
+
+    with engine.connect() as conn:
+        for season in seasons:
+            match_count = int(conn.execute(
+                text("""
+                    SELECT COUNT(*)
+                    FROM matches
+                    WHERE season = :season
+                """),
+                {"season": season},
+            ).scalar() or 0)
+
+            team_stats_count = int(conn.execute(
+                text("""
+                    SELECT COUNT(*)
+                    FROM team_game_stats tgs
+                    JOIN matches m ON m.game_id = tgs.game_id
+                    WHERE m.season = :season
+                """),
+                {"season": season},
+            ).scalar() or 0)
+
+            max_game_date = conn.execute(
+                text("""
+                    SELECT MAX(m.game_date)
+                    FROM matches m
+                    WHERE m.season = :season
+                """),
+                {"season": season},
+            ).scalar()
+
+            null_counts = {
+                "game_date": int(conn.execute(
+                    text("""
+                        SELECT COUNT(*)
+                        FROM matches
+                        WHERE season = :season AND game_date IS NULL
+                    """),
+                    {"season": season},
+                ).scalar() or 0),
+                "home_team_id": int(conn.execute(
+                    text("""
+                        SELECT COUNT(*)
+                        FROM matches
+                        WHERE season = :season AND home_team_id IS NULL
+                    """),
+                    {"season": season},
+                ).scalar() or 0),
+                "away_team_id": int(conn.execute(
+                    text("""
+                        SELECT COUNT(*)
+                        FROM matches
+                        WHERE season = :season AND away_team_id IS NULL
+                    """),
+                    {"season": season},
+                ).scalar() or 0),
+                "points": int(conn.execute(
+                    text("""
+                        SELECT COUNT(*)
+                        FROM team_game_stats tgs
+                        JOIN matches m ON m.game_id = tgs.game_id
+                        WHERE m.season = :season AND tgs.points IS NULL
+                    """),
+                    {"season": season},
+                ).scalar() or 0),
+            }
+
+            season_stats.append(
+                {
+                    "season": season,
+                    "matches": match_count,
+                    "team_game_stats": team_stats_count,
+                    "max_game_date": max_game_date.isoformat() if max_game_date else None,
+                    "null_counts": null_counts,
+                }
+            )
+
+            if match_count < 10:
+                failures.append({
+                    "reason": "not_enough_matches",
+                    "value": {"season": season, "matches": match_count},
+                })
+
+            match_denominator = match_count or 1
+            team_stats_denominator = team_stats_count or 1
+            null_rates = {
+                "game_date": null_counts["game_date"] / match_denominator,
+                "home_team_id": null_counts["home_team_id"] / match_denominator,
+                "away_team_id": null_counts["away_team_id"] / match_denominator,
+                "points": null_counts["points"] / team_stats_denominator,
+            }
+            for column_name, null_rate in null_rates.items():
+                if null_rate > 0.15:
+                    failures.append({
+                        "reason": "critical_null_rate_exceeded",
+                        "value": {
+                            "season": season,
+                            "column": column_name,
+                            "null_rate": round(null_rate, 4),
+                        },
+                    })
+
+            if max_game_date is None:
+                failures.append({
+                    "reason": "stale_or_missing_game_date",
+                    "value": {"season": season, "max_game_date": None},
+                })
+            else:
+                max_game_dt = pd.to_datetime(max_game_date).date()
+                if (current_date - max_game_dt).days > 7:
+                    failures.append({
+                        "reason": "stale_game_data",
+                        "value": {
+                            "season": season,
+                            "max_game_date": max_game_dt.isoformat(),
+                            "days_old": (current_date - max_game_dt).days,
+                        },
+                    })
+
+    if failures:
+        payload = {
+            "validation": "failed",
+            "reason": failures[0]["reason"],
+            "value": {
+                "season_stats": season_stats,
+                "failures": failures,
+            },
+        }
+        logger.error(json.dumps(payload, default=str))
+        record_audit(
+            engine,
+            module="feature_store",
+            status="validation_failed",
+            processed=season_stats[0]["matches"] if season_stats else 0,
+            inserted=season_stats[0]["team_game_stats"] if season_stats else 0,
+            errors=failures[0]["reason"],
+            details=payload["value"],
+        )
+        raise ValueError(f"Raw data validation failed: {failures[0]['reason']}")
+
+    payload = {
+        "validation": "passed",
+        "matches": sum(item["matches"] for item in season_stats),
+        "max_date": max(
+            (item["max_game_date"] for item in season_stats if item["max_game_date"]),
+            default=None,
+        ),
+        "seasons": seasons,
+    }
+    logger.info(json.dumps(payload, default=str))
+    return payload
 
 
 def compute_features(engine, season: str = "2025-26"):
@@ -286,6 +484,7 @@ def compute_features(engine, season: str = "2025-26"):
                 is_home, days_rest, is_back_to_back,
                 avg_off_rating_last_5, avg_def_rating_last_5,
                 avg_pace_last_5, avg_efg_last_5,
+                h2h_data_available,
                 current_streak
             )
             SELECT 
@@ -302,6 +501,7 @@ def compute_features(engine, season: str = "2025-26"):
                 ROUND(rf.avg_def_rating_last_5::numeric, 2),
                 ROUND(rf.avg_pace_last_5::numeric, 2),
                 ROUND(rf.avg_efg_last_5::numeric, 3),
+                0,
                 0  -- Streak calculation done separately for simplicity
             FROM rolling_features rf
             WHERE rf.game_num > 5  -- Need at least 5 games to compute rolling features
@@ -316,7 +516,8 @@ def compute_features(engine, season: str = "2025-26"):
                 avg_off_rating_last_5 = EXCLUDED.avg_off_rating_last_5,
                 avg_def_rating_last_5 = EXCLUDED.avg_def_rating_last_5,
                 avg_pace_last_5 = EXCLUDED.avg_pace_last_5,
-                avg_efg_last_5 = EXCLUDED.avg_efg_last_5
+                avg_efg_last_5 = EXCLUDED.avg_efg_last_5,
+                h2h_data_available = EXCLUDED.h2h_data_available
         """), {"season": season})
     
     # Count features created
@@ -369,7 +570,8 @@ def compute_h2h_features(engine, season: str = "2025-26"):
             )
             UPDATE match_features mf SET
                 h2h_win_pct = sub.h2h_win_pct,
-                h2h_avg_margin = sub.h2h_avg_margin
+                h2h_avg_margin = sub.h2h_avg_margin,
+                h2h_data_available = CASE WHEN sub.h2h_win_pct IS NOT NULL THEN 1 ELSE 0 END
             FROM (
                 SELECT 
                     h.game_id,
@@ -507,6 +709,8 @@ def run_feature_engineering(seasons: list = None):
         seasons = ["2025-26"]
     
     engine = get_engine()
+    validation_summary = validate_raw_data(engine, seasons)
+    ensure_h2h_data_available_column(engine)
     
     logger.info("=" * 60)
     logger.info("⚙️ STARTING FEATURE ENGINEERING PIPELINE")
@@ -518,7 +722,7 @@ def run_feature_engineering(seasons: list = None):
     
     try:
         # Default to current season if not specified
-        season = config.CURRENT_SEASON
+        season = seasons[0] if seasons else config.CURRENT_SEASON
         record_count = compute_features(engine, season=season)
         compute_h2h_features(engine, season=season)
         compute_streak_features(engine, season=season)
@@ -537,6 +741,7 @@ def run_feature_engineering(seasons: list = None):
                 "elapsed_seconds": round(elapsed, 2),
                 "h2h_features_updated": True,
                 "streak_features_updated": True,
+                "validation": validation_summary,
             }
         )
         

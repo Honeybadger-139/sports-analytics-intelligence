@@ -19,13 +19,16 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from src.logging_setup import configure_logging, trace_id_var
+from src.data.db import get_db
 from src.rate_limit import (
     RateLimitExceeded,
     _rate_limit_exceeded_handler,
@@ -36,6 +39,14 @@ from src.rate_limit import (
 configure_logging()
 
 logger = logging.getLogger(__name__)
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5174,http://localhost:3000")
+ALLOWED_ORIGINS = [origin.strip() for origin in _raw_origins.split(",") if origin.strip()]
+EMBEDDED_SCHEDULER_ENABLED = os.getenv("EMBEDDED_SCHEDULER_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def _configure_metrics(app: FastAPI) -> None:
@@ -68,7 +79,6 @@ async def lifespan(app: FastAPI):
     Shutdown:
         Gracefully stops the scheduler so in-flight pipeline jobs can finish.
     """
-    from scheduler import create_scheduler
     from src.intelligence.langfuse_client import init_langfuse
 
     # ── Wave 3: Run Alembic migrations on startup ─────────────────────────────
@@ -98,10 +108,33 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("📊 [lifespan] Langfuse observability disabled (set LANGFUSE_* keys to enable).")
 
-    # Start the daily ingestion scheduler
-    scheduler = create_scheduler()
-    scheduler.start()
-    logger.info("⏰ [lifespan] Daily pipeline scheduler started.")
+    scheduler = None
+    if EMBEDDED_SCHEDULER_ENABLED:
+        # Start the daily ingestion scheduler only in local/dev mode.
+        from scheduler import create_scheduler
+
+        scheduler = create_scheduler()
+        scheduler.start()
+        logger.info("⏰ [lifespan] Daily pipeline scheduler started.")
+    else:
+        logger.info("⏰ [lifespan] Scheduler disabled - using Cloud Run Jobs in production.")
+
+    try:
+        from src.api.routes import get_predictor
+        import pandas as pd
+
+        warmup_started = time.perf_counter()
+        predictor = get_predictor()
+        feature_columns = predictor.feature_columns or []
+        if feature_columns:
+            dummy_features = pd.DataFrame([[0.0] * len(feature_columns)], columns=feature_columns)
+            predictor.predict_game(dummy_features)
+            warmup_ms = round((time.perf_counter() - warmup_started) * 1000, 2)
+            logger.info("🔥 [lifespan] Model warm-up complete in %sms", warmup_ms)
+        else:
+            logger.warning("⚠️ [lifespan] Skipping model warm-up — feature columns unavailable.")
+    except Exception as exc:
+        logger.warning("⚠️ [lifespan] Model warm-up failed (non-fatal): %s", exc)
 
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -123,11 +156,13 @@ async def lifespan(app: FastAPI):
             pass
 
     try:
-        job_state = [job.id for job in scheduler.get_jobs()]
-        scheduler.shutdown(wait=True)
-        logger.info("🛑 [lifespan] Daily pipeline scheduler stopped. final_jobs=%s", job_state)
-    except Exception as exc:
-        logger.warning("🛑 [lifespan] Scheduler shutdown encountered an issue: %s", exc)
+        if scheduler is not None:
+            try:
+                job_state = [job.id for job in scheduler.get_jobs()]
+                scheduler.shutdown(wait=True)
+                logger.info("🛑 [lifespan] Daily pipeline scheduler stopped. final_jobs=%s", job_state)
+            except Exception as exc:
+                logger.warning("🛑 [lifespan] Scheduler shutdown encountered an issue: %s", exc)
     finally:
         signal.signal(signal.SIGTERM, previous_sigterm)
 
@@ -149,7 +184,7 @@ if rate_limit_available and RateLimitExceeded is not None and _rate_limit_exceed
 # CORS middleware — allows the HTML frontend to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to your frontend domain
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -179,6 +214,35 @@ async def add_trace_context(request: Request, call_next):
             },
         )
         trace_id_var.reset(token)
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"status": "ok"}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        from src.api.routes import get_predictor
+
+        predictor = get_predictor()
+        models_loaded = bool(getattr(predictor, "models", {}))
+        if not models_loaded:
+            raise RuntimeError("Predictor models are not loaded")
+        return {"status": "ready", "db": "ok", "models_loaded": True}
+    except Exception as exc:
+        logger.warning("⚠️ [readyz] readiness check failed: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "db": "error",
+                "models_loaded": False,
+                "error": str(exc),
+            },
+        )
 
 # Include API routes
 from src.api.routes import router

@@ -11,16 +11,32 @@ Architecture Decision:
 """
 
 import os
+from urllib.parse import urlparse
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 
+from src import config
+
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://analyst:analytics2026@localhost:5432/sports_analytics"
-)
+RAW_DATABASE_URL = config.DATABASE_URL or os.getenv("DATABASE_URL")
+if not RAW_DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
+
+# Cloud Run talks to Cloud SQL through the Cloud SQL Auth Proxy / Unix socket.
+# Production DATABASE_URL values already include the socket path in the
+# `host=` query parameter, so we keep the URL as-is when we detect that shape
+# and only fall back to the local development URL when no Cloud SQL host is set.
+def _resolve_database_url(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    if parsed.scheme.startswith("postgresql") and "cloudsql" in database_url:
+        return database_url
+    return database_url
+
+
+DATABASE_URL = _resolve_database_url(RAW_DATABASE_URL)
 
 # Create engine with connection pooling
 engine = create_engine(
