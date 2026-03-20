@@ -37,6 +37,30 @@
 | 8 | **GCS-backed model artifacts with local-first load** | Local disk only, DB blob storage, artifactless retrain-only model | Local-first keeps startup fast while GCS fallback makes container restarts resilient and model persistence durable. | Bucket dependency and additional artifact IO code | "I designed artifact loading for stateless containers: fast local path, durable remote fallback." |
 | 9 | **Secret Manager for production credentials** | `.env` in images, hardcoded config, custom vault bootstrap | Managed secrets reduce credential leakage risk and align with Cloud Run/GCP-native operational practices while keeping `.env` for local dev. | Additional secret-resolution bootstrap code | "I split local convenience from production security by resolving secrets from Secret Manager in cloud runtimes." |
 
+## Phase 3 Decisions
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------|
+| 1 | **Pub/Sub push subscription for ingestion handoff** | Pull subscribers, polling loops, direct scheduler chaining | Push gives low-latency event delivery and removes polling complexity between ingestion completion and orchestration trigger. | Requires resilient HTTP bridge behavior and idempotent handling | "I used push delivery so feature orchestration reacts to ingestion completion immediately without polling." |
+| 2 | **Dedicated Pub/Sub → Prefect bridge service** | Trigger Prefect directly from ingestion job, embed trigger logic into ingestion container | Keeps ingestion concerns separate from orchestration concerns; bridge handles message contract validation and trigger policy safely. | Extra service to deploy/monitor | "I decoupled event ingestion from orchestration submission with a thin bridge so each component stays single-purpose." |
+| 3 | **Prefect task orchestration for feature engineering** | Single cron script, Cloud Run Job-only orchestration, custom retry wrappers | Task-level retries, clearer run observability, and cleaner control flow while preserving existing SQL feature math in `feature_store.py`. | More orchestration code and deployment metadata | "I wrapped feature engineering in Prefect tasks so failures are isolated and retryable without rewriting the core feature logic." |
+
+## Phase 4 Decisions
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------|
+| 1 | **Vertex AI Experiments for training run tracking** | MLflow self-hosted, Weights & Biases free tier, ad-hoc JSON logs | Keeps experiments native to the GCP stack and ties run metadata/metrics to the same cloud platform used for deployment. | Tighter coupling to GCP services | "I chose Vertex Experiments so model training telemetry is first-class in the same platform as deployment and governance." |
+| 2 | **Vertex Model Registry + alias-based serving controls** | Raw GCS path pinning, manual version number mapping, local-only artifacts | Aliases (`production`, `staging`, `champion`) make promotion and rollback operationally safer than hardcoded version IDs. | More registry/alias lifecycle logic to maintain | "I use alias-driven model promotion so rollback is a metadata change, not a redeploy." |
+| 3 | **Vertex AI Pipelines for retrain governance** | Queue + worker loop, cron scripts, Prefect-only retrain chain | KFP/Vertex pipelines provide explicit component stages, policy-driven champion/challenger checks, and auditable promotion flow. | More pipeline definition/compile/deploy machinery | "I moved retraining to a governed pipeline where promotion rules are encoded and traceable step-by-step." |
+
+## Phase 5 Decisions
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------|
+| 1 | **Cloud Monitoring custom metrics + alert policies for MLOps signals** | Prometheus + self-hosted Grafana only, log-based checks only, no custom metrics | GCP-native metrics keep alerting managed, reduce ops burden, and align with Cloud Run/Vertex workloads already on GCP. Custom metrics expose ML-specific health (`prediction_confidence`, `data_freshness_hours`, `model_accuracy`, `feature_null_rate`) that infra metrics alone cannot show. | Vendor coupling to Cloud Monitoring and extra metric-cost considerations at scale | "I pushed model/pipeline telemetry into first-class cloud metrics so SRE alerting can reason about ML health, not just CPU and memory." |
+| 2 | **Looker Studio dashboards as BI visibility layer (spec-first)** | Build custom dashboard UI code, Grafana-only dashboarding, ad hoc SQL notebooks | Looker Studio gives quick stakeholder-ready dashboard delivery on top of Cloud SQL/BigQuery without adding frontend maintenance burden. A spec-first approach keeps implementation repeatable and reviewable before manual UI build. | Less custom interactivity than bespoke frontend visualizations | "I used a BI-first approach for reporting so we can ship decision-grade dashboards quickly while keeping the product frontend focused on prediction workflows." |
+| 3 | **KL divergence for prediction-distribution drift detection** | PSI (Population Stability Index), KS/MMD tests, accuracy-only monitoring | KL divergence is simple to implement, interpretable as a distance between probability distributions, and works as an early warning signal before realized-label accuracy drifts. A symmetric KL with 10 bins provides stable operational monitoring with a practical threshold (`> 0.1`). | Histogram/bin choices affect sensitivity and require periodic tuning | "I monitor distribution drift as a leading indicator. Accuracy is lagging because labels arrive later; KL gives an earlier signal for retrain investigation." |
+
 ---
 
 ## Infrastructure Decisions
