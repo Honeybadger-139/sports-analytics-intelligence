@@ -1,0 +1,26 @@
+# Cloud Scheduler spec for the weekly Vertex AI retrain trigger.
+#
+# Target: Vertex AI Pipeline API
+# Purpose: launch the compiled retrain pipeline on a weekly cadence so the
+# champion/challenger cycle stays explicit and auditable.
+
+name: trigger-retrain-weekly
+schedule: "0 3 * * 0"
+timeZone: "UTC"
+description: "Weekly retrain trigger for the NBA model pipeline"
+target:
+  type: vertex-ai-pipeline
+  pipelineJob:
+    displayName: "nba-retrain-weekly"
+    templatePath: "gs://gamethread-models/pipelines/retrain_pipeline.json"
+    pipelineRoot: "gs://gamethread-models/pipelines"
+    parameterValues:
+      season: "2025-26"
+      trigger_reason: "scheduled_weekly"
+      min_improvement: 0.01
+retryPolicy:
+  maxRetries: 3
+  minBackoffDuration: "5m"
+auth:
+  type: OIDC
+  serviceAccount: "scheduler-trigger@sports-analytics-intelligence.iam.gserviceaccount.com"
