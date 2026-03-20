@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-rag.txt .
+RUN pip install --no-cache-dir -r requirements-rag.txt
+
+COPY src/ ./src/
+COPY scheduler.py .
+COPY pipeline/run_rag_refresh.py ./run_rag_refresh.py
+
+CMD ["python", "run_rag_refresh.py"]

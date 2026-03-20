@@ -1,0 +1,15 @@
+# === Minimal Cloud Run ingestion job runtime ===
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.1
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==15.0.2
+nba_api==1.5.2
+google-cloud-storage==2.18.2
+google-cloud-pubsub==2.27.0
+google-cloud-secret-manager==2.22.0
+python-dotenv==1.0.1
+pyyaml==6.0.2
+requests==2.32.3
+httpx==0.28.1
