@@ -41,7 +41,7 @@ import logging
 import sys
 import joblib
 from datetime import datetime
-from typing import Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -595,6 +595,125 @@ def _validation_summary(models: list, ensemble_results: Dict, validation_X: pd.D
     return summary
 
 
+def _flatten_numeric_metrics(prefix: str, value: Any, output: Dict[str, float]) -> None:
+    if isinstance(value, dict):
+        for key, nested_value in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            _flatten_numeric_metrics(child_prefix, nested_value, output)
+        return
+
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        output[prefix] = float(value)
+
+
+def _extract_model_params(model: Any) -> Dict[str, Any]:
+    if hasattr(model, "get_params"):
+        try:
+            return dict(model.get_params(deep=False))
+        except Exception:
+            return {}
+    return {}
+
+
+def log_training_run_to_vertex(results: Dict[str, Any], metadata: Dict[str, Any], timestamp: str) -> None:
+    """
+    Best-effort Vertex AI Experiments logging.
+
+    This function is intentionally non-blocking. If the Google Cloud project is
+    unset or the Vertex SDK is unavailable, we skip logging silently so local
+    training stays frictionless.
+    """
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+    if not project_id:
+        return
+
+    try:
+        from google.cloud import aiplatform
+    except Exception as exc:
+        logger.warning("Skipping Vertex AI experiment logging because aiplatform is unavailable: %s", exc)
+        return
+
+    location = (
+        os.getenv("VERTEX_AI_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_REGION")
+        or os.getenv("REGION")
+        or "us-central1"
+    )
+    experiment_name = "nba-game-predictions"
+    season = str(metadata.get("season") or metadata.get("validation_season") or "unknown")
+    run_name = f"run-{timestamp}-{season}"
+
+    params: Dict[str, Any] = {
+        "season": season,
+        "validation_season": metadata.get("validation_season") or "",
+        "cutoff_date": metadata.get("cutoff_date") or "",
+        "training_games": int(metadata.get("training_games", 0) or 0),
+        "validation_games": int(metadata.get("validation_games", 0) or 0),
+        "cv_splits": 5,
+        "feature_count": len(FEATURE_COLUMNS),
+    }
+
+    lr_model = results.get("logistic_regression", {}).get("model")
+    xgb_model = results.get("xgboost", {}).get("model")
+    lgb_model = results.get("lightgbm", {}).get("model")
+
+    xgb_params = _extract_model_params(xgb_model)
+    lgb_params = _extract_model_params(lgb_model)
+    lr_params = _extract_model_params(lr_model)
+
+    params.update(
+        {
+            "n_estimators": int(xgb_params.get("n_estimators", lgb_params.get("n_estimators", 200)) or 200),
+            "max_depth": int(xgb_params.get("max_depth", lgb_params.get("max_depth", 5)) or 5),
+            "learning_rate": float(xgb_params.get("learning_rate", lgb_params.get("learning_rate", 0.1)) or 0.1),
+            "xgboost_n_estimators": int(xgb_params.get("n_estimators", 200) or 200),
+            "xgboost_max_depth": int(xgb_params.get("max_depth", 5) or 5),
+            "xgboost_learning_rate": float(xgb_params.get("learning_rate", 0.1) or 0.1),
+            "lightgbm_n_estimators": int(lgb_params.get("n_estimators", 200) or 200),
+            "lightgbm_max_depth": int(lgb_params.get("max_depth", 5) or 5),
+            "lightgbm_learning_rate": float(lgb_params.get("learning_rate", 0.1) or 0.1),
+            "logistic_regression_C": float(lr_params.get("C", 1.0) or 1.0),
+        }
+    )
+
+    metrics: Dict[str, float] = {}
+    for model_key in ("logistic_regression", "xgboost", "lightgbm", "ensemble"):
+        model_result = results.get(model_key, {})
+        for metric_key in ("cv_accuracy", "cv_auc", "train_accuracy", "train_auc", "brier_score", "log_loss"):
+            value = model_result.get(metric_key)
+            if isinstance(value, (int, float, np.integer, np.floating)):
+                metrics[f"{model_key}.{metric_key}"] = float(value)
+
+    validation_summary = metadata.get("validation_summary")
+    if isinstance(validation_summary, dict):
+        _flatten_numeric_metrics("validation", validation_summary, metrics)
+
+    calibration = metadata.get("calibration")
+    if isinstance(calibration, dict):
+        _flatten_numeric_metrics("calibration", calibration, metrics)
+
+    try:
+        aiplatform.init(project=project_id, location=location, experiment=experiment_name)
+        aiplatform.start_run(run=run_name, resume=True)
+        aiplatform.log_params(params)
+        if metrics:
+            aiplatform.log_metrics(metrics)
+        aiplatform.end_run()
+        logger.info(
+            "📈 Logged Vertex AI experiment run %s for season=%s in project=%s location=%s",
+            run_name,
+            season,
+            project_id,
+            location,
+        )
+    except Exception as exc:
+        logger.warning("Vertex AI experiment logging skipped (non-fatal): %s", exc)
+        try:
+            aiplatform.end_run()
+        except Exception:
+            pass
+
+
 def run_training_pipeline(
     season: Optional[str] = "2024-25",
     *,
@@ -691,7 +810,13 @@ def run_training_pipeline(
         metadata["calibration"] = {}
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    from src.models.artifact_store import save_artifact, purge_old_artifacts, upload_artifact_to_gcs
+    from src.models.artifact_store import (
+        save_artifact,
+        purge_old_artifacts,
+        upload_artifact_to_gcs,
+        register_model_in_vertex,
+        set_model_alias,
+    )
 
     version_info = {
         "python": sys.version,
@@ -711,12 +836,37 @@ def run_training_pipeline(
     logger.info("   🧾 Saved version metadata → %s", version_info_path)
     upload_artifact_to_gcs(version_info_path, "version_info", timestamp, os.getenv("GCS_MODELS_BUCKET"))
 
+    bucket_name = os.getenv("GCS_MODELS_BUCKET")
+    vertex_project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+    vertex_location = os.getenv("VERTEX_MODEL_LOCATION") or os.getenv("VERTEX_AI_LOCATION") or "us-central1"
+    vertex_alias = os.getenv("VERTEX_MODEL_ALIAS")
+
     # Step 5: Save models (Wave 3 — versioned artifacts via artifact_store)
     for model_result in all_models:
         model_name = model_result["name"].lower().replace(" ", "_")
         filepath = save_artifact(model_result["model"], model_name, MODEL_DIR, timestamp)
         logger.info(f"   💾 Saved {model_result['name']} → {filepath}")
         purge_old_artifacts(model_name, MODEL_DIR)
+
+        # Register model versions in Vertex when cloud context is configured.
+        if bucket_name and vertex_project_id:
+            gcs_uri = (
+                f"gs://{bucket_name}/models/{model_name}/{timestamp}/{os.path.basename(filepath)}"
+            )
+            model_resource_name = register_model_in_vertex(
+                model_name=model_name,
+                gcs_artifact_uri=gcs_uri,
+                metrics={
+                    "season": season or "unknown",
+                    "accuracy": model_result.get("cv_accuracy"),
+                    "cv_accuracy": model_result.get("cv_accuracy"),
+                    "brier_score": model_result.get("brier_score"),
+                },
+                project_id=vertex_project_id,
+                location=vertex_location,
+            )
+            if model_resource_name and vertex_alias:
+                set_model_alias(model_resource_name, vertex_alias, vertex_project_id)
 
         # Save calibrator alongside the model if available
         cal = model_result.get("calibrator")
@@ -729,11 +879,42 @@ def run_training_pipeline(
     from src.models.artifact_store import save_artifact as _save
     ensemble_filepath = _save(ensemble_results["weights"], "ensemble_weights", MODEL_DIR, timestamp)
     purge_old_artifacts("ensemble_weights", MODEL_DIR)
+
+    # Save and register a bundled ensemble artifact for alias-based serving.
+    bundle_model_name = os.getenv("VERTEX_MODEL_NAME", "nba-ensemble")
+    bundle_local_path = os.path.join(MODEL_DIR, f"{bundle_model_name}_{timestamp}.joblib")
+    joblib.dump(
+        {
+            "logistic_regression": lr_results["model"],
+            "xgboost": xgb_results["model"],
+            "lightgbm": lgb_results["model"],
+            "weights": ensemble_results["weights"],
+            "feature_columns": FEATURE_COLUMNS,
+        },
+        bundle_local_path,
+    )
+    logger.info("   💾 Saved bundled ensemble artifact → %s", bundle_local_path)
+    gcs_bundle_uri = upload_artifact_to_gcs(bundle_local_path, bundle_model_name, timestamp, bucket_name)
+    if gcs_bundle_uri and vertex_project_id:
+        bundle_resource = register_model_in_vertex(
+            model_name=bundle_model_name,
+            gcs_artifact_uri=gcs_bundle_uri,
+            metrics={
+                "season": season or "unknown",
+                "accuracy": ensemble_results.get("train_accuracy"),
+                "cv_accuracy": ensemble_results.get("train_accuracy"),
+                "brier_score": ensemble_results.get("brier_score"),
+            },
+            project_id=vertex_project_id,
+            location=vertex_location,
+        )
+        if bundle_resource and vertex_alias:
+            set_model_alias(bundle_resource, vertex_alias, vertex_project_id)
     metadata_path = os.path.join(MODEL_DIR, f"training_metadata_{timestamp}.json")
     with open(metadata_path, "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
     logger.info("   🧾 Saved training metadata → %s", metadata_path)
-    upload_artifact_to_gcs(metadata_path, "training_metadata", timestamp, os.getenv("GCS_MODELS_BUCKET"))
+    upload_artifact_to_gcs(metadata_path, "training_metadata", timestamp, bucket_name)
 
     # Step 5: Comparison report
     logger.info("\n" + "=" * 60)
@@ -757,6 +938,17 @@ def run_training_pipeline(
         f"{ensemble_results['brier_score']:.4f}"
     )
     logger.info("=" * 60)
+
+    log_training_run_to_vertex(
+        {
+            "logistic_regression": lr_results,
+            "xgboost": xgb_results,
+            "lightgbm": lgb_results,
+            "ensemble": ensemble_results,
+        },
+        metadata,
+        timestamp,
+    )
 
     return {
         "logistic_regression": lr_results,

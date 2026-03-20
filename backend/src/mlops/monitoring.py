@@ -5,8 +5,10 @@ Monitoring metrics for model quality and data freshness.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import os
 from typing import Dict, List
 
+import numpy as np
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,10 @@ from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
 from src.data.mlops_store import fetch_monitoring_trend, record_monitoring_snapshot
 from src.mlops.notifications import notify_critical_escalation
+
+DRIFT_KL_THRESHOLD = 0.1
+DRIFT_N_BINS = 10
+_DRIFT_EPS = 1e-9
 
 
 def _days_since(value) -> int | None:
@@ -79,6 +85,133 @@ def _escalation_summary(alerts: List[Dict]) -> Dict:
         "incident_alerts": incident_count,
         "watch_alerts": watch_count,
         "total_alerts": len(alerts),
+    }
+
+
+def _emit_monitoring_custom_metrics(payload: Dict, season: str) -> None:
+    """
+    Best-effort Cloud Monitoring writes for MLOps snapshots.
+
+    We emit:
+    - `data_freshness_hours` from the staler of game/pipeline freshness
+    - `model_accuracy` from the latest monitoring snapshot
+    """
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+    if not project_id:
+        return
+
+    try:
+        from src.mlops.gcp_metrics import write_metric
+    except Exception:
+        return
+
+    metrics = payload.get("metrics") or {}
+    labels = {"season": season}
+
+    game_days = metrics.get("game_data_freshness_days")
+    pipeline_days = metrics.get("pipeline_freshness_days")
+    freshness_candidates = [value for value in (game_days, pipeline_days) if value is not None]
+    if freshness_candidates:
+        try:
+            write_metric(
+                "data_freshness_hours",
+                float(max(freshness_candidates) * 24),
+                labels=labels,
+                project_id=project_id,
+            )
+        except Exception:
+            pass
+
+    accuracy = metrics.get("accuracy")
+    if accuracy is not None:
+        try:
+            write_metric(
+                "model_accuracy",
+                float(accuracy),
+                labels=labels,
+                project_id=project_id,
+            )
+        except Exception:
+            pass
+
+
+def _load_prediction_window(engine, *, season: str, start_days_ago: int, end_days_ago: int | None = None) -> List[float]:
+    clauses = [
+        "m.season = :season",
+        "p.home_win_prob IS NOT NULL",
+        "p.predicted_at >= (CURRENT_TIMESTAMP - (:start_days_ago * INTERVAL '1 day'))",
+    ]
+    params = {"season": season, "start_days_ago": start_days_ago}
+
+    if end_days_ago is not None:
+        clauses.append("p.predicted_at < (CURRENT_TIMESTAMP - (:end_days_ago * INTERVAL '1 day'))")
+        params["end_days_ago"] = end_days_ago
+
+    query = text(
+        f"""
+        SELECT p.home_win_prob
+        FROM predictions p
+        JOIN matches m ON p.game_id = m.game_id
+        WHERE {' AND '.join(clauses)}
+        ORDER BY p.predicted_at ASC
+        """
+    )
+
+    with engine.connect() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    return [float(row.home_win_prob) for row in rows if row.home_win_prob is not None]
+
+
+def _normalized_histogram(values: List[float]) -> np.ndarray:
+    bins = np.linspace(0.0, 1.0, DRIFT_N_BINS + 1)
+    clipped = np.clip(np.asarray(values, dtype=float), 0.0, 1.0)
+    counts, _ = np.histogram(clipped, bins=bins)
+    smoothed = counts.astype(float) + _DRIFT_EPS
+    return smoothed / smoothed.sum()
+
+
+def _symmetric_kl_divergence(reference: np.ndarray, live: np.ndarray) -> float:
+    kl_reference_live = float(np.sum(reference * np.log(reference / live)))
+    kl_live_reference = float(np.sum(live * np.log(live / reference)))
+    return round(0.5 * (kl_reference_live + kl_live_reference), 6)
+
+
+def compute_prediction_drift(engine, baseline_days: int = 30, live_days: int = 7, *, season: str | None = None) -> Dict:
+    season = season or config.CURRENT_SEASON
+    baseline_values = _load_prediction_window(
+        engine,
+        season=season,
+        start_days_ago=baseline_days + live_days,
+        end_days_ago=live_days,
+    )
+    live_values = _load_prediction_window(
+        engine,
+        season=season,
+        start_days_ago=live_days,
+    )
+
+    if not baseline_values or not live_values:
+        return {
+            "kl_divergence": 0.0,
+            "baseline_mean": round(float(np.mean(baseline_values)), 6) if baseline_values else None,
+            "live_mean": round(float(np.mean(live_values)), 6) if live_values else None,
+            "drift_detected": False,
+            "baseline_count": len(baseline_values),
+            "live_count": len(live_values),
+        }
+
+    baseline_hist = _normalized_histogram(baseline_values)
+    live_hist = _normalized_histogram(live_values)
+
+    kl_divergence = _symmetric_kl_divergence(baseline_hist, live_hist)
+    return {
+        "kl_divergence": kl_divergence,
+        "baseline_mean": round(float(np.mean(baseline_values)), 6),
+        "live_mean": round(float(np.mean(live_values)), 6),
+        "drift_detected": kl_divergence > DRIFT_KL_THRESHOLD,
+        "baseline_count": len(baseline_values),
+        "live_count": len(live_values),
     }
 
 
@@ -187,6 +320,18 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
             )
         )
 
+    engine = db.get_bind() if hasattr(db, "get_bind") else None
+    drift_summary = {
+        "kl_divergence": 0.0,
+        "baseline_mean": None,
+        "live_mean": None,
+        "drift_detected": False,
+        "baseline_count": 0,
+        "live_count": 0,
+    }
+    if engine is not None:
+        drift_summary = compute_prediction_drift(engine, baseline_days=30, live_days=7, season=season)
+
     payload = {
         "season": season,
         "metrics": {
@@ -197,6 +342,7 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
             "latest_pipeline_sync": latest_pipeline_sync.isoformat() if latest_pipeline_sync is not None else None,
             "game_data_freshness_days": game_freshness_days,
             "pipeline_freshness_days": pipeline_freshness_days,
+            "feature_drift_score": drift_summary["kl_divergence"],
         },
         "thresholds": {
             "accuracy_min": config.MLOPS_ACCURACY_THRESHOLD,
@@ -205,12 +351,15 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
         },
         "alerts": alerts,
         "escalation": _escalation_summary(alerts),
+        "feature_drift_score": drift_summary["kl_divergence"],
+        "drift_detected": drift_summary["drift_detected"],
+        "drift_baseline_period": "30 days",
+        "drift_live_period": "7 days",
     }
     payload["notification"] = {
         "slack_dispatched": notify_critical_escalation(season, alerts, payload["escalation"]),
     }
 
-    engine = db.get_bind() if hasattr(db, "get_bind") else None
     if engine is not None:
         record_intelligence_audit(
             engine,
@@ -225,6 +374,8 @@ def get_monitoring_overview(db: Session, season: str) -> Dict:
             },
         )
         record_monitoring_snapshot(engine, season=season, payload=payload)
+
+    _emit_monitoring_custom_metrics(payload, season)
 
     return payload
 

@@ -27,7 +27,13 @@ async def mlops_monitoring(
     db: Session = Depends(get_db),
 ):
     try:
-        return get_monitoring_overview(db, season)
+        payload = get_monitoring_overview(db, season)
+        metrics = payload.get("metrics") or {}
+        payload.setdefault("feature_drift_score", metrics.get("feature_drift_score"))
+        payload.setdefault("drift_detected", False)
+        payload.setdefault("drift_baseline_period", "30 days")
+        payload.setdefault("drift_live_period", "7 days")
+        return payload
     except Exception as exc:
         logger.error("Failed to fetch monitoring overview: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to fetch monitoring overview") from exc

@@ -22,6 +22,7 @@ import os
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -51,6 +52,62 @@ def _major_version(version: Optional[str]) -> Optional[int]:
         return None
 
 
+def _vertex_project_id() -> Optional[str]:
+    return os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+
+
+def _vertex_location() -> str:
+    return os.getenv("VERTEX_MODEL_LOCATION") or "us-central1"
+
+
+def _parse_gcs_uri(gcs_uri: str) -> tuple[str, str]:
+    match = re.match(r"^gs://([^/]+)/(.*)$", gcs_uri.rstrip("/"))
+    if not match:
+        raise ValueError(f"Unsupported GCS URI: {gcs_uri}")
+    return match.group(1), match.group(2)
+
+
+def _download_gcs_prefix(gcs_uri: str, local_dir: str) -> Optional[str]:
+    try:
+        from google.cloud import storage
+    except Exception as exc:
+        logger.warning("[predictor] GCS download unavailable: %s", exc)
+        return None
+
+    try:
+        bucket_name, prefix = _parse_gcs_uri(gcs_uri)
+        client = storage.Client(project=_vertex_project_id())
+        bucket = client.bucket(bucket_name)
+        blobs = list(client.list_blobs(bucket_name, prefix=prefix))
+        if not blobs:
+            blob = bucket.blob(prefix)
+            if blob.exists(client):
+                blobs = [blob]
+        if not blobs:
+            logger.warning("[predictor] No blobs found under %s", gcs_uri)
+            return None
+
+        os.makedirs(local_dir, exist_ok=True)
+        for blob in blobs:
+            relative_name = blob.name[len(prefix):].lstrip("/") if blob.name.startswith(prefix) else os.path.basename(blob.name)
+            if not relative_name:
+                relative_name = os.path.basename(blob.name)
+            local_path = os.path.join(local_dir, relative_name)
+            parent_dir = os.path.dirname(local_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+            blob.download_to_filename(local_path)
+
+        artifact_candidates = sorted(Path(local_dir).rglob("*.joblib")) + sorted(Path(local_dir).rglob("*.pkl"))
+        if not artifact_candidates:
+            logger.warning("[predictor] No model artifact found after downloading %s", gcs_uri)
+            return None
+        return str(artifact_candidates[-1])
+    except Exception as exc:
+        logger.warning("[predictor] Failed to download Vertex artifact from %s: %s", gcs_uri, exc)
+        return None
+
+
 def _version_info_path_for_model(
     model_path: Optional[str],
     active_dir: str,
@@ -75,6 +132,63 @@ def _version_info_path_for_model(
         if downloaded and os.path.exists(downloaded):
             return downloaded
     return None
+
+
+def _load_model_from_vertex_alias(
+    model_name: str,
+    alias: str,
+    active_dir: str,
+) -> tuple[Optional[object], Optional[str], Optional[str]]:
+    project_id = _vertex_project_id()
+    if not project_id:
+        logger.warning("[predictor] Vertex alias lookup skipped because GOOGLE_CLOUD_PROJECT is unset")
+        return None, None, None
+
+    try:
+        from google.cloud import aiplatform
+    except Exception as exc:
+        logger.warning("[predictor] Vertex SDK unavailable for alias loading: %s", exc)
+        return None, None, None
+
+    try:
+        aiplatform.init(project=project_id, location=_vertex_location())
+        candidates = aiplatform.Model.list(
+            filter=f'display_name="{model_name}"',
+            order_by="update_time desc",
+            project=project_id,
+            location=_vertex_location(),
+        )
+        if not candidates:
+            raise RuntimeError(f"No Vertex models found for display_name={model_name}")
+
+        vertex_model = None
+        for candidate in candidates:
+            candidate_aliases = getattr(candidate, "version_aliases", None)
+            if candidate_aliases is None and getattr(candidate, "gca_resource", None) is not None:
+                candidate_aliases = getattr(candidate.gca_resource, "version_aliases", None)
+            if alias in (candidate_aliases or []):
+                vertex_model = candidate
+                break
+        if vertex_model is None:
+            raise RuntimeError(f"No Vertex model version found for {model_name} with alias={alias}")
+
+        artifact_uri = (
+            getattr(vertex_model, "uri", None)
+            or getattr(vertex_model, "artifact_uri", None)
+            or getattr(getattr(vertex_model, "gca_resource", None), "artifact_uri", None)
+        )
+        if not artifact_uri:
+            raise RuntimeError(f"No artifact URI found for Vertex model {model_name}@{alias}")
+
+        cache_dir = os.path.join(active_dir, "_vertex", model_name, alias)
+        local_model_path = _download_gcs_prefix(artifact_uri, cache_dir)
+        if not local_model_path:
+            raise RuntimeError(f"Failed to download Vertex artifact from {artifact_uri}")
+
+        return joblib.load(local_model_path), local_model_path, artifact_uri
+    except Exception as exc:
+        logger.warning("[predictor] Vertex alias load failed for %s@%s: %s", model_name, alias, exc)
+        return None, None, None
 
 
 def _load_artifact_with_fallback(
@@ -127,6 +241,37 @@ def _check_model_versions(version_info: Dict[str, object]) -> None:
                 raise RuntimeError(message)
 
 
+def _emit_prediction_confidence_metric(confidence: float, model_name: str, prediction_count: int = 1) -> None:
+    """
+    Best-effort Cloud Monitoring hook for prediction confidence.
+
+    The metric is intentionally non-blocking so serving remains resilient when
+    GCP credentials or the monitoring SDK are unavailable.
+    """
+    project_id = _vertex_project_id()
+    if not project_id:
+        return
+
+    try:
+        from src.mlops.gcp_metrics import write_metric
+    except Exception as exc:
+        logger.debug("[predictor] Cloud Monitoring helper unavailable: %s", exc)
+        return
+
+    try:
+        write_metric(
+            "prediction_confidence",
+            float(confidence),
+            labels={
+                "model_name": model_name,
+                "prediction_count": str(prediction_count),
+            },
+            project_id=project_id,
+        )
+    except Exception as exc:
+        logger.warning("[predictor] Failed to record prediction confidence metric: %s", exc)
+
+
 class Predictor:
     """
     Loads trained models and generates predictions.
@@ -161,10 +306,53 @@ class Predictor:
             active_dir = MODEL_DIR
 
         bucket_name = os.getenv("GCS_MODELS_BUCKET")
+        vertex_model_name = os.getenv("VERTEX_MODEL_NAME")
+        vertex_model_alias = os.getenv("VERTEX_MODEL_ALIAS")
+        preloaded_models: set[str] = set()
 
         logger.info("📦 Loading trained models from: %s", active_dir)
 
+        if vertex_model_name and vertex_model_alias:
+            vertex_obj, vertex_path, vertex_source = _load_model_from_vertex_alias(
+                vertex_model_name,
+                vertex_model_alias,
+                active_dir,
+            )
+            if isinstance(vertex_obj, dict):
+                bundle_models = {
+                    key: vertex_obj.get(key)
+                    for key in ("logistic_regression", "xgboost", "lightgbm")
+                    if vertex_obj.get(key) is not None
+                }
+                if len(bundle_models) == 3:
+                    self.models.update(bundle_models)
+                    preloaded_models.update(bundle_models.keys())
+                    if isinstance(vertex_obj.get("weights"), dict):
+                        self.ensemble_weights = vertex_obj["weights"]
+                    if isinstance(vertex_obj.get("feature_columns"), list):
+                        self.feature_columns = vertex_obj["feature_columns"]
+                    logger.info(
+                        "   ✅ Loaded bundled Vertex alias model %s@%s (%s)",
+                        vertex_model_name,
+                        vertex_model_alias,
+                        vertex_source,
+                    )
+                    version_info_path = _version_info_path_for_model(vertex_path, active_dir, bucket_name)
+                    if version_info_path:
+                        try:
+                            with open(version_info_path, "r", encoding="utf-8") as handle:
+                                version_info = json.load(handle)
+                            _check_model_versions(version_info)
+                        except Exception as exc:
+                            logger.warning("[predictor] Could not validate bundle version info: %s", exc)
+            elif vertex_obj is not None and vertex_model_name in {"logistic_regression", "xgboost", "lightgbm"}:
+                self.models[vertex_model_name] = vertex_obj
+                preloaded_models.add(vertex_model_name)
+                logger.info("   ✅ Loaded %s from Vertex alias %s", vertex_model_name, vertex_model_alias)
+
         for model_name in ["logistic_regression", "xgboost", "lightgbm"]:
+            if model_name in preloaded_models:
+                continue
             model, model_path, source = _load_artifact_with_fallback(model_name, active_dir, bucket_name)
             self.models[model_name] = model
             logger.info("   ✅ Loaded %s (%s)", model_name, source)
@@ -273,6 +461,16 @@ class Predictor:
                     "confidence": round(max(ensemble_prob, 1 - ensemble_prob), 4),
                     "calibrated": len(self.calibrators) > 0,
                 }
+
+        if predictions:
+            ensemble_prediction = predictions.get("ensemble")
+            if ensemble_prediction is not None:
+                metric_confidence = ensemble_prediction["confidence"]
+                metric_model_name = "ensemble"
+            else:
+                metric_confidence = max(item["confidence"] for item in predictions.values())
+                metric_model_name = max(predictions.items(), key=lambda item: item[1]["confidence"])[0]
+            _emit_prediction_confidence_metric(metric_confidence, metric_model_name)
 
         return predictions
 

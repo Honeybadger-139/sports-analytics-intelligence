@@ -268,6 +268,10 @@ def validate_raw_data(engine, seasons):
                 "away_team_id": null_counts["away_team_id"] / match_denominator,
                 "points": null_counts["points"] / team_stats_denominator,
             }
+            season_stats[-1]["null_rates"] = {
+                key: round(value, 4) for key, value in null_rates.items()
+            }
+            season_stats[-1]["critical_null_rate"] = round(max(null_rates.values()), 4) if null_rates else 0.0
             for column_name, null_rate in null_rates.items():
                 if null_rate > 0.15:
                     failures.append({
@@ -325,6 +329,11 @@ def validate_raw_data(engine, seasons):
             default=None,
         ),
         "seasons": seasons,
+        "season_stats": season_stats,
+        "critical_null_rate": round(
+            max((item.get("critical_null_rate", 0.0) for item in season_stats), default=0.0),
+            4,
+        ),
     }
     logger.info(json.dumps(payload, default=str))
     return payload
@@ -711,6 +720,7 @@ def run_feature_engineering(seasons: list = None):
     engine = get_engine()
     validation_summary = validate_raw_data(engine, seasons)
     ensure_h2h_data_available_column(engine)
+    _emit_feature_null_rate_metric(validation_summary)
     
     logger.info("=" * 60)
     logger.info("⚙️ STARTING FEATURE ENGINEERING PIPELINE")
@@ -760,6 +770,38 @@ def run_feature_engineering(seasons: list = None):
             details={"step": "main_loop"}
         )
         raise e
+
+
+def _emit_feature_null_rate_metric(validation_summary: dict) -> None:
+    """Emit the latest feature/raw-data null rate to Cloud Monitoring."""
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+    if not project_id:
+        return
+
+    null_rate = validation_summary.get("critical_null_rate")
+    if null_rate is None:
+        season_stats = validation_summary.get("season_stats") or []
+        null_rates = [item.get("critical_null_rate") for item in season_stats if item.get("critical_null_rate") is not None]
+        if null_rates:
+            null_rate = max(null_rates)
+    if null_rate is None:
+        return
+
+    try:
+        from src.mlops.gcp_metrics import write_metric
+    except Exception as exc:
+        logger.debug("Cloud Monitoring helper unavailable for feature null rate: %s", exc)
+        return
+
+    try:
+        write_metric(
+            "feature_null_rate",
+            float(null_rate),
+            labels={"pipeline": "feature_store"},
+            project_id=project_id,
+        )
+    except Exception as exc:
+        logger.warning("Failed to record feature_null_rate metric: %s", exc)
 
 
 if __name__ == "__main__":

@@ -31,10 +31,19 @@ def ensure_mlops_snapshot_table(engine) -> None:
                     brier_score DECIMAL(6,4),
                     game_data_freshness_days INTEGER,
                     pipeline_freshness_days INTEGER,
+                    feature_drift_score DECIMAL(10,6),
                     alert_count INTEGER DEFAULT 0,
                     details JSONB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE mlops_monitoring_snapshot
+                ADD COLUMN IF NOT EXISTS feature_drift_score DECIMAL(10,6)
                 """
             )
         )
@@ -72,6 +81,7 @@ def record_monitoring_snapshot(engine, *, season: str, payload: Dict[str, Any]) 
                             brier_score,
                             game_data_freshness_days,
                             pipeline_freshness_days,
+                            feature_drift_score,
                             alert_count,
                             details
                         )
@@ -82,6 +92,7 @@ def record_monitoring_snapshot(engine, *, season: str, payload: Dict[str, Any]) 
                             :brier_score,
                             :game_data_freshness_days,
                             :pipeline_freshness_days,
+                            :feature_drift_score,
                             :alert_count,
                             CAST(:details AS JSONB)
                         )
@@ -94,6 +105,7 @@ def record_monitoring_snapshot(engine, *, season: str, payload: Dict[str, Any]) 
                         "brier_score": metrics.get("brier_score"),
                         "game_data_freshness_days": metrics.get("game_data_freshness_days"),
                         "pipeline_freshness_days": metrics.get("pipeline_freshness_days"),
+                        "feature_drift_score": metrics.get("feature_drift_score"),
                         "alert_count": len(alerts),
                         "details": details_json,
                     },
@@ -118,6 +130,7 @@ def fetch_monitoring_trend(db, *, season: str, days: int, limit: int) -> List[Di
                 brier_score,
                 game_data_freshness_days,
                 pipeline_freshness_days,
+                feature_drift_score,
                 alert_count
             FROM mlops_monitoring_snapshot
             WHERE season = :season

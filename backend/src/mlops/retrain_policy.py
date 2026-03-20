@@ -4,17 +4,112 @@ Retrain policy evaluator for dry-run automation decisions.
 
 from __future__ import annotations
 
-from typing import Dict, List
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src import config
 from src.data.intelligence_audit_store import record_intelligence_audit
-from src.data.retrain_store import create_retrain_job, find_recent_active_retrain_job
 
 
-def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> Dict:
+def _vertex_project_id() -> Optional[str]:
+    return (os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID") or "").strip() or None
+
+
+def _vertex_location() -> str:
+    return (
+        os.getenv("VERTEX_AI_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_REGION")
+        or os.getenv("REGION")
+        or "us-central1"
+    )
+
+
+def _vertex_pipeline_template_path() -> str:
+    return (
+        os.getenv("VERTEX_RETRAIN_PIPELINE_TEMPLATE")
+        or "gs://gamethread-models/pipelines/retrain_pipeline.json"
+    )
+
+
+def _vertex_pipeline_root() -> str:
+    return os.getenv("VERTEX_PIPELINE_ROOT") or "gs://gamethread-models/pipelines"
+
+
+def _submit_vertex_pipeline_job(
+    *,
+    season: str,
+    trigger_reason: str,
+    metrics: Dict[str, Any],
+    should_retrain: bool,
+) -> Dict[str, Any]:
+    project_id = _vertex_project_id()
+    if not project_id:
+        return {
+            "submitted": False,
+            "reason": "vertex_project_not_configured",
+            "project_id": None,
+        }
+
+    try:
+        from google.cloud import aiplatform
+    except Exception as exc:
+        return {
+            "submitted": False,
+            "reason": "vertex_sdk_unavailable",
+            "error": str(exc),
+            "project_id": project_id,
+        }
+
+    location = _vertex_location()
+    display_name = f"retrain-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    parameter_values = {
+        "season": season,
+        "trigger_reason": trigger_reason,
+        "database_url": os.getenv("DATABASE_URL", ""),
+        "project_id": project_id,
+        "min_improvement": float(os.getenv("VERTEX_MIN_IMPROVEMENT", "0.01")),
+    }
+
+    try:
+        aiplatform.init(project=project_id, location=location)
+        pipeline_job = aiplatform.PipelineJob(
+            display_name=display_name,
+            template_path=_vertex_pipeline_template_path(),
+            pipeline_root=_vertex_pipeline_root(),
+            parameter_values=parameter_values,
+            enable_caching=True,
+        )
+        pipeline_job.submit()
+        return {
+            "submitted": True,
+            "resource_name": getattr(pipeline_job, "resource_name", None),
+            "display_name": display_name,
+            "project_id": project_id,
+            "location": location,
+            "template_path": _vertex_pipeline_template_path(),
+            "pipeline_root": _vertex_pipeline_root(),
+            "parameter_values": parameter_values,
+            "should_retrain": should_retrain,
+        }
+    except Exception as exc:
+        return {
+            "submitted": False,
+            "reason": "vertex_submission_failed",
+            "error": str(exc),
+            "project_id": project_id,
+            "location": location,
+            "template_path": _vertex_pipeline_template_path(),
+            "pipeline_root": _vertex_pipeline_root(),
+            "parameter_values": parameter_values,
+            "should_retrain": should_retrain,
+        }
+
+
+def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> Dict[str, Any]:
     reasons: List[str] = []
 
     metrics = db.execute(
@@ -69,36 +164,22 @@ def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> 
 
     should_retrain = len(reasons) > 0
     action = "dry-run-noop" if dry_run else ("queue-retrain" if should_retrain else "noop")
-    retrain_job = None
-    duplicate_guard_triggered = False
+    submission: Optional[Dict[str, Any]] = None
 
-    engine = db.get_bind() if hasattr(db, "get_bind") else None
-    if not dry_run and should_retrain and engine is not None:
-        existing = find_recent_active_retrain_job(engine, season=season, window_hours=12)
-        if existing:
-            duplicate_guard_triggered = True
-            action = "already-queued"
-            retrain_job = existing
-        else:
-            retrain_job = create_retrain_job(
-                engine,
-                season=season,
-                reasons=reasons,
-                metrics={
-                    "completed_games": completed_games,
-                    "evaluated_predictions": evaluated_predictions,
-                    "new_labels_pending": new_labels_pending,
-                    "accuracy": accuracy,
-                    "brier_score": brier,
-                },
-                thresholds={
-                    "accuracy_min": config.MLOPS_ACCURACY_THRESHOLD,
-                    "brier_max": config.MLOPS_MAX_BRIER,
-                    "new_labels_min": config.MLOPS_NEW_LABEL_MIN,
-                },
-                trigger_source="policy",
-            )
-            action = "queued-retrain"
+    if not dry_run and should_retrain:
+        submission = _submit_vertex_pipeline_job(
+            season=season,
+            trigger_reason="policy",
+            metrics={
+                "completed_games": completed_games,
+                "evaluated_predictions": evaluated_predictions,
+                "new_labels_pending": new_labels_pending,
+                "accuracy": accuracy,
+                "brier_score": brier,
+            },
+            should_retrain=should_retrain,
+        )
+        action = "queue-retrain"
 
     payload = {
         "season": season,
@@ -119,12 +200,12 @@ def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> 
             "new_labels_min": config.MLOPS_NEW_LABEL_MIN,
         },
         "execution": {
-            "duplicate_guard_triggered": duplicate_guard_triggered,
-            "retrain_job": retrain_job,
+            "pipeline_job": submission,
             "rollback_strategy": "revert_to_previous_model_artifact_on_post_retrain_regression",
         },
     }
 
+    engine = db.get_bind() if hasattr(db, "get_bind") else None
     if engine is not None:
         record_intelligence_audit(
             engine,
@@ -137,6 +218,7 @@ def evaluate_retrain_need(db: Session, season: str, *, dry_run: bool = True) -> 
                 "action": action,
                 "reasons": reasons,
                 "thresholds": payload["thresholds"],
+                "pipeline_job": submission,
             },
         )
 

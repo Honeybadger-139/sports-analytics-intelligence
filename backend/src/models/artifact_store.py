@@ -34,6 +34,7 @@ from __future__ import annotations
 import glob
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -60,6 +61,150 @@ def _gcs_project_id() -> Optional[str]:
 
 def _gcs_bucket_name(bucket_name: Optional[str] = None) -> Optional[str]:
     return bucket_name or os.getenv("GCS_MODELS_BUCKET")
+
+
+def _vertex_serving_container_image(model_name: str) -> str:
+    model_key = model_name.lower()
+    if "xgboost" in model_key:
+        return "us-docker.pkg.dev/vertex-ai/prediction/xgboost-cpu.2-1:latest"
+    return "us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-6:latest"
+
+
+def _sanitize_vertex_model_id(model_name: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9_-]+", "-", model_name.lower()).strip("-")
+    return cleaned[:63] or "nba-model"
+
+
+def _vertex_project_id() -> Optional[str]:
+    return os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+
+
+def _vertex_location(location: Optional[str] = None) -> str:
+    return location or os.getenv("VERTEX_MODEL_LOCATION") or "us-central1"
+
+
+def _normalize_gcs_artifact_uri(gcs_artifact_uri: str) -> str:
+    uri = gcs_artifact_uri.rstrip("/")
+    if uri.endswith(".pkl") or uri.endswith(".json"):
+        return uri.rsplit("/", 1)[0]
+    return uri
+
+
+def _vertex_model_exists(project_id: str, location: str, model_id: str) -> bool:
+    try:
+        from google.cloud import aiplatform
+
+        model = aiplatform.Model(model_name=model_id, project=project_id, location=location)
+        return bool(getattr(model, "name", None))
+    except Exception:
+        return False
+
+
+def register_model_in_vertex(
+    model_name: str,
+    gcs_artifact_uri: str,
+    metrics: Dict[str, Any],
+    project_id: str,
+    location: str,
+) -> Optional[str]:
+    """
+    Register a trained model artifact in Vertex AI Model Registry.
+
+    The registry upload is best-effort so local training remains functional
+    even if Vertex SDK access is unavailable.
+    """
+    if not _vertex_project_id():
+        logger.warning("[artifact_store] GOOGLE_CLOUD_PROJECT not set; skipping Vertex model registration")
+        return None
+
+    try:
+        from google.cloud import aiplatform
+    except Exception as exc:
+        logger.warning("[artifact_store] Vertex SDK unavailable; skipping model registration: %s", exc)
+        return None
+
+    normalized_artifact_uri = _normalize_gcs_artifact_uri(gcs_artifact_uri)
+    model_id = _sanitize_vertex_model_id(model_name)
+    version_description = (
+        "accuracy={accuracy}, brier={brier_score}, season={season}".format(
+            accuracy=metrics.get("accuracy", metrics.get("cv_accuracy", "n/a")),
+            brier_score=metrics.get("brier_score", metrics.get("cv_brier_score", "n/a")),
+            season=metrics.get("season", "unknown"),
+        )
+    )
+    labels = {
+        "season": str(metrics.get("season", "unknown"))[:64],
+        "accuracy": f"{float(metrics.get('accuracy', metrics.get('cv_accuracy', 0.0)) or 0.0):.4f}",
+        "brier_score": f"{float(metrics.get('brier_score', metrics.get('cv_brier_score', 0.0)) or 0.0):.4f}",
+    }
+
+    try:
+        aiplatform.init(project=project_id, location=location)
+        model_kwargs = {
+            "display_name": model_name,
+            "artifact_uri": normalized_artifact_uri,
+            "serving_container_image_uri": _vertex_serving_container_image(model_name),
+            "version_description": version_description,
+            "labels": labels,
+            "is_default_version": False,
+        }
+        if _vertex_model_exists(project_id, location, model_id):
+            model_kwargs["parent_model"] = model_id
+        else:
+            model_kwargs["model_id"] = model_id
+
+        uploaded_model = aiplatform.Model.upload(**model_kwargs)
+        resource_name = getattr(uploaded_model, "name", None) or getattr(uploaded_model, "resource_name", None)
+        logger.info(
+            "[artifact_store] Registered Vertex model %s → %s",
+            model_name,
+            resource_name,
+        )
+        return resource_name
+    except Exception as exc:
+        logger.warning("[artifact_store] Vertex model registration failed for %s: %s", model_name, exc)
+        return None
+
+
+def _resolve_versioned_model_name(model_resource_name: str, project_id: str, location: str) -> Optional[str]:
+    try:
+        from google.cloud import aiplatform
+
+        model = aiplatform.Model(model_name=model_resource_name, project=project_id, location=location)
+        return getattr(model, "name", None) or model_resource_name
+    except Exception:
+        return None
+
+
+def set_model_alias(model_resource_name: str, alias: str, project_id: str) -> Optional[str]:
+    """
+    Set a version alias on an uploaded Vertex AI model version.
+    """
+    if not _vertex_project_id():
+        logger.warning("[artifact_store] GOOGLE_CLOUD_PROJECT not set; skipping Vertex alias update")
+        return None
+
+    try:
+        from google.cloud import aiplatform
+    except Exception as exc:
+        logger.warning("[artifact_store] Vertex alias client unavailable; skipping alias update: %s", exc)
+        return None
+
+    location = _vertex_location()
+    versioned_name = _resolve_versioned_model_name(model_resource_name, project_id, location)
+    if not versioned_name:
+        logger.warning("[artifact_store] Could not resolve versioned model name for alias update: %s", model_resource_name)
+        return None
+
+    try:
+        aiplatform.init(project=project_id, location=location)
+        model = aiplatform.Model(model_name=versioned_name, project=project_id, location=location)
+        model.add_version_aliases([alias])
+        logger.info("[artifact_store] Added Vertex alias '%s' to %s", alias, versioned_name)
+        return versioned_name
+    except Exception as exc:
+        logger.warning("[artifact_store] Failed to set Vertex alias '%s' on %s: %s", alias, versioned_name, exc)
+        return None
 
 
 def upload_artifact_to_gcs(

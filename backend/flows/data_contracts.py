@@ -66,7 +66,7 @@ def _iso_date(value: object) -> Optional[str]:
     return str(value)
 
 
-@dataclass(slots=True)
+@dataclass
 class IngestionContract:
     """What the ingestion job guarantees to the feature pipeline."""
 
@@ -269,7 +269,7 @@ class IngestionContract:
         }
 
 
-@dataclass(slots=True)
+@dataclass
 class FeatureContract:
     """What the feature pipeline guarantees to the prediction pipeline."""
 

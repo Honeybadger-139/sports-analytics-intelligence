@@ -8,9 +8,11 @@ operational visibility while reusing the exact same feature computation logic.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -23,10 +25,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from flows.data_contracts import FeatureContract, IngestionContract
 from src import config
 from src.data import feature_store
 
 logger = logging.getLogger(__name__)
+INGESTION_CONTRACT = IngestionContract()
+FEATURE_CONTRACT = FeatureContract()
 
 
 def _resolve_database_url() -> str:
@@ -51,6 +56,38 @@ def _season_list(seasons: List[str] | None) -> List[str]:
     return [config.CURRENT_SEASON]
 
 
+def _publish_failure_event(
+    run_id: str,
+    gcs_prefix: str,
+    seasons: list[str],
+    error: str,
+    error_traceback: str,
+) -> None:
+    project_id = os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    topic_name = os.getenv("PUBSUB_PIPELINE_TOPIC", "pipeline-events")
+    if not project_id:
+        logger.warning("Skipping feature-engineering failure event publish: GCP project is unset")
+        return
+
+    try:
+        from google.cloud import pubsub_v1
+    except Exception as exc:
+        logger.warning("Skipping failure event publish: google-cloud-pubsub unavailable (%s)", exc)
+        return
+
+    payload = {
+        "run_id": run_id,
+        "status": "feature_engineering_failed",
+        "gcs_prefix": gcs_prefix,
+        "seasons": seasons,
+        "error": error,
+        "traceback": error_traceback,
+    }
+    publisher = pubsub_v1.PublisherClient()
+    topic_path = publisher.topic_path(project_id, topic_name)
+    publisher.publish(topic_path, data=json.dumps(payload).encode("utf-8")).result(timeout=30)
+
+
 def _season_feature_count(engine, season: str) -> int:
     with engine.connect() as conn:
         result = conn.execute(
@@ -67,29 +104,6 @@ def _season_feature_count(engine, season: str) -> int:
         return int(result.scalar() or 0)
 
 
-def _season_feature_null_count(engine, season: str) -> int:
-    with engine.connect() as conn:
-        result = conn.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM match_features mf
-                JOIN matches m ON m.game_id = mf.game_id
-                WHERE m.season = :season
-                  AND (
-                      mf.win_pct_last_5 IS NULL
-                      OR mf.avg_point_diff_last_5 IS NULL
-                      OR mf.h2h_win_pct IS NULL
-                      OR mf.days_rest IS NULL
-                      OR mf.current_streak IS NULL
-                  )
-                """
-            ),
-            {"season": season},
-        )
-        return int(result.scalar() or 0)
-
-
 @task(
     name="Validate Raw Ingestion Data",
     retries=2,
@@ -98,7 +112,7 @@ def _season_feature_null_count(engine, season: str) -> int:
 )
 def validate_raw_data(engine, seasons: list[str], run_id: str) -> Dict[str, Any]:
     resolved_engine = _resolve_engine(engine)
-    summary = feature_store.validate_raw_data(resolved_engine, _season_list(seasons))
+    summary = INGESTION_CONTRACT.validate_raw_data(resolved_engine, _season_list(seasons))
     summary["run_id"] = run_id
     return summary
 
@@ -161,40 +175,12 @@ def compute_rest_features(engine, seasons: list[str]) -> int:
 def validate_feature_output(engine, seasons: list[str], expected_count: int) -> bool:
     resolved_engine = _resolve_engine(engine)
     seasons = _season_list(seasons)
-
-    total_rows = 0
-    null_rows = 0
-    per_season: list[dict[str, Any]] = []
-
-    for season in seasons:
-        season_rows = _season_feature_count(resolved_engine, season)
-        season_nulls = _season_feature_null_count(resolved_engine, season)
-        total_rows += season_rows
-        null_rows += season_nulls
-        per_season.append(
-            {
-                "season": season,
-                "feature_rows": season_rows,
-                "critical_null_rows": season_nulls,
-            }
-        )
-
-    if total_rows <= 0:
-        raise ValueError("Feature validation failed: no feature rows were written")
-    if null_rows > 0:
-        raise ValueError(f"Feature validation failed: {null_rows} rows contain critical nulls")
-    if expected_count > 0 and total_rows < expected_count:
-        logger.warning(
-            "Feature rows (%s) are below raw match count (%s); this can happen during early-season lookback windows.",
-            total_rows,
-            expected_count,
-        )
-
-    logger.info(
-        "Feature output validation passed for %s season(s): %s",
-        len(seasons),
-        per_season,
+    FEATURE_CONTRACT.validate_feature_output(
+        resolved_engine,
+        seasons,
+        expected_match_count=expected_count,
     )
+    logger.info("Feature output validation passed for %s season(s).", len(seasons))
     return True
 
 
@@ -287,6 +273,7 @@ def feature_engineering_pipeline(
         if rolling_count > 0:
             trigger_prediction_refresh(api_base_url, rolling_count)
     except Exception as exc:
+        error_tb = traceback.format_exc()
         write_pipeline_audit(
             engine,
             run_id,
@@ -295,8 +282,13 @@ def feature_engineering_pipeline(
                 "gcs_prefix": gcs_prefix,
                 "seasons": season_list,
                 "error": str(exc),
+                "traceback": error_tb,
             },
         )
+        try:
+            _publish_failure_event(run_id, gcs_prefix, season_list, str(exc), error_tb)
+        except Exception as publish_exc:
+            logger.warning("Failed to publish feature-engineering failure event: %s", publish_exc)
         raise
 
 
