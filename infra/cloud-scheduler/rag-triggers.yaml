@@ -1,0 +1,57 @@
+# Cloud Scheduler documentation for the RAG refresh Cloud Run Job.
+#
+# Target job:
+#   Cloud Run Job: job-rag-refresh
+# Target pattern:
+#   Push a scheduler invocation to the Cloud Run Job using OIDC auth.
+# Retry policy:
+#   3 max retries with 5 minute backoff.
+
+jobs:
+  - name: trigger-rag-00
+    schedule: "0 0 * * *"
+    time_zone: "UTC"
+    target:
+      type: cloud_run_job
+      job: job-rag-refresh
+    auth:
+      oidc_service_account: scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com
+    retry_policy:
+      max_retries: 3
+      min_backoff_seconds: 300
+
+  - name: trigger-rag-06
+    schedule: "0 6 * * *"
+    time_zone: "UTC"
+    target:
+      type: cloud_run_job
+      job: job-rag-refresh
+    auth:
+      oidc_service_account: scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com
+    retry_policy:
+      max_retries: 3
+      min_backoff_seconds: 300
+
+  - name: trigger-rag-12
+    schedule: "0 12 * * *"
+    time_zone: "UTC"
+    target:
+      type: cloud_run_job
+      job: job-rag-refresh
+    auth:
+      oidc_service_account: scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com
+    retry_policy:
+      max_retries: 3
+      min_backoff_seconds: 300
+
+  - name: trigger-rag-18
+    schedule: "0 18 * * *"
+    time_zone: "UTC"
+    target:
+      type: cloud_run_job
+      job: job-rag-refresh
+    auth:
+      oidc_service_account: scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com
+    retry_policy:
+      max_retries: 3
+      min_backoff_seconds: 300

@@ -1,0 +1,53 @@
+# Cloud Run service configuration reference for the FastAPI API.
+#
+# This file documents the production shape we want in Cloud Run:
+# - 2 vCPU
+# - 2Gi memory
+# - min instances = 1
+# - max instances = 5
+# - concurrency = 80
+# - timeout = 120s
+# - Cloud SQL via the Unix socket / Cloud SQL Auth Proxy
+# - Secrets sourced from Secret Manager
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gamethread-api
+  annotations:
+    autoscaling.knative.dev/minScale: "1"
+    autoscaling.knative.dev/maxScale: "5"
+    run.googleapis.com/cloudsql-instances: "sports-analytics-intelligence:us-central1:sports-analytics"
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cloudsql-instances: "sports-analytics-intelligence:us-central1:sports-analytics"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 120
+      containers:
+        - name: api
+          image: us-central1-docker.pkg.dev/sports-analytics-intelligence/gamethread/api:latest
+          resources:
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          env:
+            - name: EMBEDDED_SCHEDULER_ENABLED
+              value: "false"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY
+                  key: latest
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: LANGFUSE_SECRET_KEY
+                  key: latest

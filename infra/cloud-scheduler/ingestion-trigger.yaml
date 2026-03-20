@@ -1,0 +1,19 @@
+# Cloud Scheduler documentation for the NBA ingestion job trigger.
+#
+# This is a human-readable deployment note for the GCP console / gcloud setup.
+
+name: trigger-nba-ingestion
+description: Trigger the Cloud Run Job that ingests raw NBA data and publishes the completion event.
+schedule: "30 6 * * *"
+timeZone: "UTC"
+target:
+  type: "CloudRunJob"
+  job: "job-nba-raw-ingestion"
+retry_config:
+  max_retry_attempts: 3
+  min_backoff_duration: "300s"
+  max_backoff_duration: "900s"
+  max_doublings: 3
+auth:
+  type: "OIDC"
+  service_account_email: "scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com"

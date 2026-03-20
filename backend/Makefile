@@ -19,7 +19,7 @@ help:
 # Setup environment
 setup:
 	@echo "📦 Setting up environment..."
-	pip install -r requirements.txt
+	pip install -r requirements-dev.txt
 
 # Run data ingestion
 ingest:
@@ -39,7 +39,7 @@ train:
 # Start the API server
 run-api:
 	@echo "🌐 Starting API Server..."
-	PYTHONPATH=. uvicorn main:app --reload --host 0.0.0.0 --port 8000
+	PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 
 # Run tests
 test:

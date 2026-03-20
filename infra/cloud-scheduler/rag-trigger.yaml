@@ -1,0 +1,20 @@
+# Cloud Scheduler documentation for the RAG refresh job trigger.
+#
+# This mirrors the ingestion job pattern but targets the standalone RAG
+# refresh Cloud Run Job used for ChromaDB updates and snapshotting.
+
+name: trigger-rag-refresh
+description: Trigger the Cloud Run Job that refreshes RAG context and snapshots ChromaDB to GCS.
+schedule: "0 */6 * * *"
+timeZone: "UTC"
+target:
+  type: "CloudRunJob"
+  job: "job-rag-refresh"
+retry_config:
+  max_retry_attempts: 3
+  min_backoff_duration: "300s"
+  max_backoff_duration: "900s"
+  max_doublings: 3
+auth:
+  type: "OIDC"
+  service_account_email: "scheduler-invoker@sports-analytics-intelligence.iam.gserviceaccount.com"

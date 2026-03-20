@@ -1,0 +1,89 @@
+steps:
+  # Step 1: Run backend tests with the development dependency set.
+  - name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        cd backend && \
+        pip install -r requirements-dev.txt -q && \
+        PYTHONPATH=. pytest tests/ -q --tb=short
+
+  # Step 2: Build the API image from the production Dockerfile.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}",
+        "-f",
+        "backend/Dockerfile",
+        "backend/",
+      ]
+
+  # Step 3: Push the API image to Artifact Registry.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}",
+      ]
+
+  # Step 4: Deploy to Cloud Run only from the main branch.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" = "main" ]; then
+          gcloud run deploy gamethread-api \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --platform managed \
+            --min-instances 1 \
+            --max-instances 5 \
+            --memory 2Gi \
+            --cpu 2 \
+            --concurrency 80 \
+            --timeout 120s \
+            --set-env-vars EMBEDDED_SCHEDULER_ENABLED=false \
+            --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest;
+        fi
+
+  # Step 5: Build the RAG refresh image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}",
+        "-f",
+        "backend/Dockerfile.rag",
+        "backend/",
+      ]
+
+  # Step 6: Push the RAG refresh image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}",
+      ]
+
+  # Step 7: Update the RAG Cloud Run Job only from the main branch.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" = "main" ]; then
+          gcloud run jobs update job-rag-refresh \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}" \
+            --region "${_REGION}";
+        fi
+
+substitutions:
+  _REGION: us-central1
+
+options:
+  logging: CLOUD_LOGGING_ONLY
