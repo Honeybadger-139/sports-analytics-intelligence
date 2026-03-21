@@ -132,6 +132,7 @@ steps:
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
             --region "${_REGION}" \
             --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCS_RAW_BUCKET=gamethread-raw,PUBSUB_PIPELINE_TOPIC=ingestion-complete" \
             --quiet || \
           gcloud run jobs create job-nba-raw-ingestion \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
@@ -141,6 +142,7 @@ steps:
             --cpu 2 \
             --task-timeout 3600s \
             --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-env-vars "GCP_PROJECT_ID=${PROJECT_ID},GCS_RAW_BUCKET=gamethread-raw,PUBSUB_PIPELINE_TOPIC=ingestion-complete" \
             --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest \
             --quiet;
         fi
