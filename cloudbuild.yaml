@@ -48,7 +48,7 @@ steps:
           gcloud run jobs update job-run-migrations \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}" \
             --region "${_REGION}" \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --command "alembic" \
             --args "upgrade,head" \
             --quiet 2>/dev/null || \
@@ -59,7 +59,7 @@ steps:
             --memory 1Gi \
             --cpu 1 \
             --task-timeout 300s \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --update-secrets DATABASE_URL=DATABASE_URL:latest \
             --command "alembic" \
             --args "upgrade,head" \
@@ -131,7 +131,7 @@ steps:
           gcloud run jobs update job-nba-raw-ingestion \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
             --region "${_REGION}" \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --quiet || \
           gcloud run jobs create job-nba-raw-ingestion \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
@@ -140,7 +140,7 @@ steps:
             --memory 2Gi \
             --cpu 2 \
             --task-timeout 3600s \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest \
             --quiet;
         fi
@@ -180,7 +180,7 @@ steps:
           gcloud run jobs update job-rag-refresh \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}" \
             --region "${_REGION}" \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --quiet || \
           gcloud run jobs create job-rag-refresh \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}" \
@@ -189,7 +189,7 @@ steps:
             --memory 2Gi \
             --cpu 2 \
             --task-timeout 3600s \
-            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --set-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest,LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest,LANGFUSE_BASE_URL=LANGFUSE_BASE_URL:latest \
             --quiet;
         fi
