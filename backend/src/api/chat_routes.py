@@ -6,8 +6,6 @@ Exposes:
   GET  /api/v1/chat/health — readiness check for the chatbot subsystem
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from typing import Dict, List, Optional

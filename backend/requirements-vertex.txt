@@ -1,0 +1,6 @@
+# === Vertex Pipelines (build-time only — NOT included in prod/api/ingestion images) ===
+# kfp and google-cloud-pipeline-components are pipeline authoring tools.
+# They require kubernetes<27 which conflicts with chromadb (kubernetes>=28).
+# Install only in pipeline-build contexts, not in the production Docker images.
+kfp==2.7.0
+google-cloud-pipeline-components==2.22.0

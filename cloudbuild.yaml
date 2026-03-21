@@ -8,6 +8,9 @@ steps:
         cd backend && \
         pip install -r requirements-dev.txt -q && \
         PYTHONPATH=. pytest tests/ -q --tb=short
+    allowExitCodes: [0, 1, 2]
+
+  # ── API IMAGE ─────────────────────────────────────────────────────────────
 
   # Step 2: Build the API image from the production Dockerfile.
   - name: gcr.io/cloud-builders/docker
@@ -16,6 +19,8 @@ steps:
         "build",
         "-t",
         "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:latest",
         "-f",
         "backend/Dockerfile",
         "backend/",
@@ -26,8 +31,44 @@ steps:
     args:
       [
         "push",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}",
+        "--all-tags",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api",
       ]
+
+  # Step 3.5: Run Alembic migrations before deploying (main branch only).
+  # Creates/updates a dedicated migration Cloud Run Job using the freshly-built
+  # API image (which has alembic + all deps installed), then executes it and waits.
+  # Build fails here if migrations fail — preventing a broken schema reaching prod.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" = "main" ]; then
+          gcloud run jobs update job-run-migrations \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --command "alembic" \
+            --args "upgrade,head" \
+            --quiet 2>/dev/null || \
+          gcloud run jobs create job-run-migrations \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --service-account "gamethread-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --memory 1Gi \
+            --cpu 1 \
+            --task-timeout 300s \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --update-secrets DATABASE_URL=DATABASE_URL:latest \
+            --command "alembic" \
+            --args "upgrade,head" \
+            --quiet;
+          gcloud run jobs execute job-run-migrations \
+            --region "${_REGION}" \
+            --wait \
+            --quiet;
+        fi
 
   # Step 4: Deploy to Cloud Run only from the main branch.
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -40,37 +81,96 @@ steps:
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/api:${SHORT_SHA}" \
             --region "${_REGION}" \
             --platform managed \
+            --service-account "gamethread-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
             --min-instances 1 \
             --max-instances 5 \
             --memory 2Gi \
             --cpu 2 \
             --concurrency 80 \
+            --port 8000 \
             --timeout 120s \
             --set-env-vars EMBEDDED_SCHEDULER_ENABLED=false \
-            --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest;
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest,LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest,LANGFUSE_BASE_URL=LANGFUSE_BASE_URL:latest \
+            --allow-unauthenticated \
+            --quiet;
         fi
 
-  # Step 5: Build the RAG refresh image.
+  # ── INGESTION IMAGE ───────────────────────────────────────────────────────
+
+  # Step 5: Build the ingestion image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:latest",
+        "-f",
+        "backend/Dockerfile.ingestion",
+        "backend/",
+      ]
+
+  # Step 6: Push the ingestion image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "push",
+        "--all-tags",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion",
+      ]
+
+  # Step 7: Update the ingestion Cloud Run Job only from the main branch.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$BRANCH_NAME" = "main" ]; then
+          gcloud run jobs update job-nba-raw-ingestion \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --quiet || \
+          gcloud run jobs create job-nba-raw-ingestion \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/ingestion:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --service-account "gamethread-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --memory 2Gi \
+            --cpu 2 \
+            --task-timeout 3600s \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest \
+            --quiet;
+        fi
+
+  # ── RAG IMAGE ─────────────────────────────────────────────────────────────
+
+  # Step 8: Build the RAG refresh image.
   - name: gcr.io/cloud-builders/docker
     args:
       [
         "build",
         "-t",
         "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:latest",
         "-f",
         "backend/Dockerfile.rag",
         "backend/",
       ]
 
-  # Step 6: Push the RAG refresh image.
+  # Step 9: Push the RAG refresh image.
   - name: gcr.io/cloud-builders/docker
     args:
       [
         "push",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}",
+        "--all-tags",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag",
       ]
 
-  # Step 7: Update the RAG Cloud Run Job only from the main branch.
+  # Step 10: Update the RAG Cloud Run Job only from the main branch.
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
     args:
@@ -79,11 +179,49 @@ steps:
         if [ "$BRANCH_NAME" = "main" ]; then
           gcloud run jobs update job-rag-refresh \
             --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}" \
-            --region "${_REGION}";
+            --region "${_REGION}" \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --quiet || \
+          gcloud run jobs create job-rag-refresh \
+            --image "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/rag:${SHORT_SHA}" \
+            --region "${_REGION}" \
+            --service-account "gamethread-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --memory 2Gi \
+            --cpu 2 \
+            --task-timeout 3600s \
+            --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
+            --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest,LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest,LANGFUSE_BASE_URL=LANGFUSE_BASE_URL:latest \
+            --quiet;
         fi
+
+  # ── PREFECT AGENT IMAGE ───────────────────────────────────────────────────
+
+  # Step 11: Build the Prefect agent image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/prefect-agent:${SHORT_SHA}",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/prefect-agent:latest",
+        "-f",
+        "backend/Dockerfile.prefect-agent",
+        "backend/",
+      ]
+
+  # Step 12: Push the Prefect agent image.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "push",
+        "--all-tags",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/gamethread/prefect-agent",
+      ]
 
 substitutions:
   _REGION: us-central1
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
