@@ -213,7 +213,7 @@ function DateFilterPanel({ briefDate, availableDates, onSelect, onClose }: DateF
                   {availableDates.slice(0, 8).map(d => (
                     <button
                       key={d}
-                      onClick={() => { onSelect(d); onClose() }}
+                      onClick={() => { setSingle(d); onSelect(d); onClose() }}
                       style={{
                         padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
                         border: `1px solid ${d === briefDate ? ACCENT : 'var(--border)'}`,

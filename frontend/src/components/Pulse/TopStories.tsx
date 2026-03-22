@@ -168,7 +168,7 @@ function DateFilterPanel({ briefDate, availableDates, onSelect, onClose }: DateF
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: 6 }}>Recent game days</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                   {availableDates.slice(0, 8).map(d => (
-                    <button key={d} onClick={() => { onSelect(d); onClose() }} style={{
+                    <button key={d} onClick={() => { setSingle(d); onSelect(d); onClose() }} style={{
                       padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
                       border: `1px solid ${d === briefDate ? ACCENT : 'var(--border)'}`,
                       background: d === briefDate ? `${ACCENT}15` : 'transparent',
