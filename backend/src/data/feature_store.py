@@ -290,7 +290,7 @@ def validate_raw_data(engine, seasons):
                 })
             else:
                 max_game_dt = pd.to_datetime(max_game_date).date()
-                if (current_date - max_game_dt).days > 7:
+                if season == config.CURRENT_SEASON and (current_date - max_game_dt).days > 7:
                     failures.append({
                         "reason": "stale_game_data",
                         "value": {
@@ -715,7 +715,7 @@ def run_feature_engineering(seasons: list = None):
         at least 5 prior games of data.
     """
     if seasons is None:
-        seasons = ["2025-26"]
+        seasons = config.PIPELINE_SEASONS
     
     engine = get_engine()
     validation_summary = validate_raw_data(engine, seasons)
@@ -731,11 +731,12 @@ def run_feature_engineering(seasons: list = None):
     logger.info("=" * 60)
     
     try:
-        # Default to current season if not specified
-        season = seasons[0] if seasons else config.CURRENT_SEASON
-        record_count = compute_features(engine, season=season)
-        compute_h2h_features(engine, season=season)
-        compute_streak_features(engine, season=season)
+        total_record_count = 0
+        for season in seasons:
+            record_count = compute_features(engine, season=season)
+            compute_h2h_features(engine, season=season)
+            compute_streak_features(engine, season=season)
+            total_record_count += record_count
         
         elapsed = time.time() - start_time
         
@@ -744,10 +745,10 @@ def run_feature_engineering(seasons: list = None):
             engine,
             module="feature_store",
             status="success",
-            processed=record_count,
-            inserted=record_count,
+            processed=total_record_count,
+            inserted=total_record_count,
             details={
-                "season": season,
+                "seasons": seasons,
                 "elapsed_seconds": round(elapsed, 2),
                 "h2h_features_updated": True,
                 "streak_features_updated": True,
@@ -757,7 +758,7 @@ def run_feature_engineering(seasons: list = None):
         
         logger.info("=" * 60)
         logger.info(f"✅ COMPLETED in {elapsed:.1f}s")
-        logger.info(f"   Features Computed: {record_count}")
+        logger.info(f"   Features Computed: {total_record_count}")
         logger.info("=" * 60)
         
     except Exception as e:

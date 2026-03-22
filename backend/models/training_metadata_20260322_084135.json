@@ -1,0 +1,93 @@
+{
+  "season": "2024-25",
+  "cutoff_date": null,
+  "validation_season": "2025-26",
+  "training_games": 1152,
+  "validation_games": 20,
+  "validation_summary": {
+    "games": 20,
+    "models": {
+      "logistic_regression": {
+        "accuracy": 0.7,
+        "brier_score": 0.2422
+      },
+      "xgboost": {
+        "accuracy": 0.75,
+        "brier_score": 0.1628
+      },
+      "lightgbm": {
+        "accuracy": 0.75,
+        "brier_score": 0.1475
+      }
+    },
+    "ensemble": {
+      "accuracy": 0.75,
+      "brier_score": 0.1641
+    }
+  },
+  "calibration": {
+    "logistic_regression": {
+      "method": "none",
+      "raw_brier": 0.20748589224132485,
+      "calibrated_brier": 0.20748589224132485,
+      "platt_brier": null,
+      "isotonic_brier": null,
+      "improvement": 0.0,
+      "n_validation": 20
+    },
+    "xgboost": {
+      "method": "none",
+      "raw_brier": 0.032570379437443536,
+      "calibrated_brier": 0.032570379437443536,
+      "platt_brier": null,
+      "isotonic_brier": null,
+      "improvement": 0.0,
+      "n_validation": 20
+    },
+    "lightgbm": {
+      "method": "none",
+      "raw_brier": 0.036098904651677186,
+      "calibrated_brier": 0.036098904651677186,
+      "platt_brier": null,
+      "isotonic_brier": null,
+      "improvement": 0.0,
+      "n_validation": 20
+    }
+  },
+  "library_versions": {
+    "python": "3.9.6 (default, Jan  9 2026, 11:03:41) \n[Clang 17.0.0 (clang-1700.6.4.2)]",
+    "sklearn": "1.6.1",
+    "xgboost": "2.1.4",
+    "lightgbm": "4.6.0",
+    "numpy": "1.26.4",
+    "pandas": "2.3.3",
+    "trained_at": "20260322_084135",
+    "feature_columns": [
+      "win_pct_last_5",
+      "win_pct_last_10",
+      "avg_point_diff_last_5",
+      "avg_point_diff_last_10",
+      "is_home",
+      "days_rest",
+      "is_back_to_back",
+      "avg_off_rating_last_5",
+      "avg_def_rating_last_5",
+      "avg_pace_last_5",
+      "avg_efg_last_5",
+      "h2h_win_pct",
+      "h2h_avg_margin",
+      "h2h_data_available",
+      "current_streak",
+      "opp_win_pct_last_5",
+      "opp_win_pct_last_10",
+      "opp_avg_point_diff_last_5",
+      "opp_avg_point_diff_last_10",
+      "opp_days_rest",
+      "opp_is_back_to_back",
+      "opp_avg_off_rating_last_5",
+      "opp_avg_def_rating_last_5",
+      "opp_avg_pace_last_5",
+      "opp_avg_efg_last_5"
+    ]
+  }
+}

@@ -48,31 +48,7 @@ from nba_api.stats.endpoints import (
     leaguedashplayerstats,
 )
 
-# ── NBA API: browser-like headers required to avoid cloud IP blocks ────────────
-# stats.nba.com silently drops requests from cloud provider IP ranges unless
-# the User-Agent and x-nba-stats-* headers match a real browser session.
-# This must be set before any endpoint is instantiated.
-try:
-    from nba_api.stats.library.http import NBAStatsHTTP
-    NBAStatsHTTP.headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "x-nba-stats-origin": "stats",
-        "x-nba-stats-token": "true",
-        "Referer": "https://www.nba.com/",
-        "Origin": "https://www.nba.com",
-        "Host": "stats.nba.com",
-    }
-except Exception:
-    pass  # Older nba_api versions may not expose NBAStatsHTTP
-# ─────────────────────────────────────────────────────────────────────────────
+
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
@@ -539,42 +515,83 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                 logger.info(f"    No new games found for {team_abbrev}")
                 continue
             
-            with engine.begin() as conn:
-                for _, row in df.iterrows():
-                    game_id = row["Game_ID"]
-                    
-                    # Parse matchup to determine home/away
-                    matchup = row["MATCHUP"]
-                    is_home = "vs." in matchup
-                    
-                    # Parse opponent
-                    if "vs." in matchup:
-                        opp_abbrev = matchup.split("vs. ")[-1].strip()
-                    else:
-                        opp_abbrev = matchup.split("@ ")[-1].strip()
-                    
-                    # Find opponent team_id
-                    opp_team = next(
-                        (t for t in all_teams if t["abbreviation"] == opp_abbrev),
-                        None,
-                    )
-                    opp_team_id = opp_team["id"] if opp_team else None
-                    
-                    # Parse game date
-                    game_date = row["GAME_DATE_DT"] if "GAME_DATE_DT" in row else pd.to_datetime(row["GAME_DATE"], format="mixed").date()
-                    
+            matches_to_insert = []
+            team_stats_to_insert = []
+            
+            for _, row in df.iterrows():
+                game_id = row["Game_ID"]
+                
+                # Parse matchup to determine home/away
+                matchup = row["MATCHUP"]
+                is_home = "vs." in matchup
+                
+                # Parse opponent
+                if "vs." in matchup:
+                    opp_abbrev = matchup.split("vs. ")[-1].strip()
+                else:
+                    opp_abbrev = matchup.split("@ ")[-1].strip()
+                
+                # Find opponent team_id
+                opp_team = next(
+                    (t for t in all_teams if t["abbreviation"] == opp_abbrev),
+                    None,
+                )
+                opp_team_id = opp_team["id"] if opp_team else None
+                
+                # Parse game date
+                game_date = row["GAME_DATE_DT"] if "GAME_DATE_DT" in row else pd.to_datetime(row["GAME_DATE"], format="mixed").date()
+                
 
-                    # Determine winner
-                    wl = row["WL"]
-                    winner_id = team_id if wl == "W" else opp_team_id
-                    
-                    # Upsert match data
-                    home_team_id = team_id if is_home else opp_team_id
-                    away_team_id = opp_team_id if is_home else team_id
-                    home_score = int(row["PTS"]) if is_home else None
-                    away_score = int(row["PTS"]) if not is_home else None
-                    is_completed = pd.notna(row.get("WL"))
-                    
+                # Determine winner
+                wl = row["WL"]
+                winner_id = team_id if wl == "W" else opp_team_id
+                
+                # Upsert match data
+                home_team_id = team_id if is_home else opp_team_id
+                away_team_id = opp_team_id if is_home else team_id
+                home_score = int(row["PTS"]) if is_home else None
+                away_score = int(row["PTS"]) if not is_home else None
+                is_completed = pd.notna(row.get("WL"))
+                
+                matches_to_insert.append({
+                    "game_id": game_id,
+                    "game_date": game_date,
+                    "season": season,
+                    "home_team_id": home_team_id,
+                    "away_team_id": away_team_id,
+                    "winner_id": winner_id,
+                    "is_completed": is_completed,
+                    "home_score": home_score,
+                    "away_score": away_score
+                })
+                
+                if game_id not in games_seen:
+                    games_seen.add(game_id)
+                    game_count += 1
+                
+                # Insert team game stats (one row per team per game)
+                advanced_metrics = _compute_advanced_team_metrics(row)
+                team_stats_to_insert.append({
+                    "game_id": game_id,
+                    "team_id": team_id,
+                    "pts": _to_int(row.get("PTS")),
+                    "reb": _to_int(row.get("REB")),
+                    "ast": _to_int(row.get("AST")),
+                    "stl": _to_int(row.get("STL")),
+                    "blk": _to_int(row.get("BLK")),
+                    "tov": _to_int(row.get("TOV")),
+                    "fg_pct": _to_float(row.get("FG_PCT")),
+                    "fg3_pct": _to_float(row.get("FG3_PCT")),
+                    "ft_pct": _to_float(row.get("FT_PCT")),
+                    "off_rating": advanced_metrics["offensive_rating"],
+                    "def_rating": advanced_metrics["defensive_rating"],
+                    "pace": advanced_metrics["pace"],
+                    "efg_pct": advanced_metrics["effective_fg_pct"],
+                    "ts_pct": advanced_metrics["true_shooting_pct"],
+                })
+
+            with engine.begin() as conn:
+                if matches_to_insert:
                     conn.execute(
                         text("""
                             INSERT INTO matches (
@@ -593,24 +610,9 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                                 home_score = CASE WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score ELSE matches.home_score END,
                                 away_score = CASE WHEN EXCLUDED.away_score IS NOT NULL THEN EXCLUDED.away_score ELSE matches.away_score END
                         """),
-                        {
-                            "game_id": game_id,
-                            "game_date": game_date,
-                            "season": season,
-                            "home_team_id": home_team_id,
-                            "away_team_id": away_team_id,
-                            "winner_id": winner_id,
-                            "is_completed": is_completed,
-                            "home_score": home_score,
-                            "away_score": away_score
-                        },
+                        matches_to_insert,
                     )
-                    if game_id not in games_seen:
-                        games_seen.add(game_id)
-                        game_count += 1
-                    
-                    # Insert team game stats (one row per team per game)
-                    advanced_metrics = _compute_advanced_team_metrics(row)
+                if team_stats_to_insert:
                     conn.execute(
                         text("""
                             INSERT INTO team_game_stats (
@@ -643,24 +645,7 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
                                 effective_fg_pct = EXCLUDED.effective_fg_pct,
                                 true_shooting_pct = EXCLUDED.true_shooting_pct
                         """),
-                        {
-                            "game_id": game_id,
-                            "team_id": team_id,
-                            "pts": _to_int(row.get("PTS")),
-                            "reb": _to_int(row.get("REB")),
-                            "ast": _to_int(row.get("AST")),
-                            "stl": _to_int(row.get("STL")),
-                            "blk": _to_int(row.get("BLK")),
-                            "tov": _to_int(row.get("TOV")),
-                            "fg_pct": _to_float(row.get("FG_PCT")),
-                            "fg3_pct": _to_float(row.get("FG3_PCT")),
-                            "ft_pct": _to_float(row.get("FT_PCT")),
-                            "off_rating": advanced_metrics["offensive_rating"],
-                            "def_rating": advanced_metrics["defensive_rating"],
-                            "pace": advanced_metrics["pace"],
-                            "efg_pct": advanced_metrics["effective_fg_pct"],
-                            "ts_pct": advanced_metrics["true_shooting_pct"],
-                        },
+                        team_stats_to_insert,
                     )
             
         except Exception as e:
@@ -710,11 +695,22 @@ def ingest_players(engine, season: str = "2025-26") -> int:
         
         df = roster.get_data_frames()[0]
         
-        with engine.begin() as conn:
-            for _, player in df.iterrows():
-                # TEAM_ID can be 0 or NaN for free agents/waived players
-                team_id = int(player["TEAM_ID"]) if pd.notna(player.get("TEAM_ID")) and player.get("TEAM_ID") != 0 and player.get("TEAM_ID") != "0" else None
-                
+        players_to_insert = []
+        for _, player in df.iterrows():
+            # TEAM_ID can be 0 or NaN for free agents/waived players
+            team_id = int(player["TEAM_ID"]) if pd.notna(player.get("TEAM_ID")) and player.get("TEAM_ID") != 0 and player.get("TEAM_ID") != "0" else None
+            
+            players_to_insert.append({
+                "player_id": int(player["PERSON_ID"]),
+                "full_name": player["DISPLAY_FIRST_LAST"],
+                "team_id": team_id,
+                "position": None,  # CommonAllPlayers doesn't provide position easily, dropping for now
+                "now": datetime.now(),
+            })
+            player_count += 1
+            
+        if players_to_insert:
+            with engine.begin() as conn:
                 conn.execute(
                     text("""
                         INSERT INTO players (player_id, full_name, team_id, position, is_active, updated_at)
@@ -726,15 +722,8 @@ def ingest_players(engine, season: str = "2025-26") -> int:
                             is_active = TRUE,
                             updated_at = EXCLUDED.updated_at
                     """),
-                    {
-                        "player_id": int(player["PERSON_ID"]),
-                        "full_name": player["DISPLAY_FIRST_LAST"],
-                        "team_id": team_id,
-                        "position": None,  # CommonAllPlayers doesn't provide position easily, dropping for now
-                        "now": datetime.now(),
-                    },
+                    players_to_insert,
                 )
-                player_count += 1
                 
         logger.info(f"✅ Ingested {player_count} players")
         
@@ -789,12 +778,40 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
             logger.info("    No new player game logs found")
             return 0
             
-        with engine.begin() as conn:
-            for _, row in df.iterrows():
-                game_id = str(row["GAME_ID"])
-                player_id = int(row["PLAYER_ID"])
-                team_id = int(row["TEAM_ID"])
-                
+        logs_to_insert = []
+        for _, row in df.iterrows():
+            game_id = str(row["GAME_ID"])
+            player_id = int(row["PLAYER_ID"])
+            team_id = int(row["TEAM_ID"])
+            
+            logs_to_insert.append({
+                "game_id": game_id,
+                "player_id": player_id,
+                "team_id": team_id,
+                "min": float(row["MIN"]) if pd.notna(row.get("MIN")) else None,
+                "pts": int(row["PTS"]) if pd.notna(row.get("PTS")) else None,
+                "reb": int(row["REB"]) if pd.notna(row.get("REB")) else None,
+                "ast": int(row["AST"]) if pd.notna(row.get("AST")) else None,
+                "stl": int(row["STL"]) if pd.notna(row.get("STL")) else None,
+                "blk": int(row["BLK"]) if pd.notna(row.get("BLK")) else None,
+                "tov": int(row["TOV"]) if pd.notna(row.get("TOV")) else None,
+                "pf": int(row["PF"]) if pd.notna(row.get("PF")) else None,
+                "fgm": int(row["FGM"]) if pd.notna(row.get("FGM")) else None,
+                "fga": int(row["FGA"]) if pd.notna(row.get("FGA")) else None,
+                "fg_pct": float(row["FG_PCT"]) if pd.notna(row.get("FG_PCT")) else None,
+                "fg3m": int(row["FG3M"]) if pd.notna(row.get("FG3M")) else None,
+                "fg3a": int(row["FG3A"]) if pd.notna(row.get("FG3A")) else None,
+                "fg3_pct": float(row["FG3_PCT"]) if pd.notna(row.get("FG3_PCT")) else None,
+                "ftm": int(row["FTM"]) if pd.notna(row.get("FTM")) else None,
+                "fta": int(row["FTA"]) if pd.notna(row.get("FTA")) else None,
+                "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT")) else None,
+                "plus_minus": int(row["PLUS_MINUS"]) if pd.notna(row.get("PLUS_MINUS")) else None,
+                "fantasy_pts": float(row["FANTASY_PTS"]) if pd.notna(row.get("FANTASY_PTS")) else None,
+            })
+            game_count += 1
+            
+        if logs_to_insert:
+            with engine.begin() as conn:
                 conn.execute(
                     text("""
                         INSERT INTO player_game_stats (
@@ -831,32 +848,8 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
                             plus_minus = EXCLUDED.plus_minus,
                             fantasy_points = EXCLUDED.fantasy_points
                     """),
-                    {
-                        "game_id": game_id,
-                        "player_id": player_id,
-                        "team_id": team_id,
-                        "min": float(row["MIN"]) if pd.notna(row.get("MIN")) else None,
-                        "pts": int(row["PTS"]) if pd.notna(row.get("PTS")) else None,
-                        "reb": int(row["REB"]) if pd.notna(row.get("REB")) else None,
-                        "ast": int(row["AST"]) if pd.notna(row.get("AST")) else None,
-                        "stl": int(row["STL"]) if pd.notna(row.get("STL")) else None,
-                        "blk": int(row["BLK"]) if pd.notna(row.get("BLK")) else None,
-                        "tov": int(row["TOV"]) if pd.notna(row.get("TOV")) else None,
-                        "pf": int(row["PF"]) if pd.notna(row.get("PF")) else None,
-                        "fgm": int(row["FGM"]) if pd.notna(row.get("FGM")) else None,
-                        "fga": int(row["FGA"]) if pd.notna(row.get("FGA")) else None,
-                        "fg_pct": float(row["FG_PCT"]) if pd.notna(row.get("FG_PCT")) else None,
-                        "fg3m": int(row["FG3M"]) if pd.notna(row.get("FG3M")) else None,
-                        "fg3a": int(row["FG3A"]) if pd.notna(row.get("FG3A")) else None,
-                        "fg3_pct": float(row["FG3_PCT"]) if pd.notna(row.get("FG3_PCT")) else None,
-                        "ftm": int(row["FTM"]) if pd.notna(row.get("FTM")) else None,
-                        "fta": int(row["FTA"]) if pd.notna(row.get("FTA")) else None,
-                        "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT")) else None,
-                        "plus_minus": int(row["PLUS_MINUS"]) if pd.notna(row.get("PLUS_MINUS")) else None,
-                        "fantasy_pts": float(row["FANTASY_PTS"]) if pd.notna(row.get("FANTASY_PTS")) else None,
-                    },
+                    logs_to_insert,
                 )
-                game_count += 1
                 
     except Exception as e:
         logger.error(f"    ❌ Error pulling player game logs: {e}")
