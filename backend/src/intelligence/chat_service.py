@@ -205,6 +205,7 @@ class LLMClient:
             response = model.generate_content(
                 prompt,
                 generation_config={"temperature": 0.25, "max_output_tokens": max_tokens},
+                request_options={"timeout": 30},
             )
             output_text = (response.text or "").strip() or None
             success = output_text is not None
