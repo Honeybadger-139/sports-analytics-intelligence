@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { ChatMessage, ChatRequest, ChatResponse } from '../types'
 
 const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
+const CHAT_API_KEY = import.meta.env.VITE_CHAT_API_KEY ?? ''
 
 /** Stable per-browser session ID — persisted in localStorage for Langfuse trace grouping. */
 const SESSION_STORAGE_KEY = 'sai_chat_session_id'
@@ -29,7 +30,7 @@ const WELCOME_MESSAGE: ChatMessage = {
 async function postChat(payload: ChatRequest, signal: AbortSignal): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': CHAT_API_KEY },
     body: JSON.stringify(payload),
     signal,
   })
@@ -49,7 +50,7 @@ async function postChatStream(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': CHAT_API_KEY },
     body: JSON.stringify(payload),
     signal,
   })
