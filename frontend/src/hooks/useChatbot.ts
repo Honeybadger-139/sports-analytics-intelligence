@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import type { ChatMessage, ChatRequest, ChatResponse } from '../types'
 
-const API_BASE = '/api/v1'
+const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
 
 /** Stable per-browser session ID — persisted in localStorage for Langfuse trace grouping. */
 const SESSION_STORAGE_KEY = 'sai_chat_session_id'
