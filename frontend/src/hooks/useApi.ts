@@ -151,7 +151,7 @@ export function useDailyBrief(season = '2025-26', briefDate?: string) {
 export function useTodaysPredictions() {
   return useRefreshableQuery<TodayPredictionsResponse>({
     queryKey: ['todays-predictions'],
-    path: '/predictions/today?persist=false',
+    path: '/predictions/today?persist=true',
     staleTime: 0,
     errorMessage: 'Failed to load predictions',
   })
