@@ -168,9 +168,17 @@ export function useChatbot() {
             }
           )
         } catch (streamErr) {
-          // Backward-compatible fallback to non-stream endpoint if stream is unavailable.
-          const streamHttp404 = (streamErr as Error).message?.includes('HTTP 404')
-          if (!streamHttp404) throw streamErr
+          // Fallback to non-stream endpoint when stream is unavailable:
+          // 404 = endpoint not deployed yet
+          // 401/403 = CHAT_API_KEY not configured
+          // 503 = streaming disabled server-side
+          const errMsg = (streamErr as Error).message ?? ''
+          const isStreamUnavailable =
+            errMsg.includes('HTTP 404') ||
+            errMsg.includes('HTTP 401') ||
+            errMsg.includes('HTTP 403') ||
+            errMsg.includes('HTTP 503')
+          if (!isStreamUnavailable) throw streamErr
 
           const res = await postChat(
             { message: content.trim(), history, session_id: sessionIdRef.current },
