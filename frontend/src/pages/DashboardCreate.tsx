@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getGrafanaCreateDashboardUrl, openGrafanaCreateDashboard } from '../utils/grafana'
+import { getDashboardToolLabel, getGrafanaCreateDashboardUrl, openGrafanaCreateDashboard } from '../utils/grafana'
 
 const ACCENT = '#D97706'
 
 export default function DashboardCreate() {
   const navigate = useNavigate()
-  const grafanaCreateUrl = getGrafanaCreateDashboardUrl()
+  const createUrl = getGrafanaCreateDashboardUrl()
+  const dashboardToolLabel = getDashboardToolLabel()
 
   useEffect(() => {
     openGrafanaCreateDashboard('_self')
@@ -16,10 +17,10 @@ export default function DashboardCreate() {
     <div className="page-shell">
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '56px 28px', textAlign: 'center' }}>
         <p style={{ fontSize: '0.74rem', color: ACCENT, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: 8 }}>
-          Redirecting To Grafana
+          Redirecting to {dashboardToolLabel}
         </p>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
-          Open Grafana Dashboard Builder
+          Open {dashboardToolLabel} Dashboard Builder
         </h1>
         <p style={{ fontSize: '0.84rem', color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 18 }}>
           If redirect did not trigger automatically, use the button below.
@@ -38,7 +39,7 @@ export default function DashboardCreate() {
               cursor: 'pointer',
             }}
           >
-            Open Grafana
+            Open {dashboardToolLabel}
           </button>
           <button
             onClick={() => navigate('/dashboard')}
@@ -57,7 +58,7 @@ export default function DashboardCreate() {
           </button>
         </div>
         <p style={{ marginTop: 14, fontSize: '0.72rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-          {grafanaCreateUrl}
+          {createUrl}
         </p>
       </div>
     </div>

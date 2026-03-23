@@ -2,10 +2,14 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useDashboard } from '../hooks/useDashboard'
-import { useSportContext } from '../context/SportContext'
-import type { DashboardCreateTemplate, DashboardItem, DashboardSource } from '../types'
+import type { DashboardItem, DashboardSource } from '../types'
 import { findSportOption } from '../config/sports'
-import { openGrafanaCreateDashboard } from '../utils/grafana'
+import {
+  getDashboardLibraryUrl,
+  getDashboardPresetUrls,
+  getDashboardToolLabel,
+  openGrafanaCreateDashboard,
+} from '../utils/grafana'
 
 const ACCENT = '#D97706'
 
@@ -18,12 +22,12 @@ const SOURCE_META: Record<DashboardSource, { label: string; color: string; secti
   'dashboard/custom': { label: 'Custom Builder', color: '#F97316', section: 'Dashboard' },
 }
 
-interface DashboardStarterCard {
+interface ExternalDashboardCard {
   id: string
   title: string
   description: string
   highlights: string[]
-  template: DashboardCreateTemplate
+  url: string | null
 }
 
 function fmtDateTime(iso: string): string {
@@ -160,9 +164,11 @@ function DashboardCard({
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { selection } = useSportContext()
   const { items, removeItem, clearAll } = useDashboard()
   const [sourceFilter, setSourceFilter] = useState<'all' | DashboardSource>('all')
+  const dashboardToolLabel = getDashboardToolLabel()
+  const dashboardPresetUrls = getDashboardPresetUrls()
+  const dashboardLibraryUrl = getDashboardLibraryUrl()
 
   const sourceOptions = useMemo(() => {
     return Object.keys(SOURCE_META) as DashboardSource[]
@@ -173,74 +179,24 @@ export default function Dashboard() {
     return items.filter(item => item.source === sourceFilter)
   }, [items, sourceFilter])
 
-  const starterCards = useMemo<DashboardStarterCard[]>(() => {
-    const shared = {
-      source: 'dashboard/custom' as const,
-      route: '/dashboard/create',
-      sport: selection.sport,
-      league: selection.league,
-      season: selection.season,
-    }
+  const starterCards = useMemo<ExternalDashboardCard[]>(() => {
     return [
       {
-        id: 'team-trends',
-        title: 'Team Trends Dashboard',
-        description: 'Track average points, rebounds, and assists over time for any NBA team.',
-        highlights: ['Line chart on game_date', 'Team filter dropdown', 'Multi-metric trend view'],
-        template: {
-          ...shared,
-          title: 'Team Trend Explorer',
-          note: 'Team-level scoring and ball movement trend dashboard.',
-          tags: ['starter:team-trends', 'team', 'trend'],
-          builderDefaults: {
-            season: selection.season,
-            sport: selection.sport,
-            league: selection.league,
-            tableName: 'team_game_stats',
-            chartType: 'line',
-            dimensionField: 'game_date',
-            metrics: [
-              { field: 'points', aggregate: 'avg' },
-              { field: 'rebounds', aggregate: 'avg' },
-              { field: 'assists', aggregate: 'avg' },
-            ],
-            filters: [
-              { field: 'team_abbreviation', op: 'eq', value: '' },
-            ],
-          },
-        },
+        id: 'prediction-performance',
+        title: 'Prediction Performance',
+        description: 'Track rolling accuracy, Brier score, calibration quality, and confidence distribution.',
+        highlights: ['Rolling accuracy', 'Brier trend', 'Calibration curve'],
+        url: dashboardPresetUrls.prediction,
       },
       {
-        id: 'player-trends',
-        title: 'Player Trends Dashboard',
-        description: 'Compare how a player is trending in points, rebounds, and assists by game date.',
-        highlights: ['Line chart on game_date', 'Team + player filters', 'Supports any active player'],
-        template: {
-          ...shared,
-          title: 'Player Trend Explorer',
-          note: 'Player-level production trend dashboard.',
-          tags: ['starter:player-trends', 'player', 'trend'],
-          builderDefaults: {
-            season: selection.season,
-            sport: selection.sport,
-            league: selection.league,
-            tableName: 'player_game_stats',
-            chartType: 'line',
-            dimensionField: 'game_date',
-            metrics: [
-              { field: 'points', aggregate: 'avg' },
-              { field: 'rebounds', aggregate: 'avg' },
-              { field: 'assists', aggregate: 'avg' },
-            ],
-            filters: [
-              { field: 'team_abbreviation', op: 'eq', value: '' },
-              { field: 'player_name', op: 'eq', value: '' },
-            ],
-          },
-        },
+        id: 'pipeline-health',
+        title: 'Pipeline Health',
+        description: 'Monitor ingestion status, feature freshness, and operational reliability trends.',
+        highlights: ['Run status timeline', 'Rows/day', 'Freshness monitors'],
+        url: dashboardPresetUrls.pipeline,
       },
     ]
-  }, [selection])
+  }, [dashboardPresetUrls.pipeline, dashboardPresetUrls.prediction])
 
   return (
     <div className="page-shell">
@@ -254,7 +210,7 @@ export default function Dashboard() {
               Created Dashboards
             </h1>
             <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 720 }}>
-              Review all previously created dashboards first, then use Create Dashboard to open Grafana and build reporting views.
+              Review all previously created dashboards first, then use Create Dashboard to open {dashboardToolLabel} and build reporting views.
             </p>
           </div>
 
@@ -272,7 +228,7 @@ export default function Dashboard() {
                 cursor: 'pointer',
               }}
             >
-              Create Dashboard
+              Create In {dashboardToolLabel}
             </button>
             {!!items.length && (
               <button
@@ -341,7 +297,13 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <button
-                  onClick={() => openGrafanaCreateDashboard()}
+                  onClick={() => {
+                    if (card.url) {
+                      window.open(card.url, '_blank', 'noopener,noreferrer')
+                      return
+                    }
+                    openGrafanaCreateDashboard()
+                  }}
                   style={{
                     marginTop: 'auto',
                     padding: '7px 10px',
@@ -354,11 +316,29 @@ export default function Dashboard() {
                     cursor: 'pointer',
                   }}
                 >
-                  Use This Starter
+                  {card.url ? 'Open Dashboard' : `Create In ${dashboardToolLabel}`}
                 </button>
               </div>
             ))}
           </div>
+          {!starterCards.every(card => card.url) && (
+            <p style={{ marginTop: 10, fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.45 }}>
+              Missing dashboard IDs. Set
+              {' '}
+              <code>VITE_METABASE_DASHBOARD_PREDICTION_ID</code>
+              {' '}
+              and
+              {' '}
+              <code>VITE_METABASE_DASHBOARD_PIPELINE_ID</code>
+              {' '}
+              to open these directly, or create them now in
+              {' '}
+              <a href={dashboardLibraryUrl} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>
+                {dashboardToolLabel}
+              </a>
+              .
+            </p>
+          )}
         </section>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
@@ -449,7 +429,7 @@ export default function Dashboard() {
                 cursor: 'pointer',
               }}
             >
-              Create Dashboard
+              Create In {dashboardToolLabel}
             </button>
           </div>
         ) : (
