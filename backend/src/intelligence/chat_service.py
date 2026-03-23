@@ -435,8 +435,8 @@ class ChatService:
         season = cls._extract_season(message)
 
         # Team win-rate questions (e.g. "Show me the Lakers' win rate in 2025-26")
-        if "win rate" in lower or "win%" in lower or "win %" in lower:
-            if any(phrase in lower for phrase in ("which team", "best win rate", "highest win rate", "top win rate")):
+        if "win rate" in lower or "win%" in lower or "win %" in lower or "win percentage" in lower:
+            if any(phrase in lower for phrase in ("which team", "best win rate", "highest win rate", "top win rate", "best win percentage", "highest win percentage", "top win percentage", "show me the top")):
                 return (
                     "SELECT\n"
                     "  t.full_name,\n"
