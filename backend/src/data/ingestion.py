@@ -34,12 +34,14 @@ Architecture Decision (see docs/decisions/decision-log.md):
 import time
 import logging
 import random
+from calendar import monthrange
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, date
 from typing import Optional, Dict, Any, Set
 import json
 
 import pandas as pd
+import psycopg2.extras
 from nba_api.stats.static import teams as nba_teams
 from nba_api.stats.endpoints import (
     teamgamelog,
@@ -86,7 +88,11 @@ logger.info(f"📝 Logging to console and {PIPE_LOG_FILE}")
 
 def get_engine():
     """Create SQLAlchemy engine from centralized config."""
-    return create_engine(config.DATABASE_URL)
+    return create_engine(
+        config.DATABASE_URL,
+        pool_pre_ping=True,  # Discard stale pool connections (survives Cloud SQL Proxy restarts)
+        pool_recycle=1800,   # Recycle connections every 30 min
+    )
 
 
 def rate_limit():
@@ -664,25 +670,21 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
 # 3. PLAYER ROSTER INGESTION
 # ==========================================
 
-def ingest_players(engine, season: str = "2025-26") -> int:
+def ingest_players(engine, season: str = "2025-26", all_seasons: bool = False) -> int:
     """
-    Pull all players for the given season and upsert into players table.
-    
-    🎓 WHY PLAYER DATA MATTERS:
-        Even though our v1 model uses team-level features, knowing which
-        players are on each team lets us:
-        1. Detect roster changes (trades, injuries)
-        2. Build player-impact features later (star player availability)
-        3. Support player-prop bet predictions in future versions
-        
-    Note: We use CommonAllPlayers to get EVERY player who played in the season,
-    not just the current active rosters.
-    
+    Pull players for the given season and upsert into players table.
+
+    Strategy:
+        Always use is_only_current_season=1 with the specific season — each call
+        returns ~500-600 rows (players active that season) in a few seconds.
+        is_only_current_season=0 fetches ALL 5,000+ historical players in one giant
+        request that consistently times out / hangs.
+
     Returns:
         Number of players ingested.
     """
-    logger.info(f"👤 Ingesting all players for season {season}...")
-    
+    logger.info(f"👤 Ingesting players for season {season}...")
+
     player_count = 0
     try:
         roster = retry_api_call(
@@ -692,23 +694,23 @@ def ingest_players(engine, season: str = "2025-26") -> int:
                 timeout=60,
             )
         )
-        
+
         df = roster.get_data_frames()[0]
-        
+
         players_to_insert = []
         for _, player in df.iterrows():
             # TEAM_ID can be 0 or NaN for free agents/waived players
             team_id = int(player["TEAM_ID"]) if pd.notna(player.get("TEAM_ID")) and player.get("TEAM_ID") != 0 and player.get("TEAM_ID") != "0" else None
-            
+
             players_to_insert.append({
                 "player_id": int(player["PERSON_ID"]),
                 "full_name": player["DISPLAY_FIRST_LAST"],
                 "team_id": team_id,
-                "position": None,  # CommonAllPlayers doesn't provide position easily, dropping for now
+                "position": None,
                 "now": datetime.now(),
             })
             player_count += 1
-            
+
         if players_to_insert:
             with engine.begin() as conn:
                 conn.execute(
@@ -724,29 +726,52 @@ def ingest_players(engine, season: str = "2025-26") -> int:
                     """),
                     players_to_insert,
                 )
-                
-        logger.info(f"✅ Ingested {player_count} players")
-        
+
+        logger.info(f"✅ Ingested {player_count} players for {season}")
+
     except Exception as e:
         logger.error(f"❌ Error pulling players: {e}")
-        
+
     return player_count
 
 # ==========================================
 # 4. PLAYER GAME LOGS (Per Game Stats)
 # ==========================================
 
+def _season_month_chunks(season: str):
+    """
+    Yield (date_from, date_to) MM/DD/YYYY string pairs for every calendar month
+    of an NBA season (Oct year1 through Jun year2, covering regular season + playoffs).
+
+    🎓 WHY MONTHLY CHUNKS?
+        LeagueGameLog("P") fetching a full season in one call returns ~25k+ rows
+        and frequently hangs on the NBA.com API (slow streaming response, no
+        server-side timeout). Splitting into monthly chunks keeps each request
+        small (~2–4k rows), makes retry logic effective, and lets incremental
+        sync skip months that are already fully loaded.
+    """
+    start_year = int(season[:4])   # e.g. 2023 for "2023-24"
+    months = [
+        (start_year,     10), (start_year,     11), (start_year,     12),
+        (start_year + 1,  1), (start_year + 1,  2), (start_year + 1,  3),
+        (start_year + 1,  4), (start_year + 1,  5), (start_year + 1,  6),
+    ]
+    for year, month in months:
+        last_day = monthrange(year, month)[1]
+        yield f"{month:02d}/01/{year}", f"{month:02d}/{last_day:02d}/{year}"
+
+
 def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
     """
-    Fetch all player game logs across the league incrementally.
+    Fetch all player game logs across the league incrementally, month by month.
     """
     logger.info(f"🏀 Ingesting player game logs for season {season}...")
-    
+
     # 1. Incremental Sync Logic
     with engine.begin() as conn:
         result = conn.execute(
             text("""
-                SELECT MAX(m.game_date) 
+                SELECT MAX(m.game_date)
                 FROM player_game_stats pgs
                 JOIN matches m ON pgs.game_id = m.game_id
                 WHERE m.season = :season
@@ -755,25 +780,54 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
         ).fetchone()
         max_date_in_db = result[0] if result and result[0] else None
 
-    logger.info(f"   -> Incremental sync: fetching player games on or after {max_date_in_db if max_date_in_db else 'the beginning of the season'}")
+    logger.info(f"   -> Incremental sync from: {max_date_in_db or 'season start'}")
 
     game_count = 0
-    try:
-        # LeagueGameLog with player abbreviation 'P' gets all player performances
-        log = retry_api_call(
-            lambda s=season: leaguegamelog.LeagueGameLog(
-                season=s,
-                player_or_team_abbreviation="P",
-                timeout=60
+    all_dfs = []
+
+    # 2. Fetch month by month — avoids the full-season bulk call that hangs
+    for date_from, date_to in _season_month_chunks(season):
+        chunk_start = pd.to_datetime(date_from, format="%m/%d/%Y").date()
+        # Skip months already fully loaded (chunk end < max_date_in_db)
+        chunk_end = pd.to_datetime(date_to, format="%m/%d/%Y").date()
+        if max_date_in_db and chunk_end < max_date_in_db:
+            continue
+
+        try:
+            log = retry_api_call(
+                lambda df=date_from, dt=date_to, s=season: leaguegamelog.LeagueGameLog(
+                    season=s,
+                    player_or_team_abbreviation="P",
+                    date_from_nullable=df,
+                    date_to_nullable=dt,
+                    timeout=60,
+                )
             )
-        )
-        
-        df = log.get_data_frames()[0]
-        
+            chunk_df = log.get_data_frames()[0]
+            if not chunk_df.empty:
+                all_dfs.append(chunk_df)
+                logger.info(f"   {date_from} → {date_to}: {len(chunk_df)} rows")
+            else:
+                logger.info(f"   {date_from} → {date_to}: no games")
+            rate_limit()
+        except Exception as e:
+            logger.warning(f"   Chunk {date_from}→{date_to} failed: {e} — skipping")
+            continue
+
+    if not all_dfs:
+        logger.info("    No new player game logs found")
+        return 0
+
+    try:
+        df = pd.concat(all_dfs, ignore_index=True)
+
+        # De-duplicate in case date ranges overlap
+        df = df.drop_duplicates(subset=["GAME_ID", "PLAYER_ID"])
+
         if max_date_in_db:
             df["GAME_DATE_DT"] = pd.to_datetime(df["GAME_DATE"], format="mixed").dt.date
             df = df[df["GAME_DATE_DT"] >= max_date_in_db]
-            
+
         if df.empty:
             logger.info("    No new player game logs found")
             return 0
@@ -826,45 +880,66 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
                         logger.warning(f"   Skipping {skipped} player-log rows: game_id not found in matches table")
                     logs_to_insert = [r for r in logs_to_insert if r["game_id"] in valid_game_ids]
 
-                if logs_to_insert:
-                    conn.execute(
-                        text("""
-                            INSERT INTO player_game_stats (
-                                game_id, player_id, team_id, minutes, points, rebounds, assists,
-                                steals, blocks, turnovers, personal_fouls, field_goals_made,
-                                field_goals_attempted, field_goal_pct, three_points_made,
-                                three_points_attempted, three_point_pct, free_throws_made,
-                                free_throws_attempted, free_throw_pct, plus_minus, fantasy_points
-                            )
-                            VALUES (
-                                :game_id, :player_id, :team_id, :min, :pts, :reb, :ast,
-                                :stl, :blk, :tov, :pf, :fgm, :fga, :fg_pct, :fg3m, :fg3a,
-                                :fg3_pct, :ftm, :fta, :ft_pct, :plus_minus, :fantasy_pts
-                            )
-                            ON CONFLICT (game_id, player_id) DO UPDATE SET
-                                team_id = EXCLUDED.team_id,
-                                minutes = EXCLUDED.minutes,
-                                points = EXCLUDED.points,
-                                rebounds = EXCLUDED.rebounds,
-                                assists = EXCLUDED.assists,
-                                steals = EXCLUDED.steals,
-                                blocks = EXCLUDED.blocks,
-                                turnovers = EXCLUDED.turnovers,
-                                personal_fouls = EXCLUDED.personal_fouls,
-                                field_goals_made = EXCLUDED.field_goals_made,
-                                field_goals_attempted = EXCLUDED.field_goals_attempted,
-                                field_goal_pct = EXCLUDED.field_goal_pct,
-                                three_points_made = EXCLUDED.three_points_made,
-                                three_points_attempted = EXCLUDED.three_points_attempted,
-                                three_point_pct = EXCLUDED.three_point_pct,
-                                free_throws_made = EXCLUDED.free_throws_made,
-                                free_throws_attempted = EXCLUDED.free_throws_attempted,
-                                free_throw_pct = EXCLUDED.free_throw_pct,
-                                plus_minus = EXCLUDED.plus_minus,
-                                fantasy_points = EXCLUDED.fantasy_points
-                        """),
-                        logs_to_insert,
+                # Pre-filter on player_id FK — players not in players table cause FK violations
+                candidate_player_ids = list({r["player_id"] for r in logs_to_insert})
+                if candidate_player_ids:
+                    valid_prows = conn.execute(
+                        text("SELECT player_id FROM players WHERE player_id = ANY(:ids)"),
+                        {"ids": candidate_player_ids},
+                    ).fetchall()
+                    valid_player_ids = {r[0] for r in valid_prows}
+                    skipped_p = len(logs_to_insert) - sum(1 for r in logs_to_insert if r["player_id"] in valid_player_ids)
+                    if skipped_p:
+                        logger.warning(f"   Skipping {skipped_p} player-log rows: player_id not found in players table")
+                    logs_to_insert = [r for r in logs_to_insert if r["player_id"] in valid_player_ids]
+
+                # execute_values builds one multi-row INSERT per batch — single
+                # round trip for 2000 rows vs 2000 individual executemany calls.
+                INSERT_SQL_EV = """
+                    INSERT INTO player_game_stats (
+                        game_id, player_id, team_id, minutes, points, rebounds, assists,
+                        steals, blocks, turnovers, personal_fouls, field_goals_made,
+                        field_goals_attempted, field_goal_pct, three_points_made,
+                        three_points_attempted, three_point_pct, free_throws_made,
+                        free_throws_attempted, free_throw_pct, plus_minus, fantasy_points
+                    ) VALUES %s
+                    ON CONFLICT (game_id, player_id) DO UPDATE SET
+                        team_id = EXCLUDED.team_id,
+                        minutes = EXCLUDED.minutes,
+                        points = EXCLUDED.points,
+                        rebounds = EXCLUDED.rebounds,
+                        assists = EXCLUDED.assists,
+                        steals = EXCLUDED.steals,
+                        blocks = EXCLUDED.blocks,
+                        turnovers = EXCLUDED.turnovers,
+                        personal_fouls = EXCLUDED.personal_fouls,
+                        field_goals_made = EXCLUDED.field_goals_made,
+                        field_goals_attempted = EXCLUDED.field_goals_attempted,
+                        field_goal_pct = EXCLUDED.field_goal_pct,
+                        three_points_made = EXCLUDED.three_points_made,
+                        three_points_attempted = EXCLUDED.three_points_attempted,
+                        three_point_pct = EXCLUDED.three_point_pct,
+                        free_throws_made = EXCLUDED.free_throws_made,
+                        free_throws_attempted = EXCLUDED.free_throws_attempted,
+                        free_throw_pct = EXCLUDED.free_throw_pct,
+                        plus_minus = EXCLUDED.plus_minus,
+                        fantasy_points = EXCLUDED.fantasy_points
+                """
+                raw_cur = conn.connection.cursor()
+                tuples = [
+                    (
+                        r["game_id"], r["player_id"], r["team_id"],
+                        r["min"], r["pts"], r["reb"], r["ast"],
+                        r["stl"], r["blk"], r["tov"], r["pf"],
+                        r["fgm"], r["fga"], r["fg_pct"],
+                        r["fg3m"], r["fg3a"], r["fg3_pct"],
+                        r["ftm"], r["fta"], r["ft_pct"],
+                        r["plus_minus"], r["fantasy_pts"],
                     )
+                    for r in logs_to_insert
+                ]
+                psycopg2.extras.execute_values(raw_cur, INSERT_SQL_EV, tuples, page_size=2000)
+                logger.info(f"   Inserted {len(tuples)} rows in one shot")
                 
     except Exception as e:
         logger.error(f"    ❌ Error pulling player game logs: {e}")
@@ -1094,8 +1169,12 @@ def run_full_ingestion(seasons: Optional[list] = None):
         for season in seasons:
             total_games += ingest_season_games(engine, season=season)
         
-        # Step 3: Player rosters
-        player_count = ingest_players(engine, season=seasons[-1])
+        # Step 3: Player rosters — fetch all-time players for historical seasons so
+        # FK constraints in player_season_stats don't fail for retired/traded players
+        player_count = 0
+        for season in seasons:
+            is_historical = season != config.CURRENT_SEASON
+            player_count += ingest_players(engine, season=season, all_seasons=is_historical)
         
         # Step 4: Player Game Logs & Season Stats
         total_player_games = 0
