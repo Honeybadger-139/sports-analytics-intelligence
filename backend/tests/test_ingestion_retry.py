@@ -25,7 +25,7 @@ class _FakeConn:
         self._responses = responses
         self._idx = 0
 
-    def execute(self, _query):
+    def execute(self, _query, *args, **kwargs):
         response = self._responses[self._idx]
         self._idx += 1
         return response
@@ -125,7 +125,7 @@ def test_run_full_ingestion_records_audit_violations(monkeypatch):
     monkeypatch.setattr(
         ingestion,
         "audit_data",
-        lambda _engine: {
+        lambda _engine, season=None: {
             "team_stats_violations": 0,
             "player_stats_missing_games": 0,
             "null_score_matches": 0,

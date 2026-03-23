@@ -87,7 +87,7 @@ steps:
             --cpu 2 \
             --concurrency 80 \
             --port 8000 \
-            --timeout 120s \
+            --timeout 300s \
             --set-env-vars EMBEDDED_SCHEDULER_ENABLED=false \
             --add-cloudsql-instances "${PROJECT_ID}:${_REGION}:sports-analytics-pg" \
             --update-secrets DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest,LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest,LANGFUSE_BASE_URL=LANGFUSE_BASE_URL:latest \

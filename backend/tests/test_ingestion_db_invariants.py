@@ -55,6 +55,7 @@ def db_audit_engine():
                 CREATE TEMP TABLE matches (
                     id SERIAL PRIMARY KEY,
                     game_id VARCHAR(20) NOT NULL,
+                    season VARCHAR(10) DEFAULT '2025-26',
                     is_completed BOOLEAN DEFAULT FALSE,
                     home_score INTEGER,
                     away_score INTEGER

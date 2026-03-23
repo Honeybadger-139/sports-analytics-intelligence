@@ -812,44 +812,59 @@ def ingest_player_game_logs(engine, season: str = "2025-26") -> int:
             
         if logs_to_insert:
             with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO player_game_stats (
-                            game_id, player_id, team_id, minutes, points, rebounds, assists,
-                            steals, blocks, turnovers, personal_fouls, field_goals_made,
-                            field_goals_attempted, field_goal_pct, three_points_made,
-                            three_points_attempted, three_point_pct, free_throws_made,
-                            free_throws_attempted, free_throw_pct, plus_minus, fantasy_points
-                        )
-                        VALUES (
-                            :game_id, :player_id, :team_id, :min, :pts, :reb, :ast,
-                            :stl, :blk, :tov, :pf, :fgm, :fga, :fg_pct, :fg3m, :fg3a,
-                            :fg3_pct, :ftm, :fta, :ft_pct, :plus_minus, :fantasy_pts
-                        )
-                        ON CONFLICT (game_id, player_id) DO UPDATE SET
-                            team_id = EXCLUDED.team_id,
-                            minutes = EXCLUDED.minutes,
-                            points = EXCLUDED.points,
-                            rebounds = EXCLUDED.rebounds,
-                            assists = EXCLUDED.assists,
-                            steals = EXCLUDED.steals,
-                            blocks = EXCLUDED.blocks,
-                            turnovers = EXCLUDED.turnovers,
-                            personal_fouls = EXCLUDED.personal_fouls,
-                            field_goals_made = EXCLUDED.field_goals_made,
-                            field_goals_attempted = EXCLUDED.field_goals_attempted,
-                            field_goal_pct = EXCLUDED.field_goal_pct,
-                            three_points_made = EXCLUDED.three_points_made,
-                            three_points_attempted = EXCLUDED.three_points_attempted,
-                            three_point_pct = EXCLUDED.three_point_pct,
-                            free_throws_made = EXCLUDED.free_throws_made,
-                            free_throws_attempted = EXCLUDED.free_throws_attempted,
-                            free_throw_pct = EXCLUDED.free_throw_pct,
-                            plus_minus = EXCLUDED.plus_minus,
-                            fantasy_points = EXCLUDED.fantasy_points
-                    """),
-                    logs_to_insert,
-                )
+                # Pre-filter: only insert rows whose game_id exists in matches
+                # (prevents FK violation rolling back the entire batch)
+                candidate_game_ids = list({r["game_id"] for r in logs_to_insert})
+                if candidate_game_ids:
+                    valid_rows = conn.execute(
+                        text("SELECT game_id FROM matches WHERE game_id = ANY(:ids)"),
+                        {"ids": candidate_game_ids},
+                    ).fetchall()
+                    valid_game_ids = {r[0] for r in valid_rows}
+                    skipped = len(logs_to_insert) - sum(1 for r in logs_to_insert if r["game_id"] in valid_game_ids)
+                    if skipped:
+                        logger.warning(f"   Skipping {skipped} player-log rows: game_id not found in matches table")
+                    logs_to_insert = [r for r in logs_to_insert if r["game_id"] in valid_game_ids]
+
+                if logs_to_insert:
+                    conn.execute(
+                        text("""
+                            INSERT INTO player_game_stats (
+                                game_id, player_id, team_id, minutes, points, rebounds, assists,
+                                steals, blocks, turnovers, personal_fouls, field_goals_made,
+                                field_goals_attempted, field_goal_pct, three_points_made,
+                                three_points_attempted, three_point_pct, free_throws_made,
+                                free_throws_attempted, free_throw_pct, plus_minus, fantasy_points
+                            )
+                            VALUES (
+                                :game_id, :player_id, :team_id, :min, :pts, :reb, :ast,
+                                :stl, :blk, :tov, :pf, :fgm, :fga, :fg_pct, :fg3m, :fg3a,
+                                :fg3_pct, :ftm, :fta, :ft_pct, :plus_minus, :fantasy_pts
+                            )
+                            ON CONFLICT (game_id, player_id) DO UPDATE SET
+                                team_id = EXCLUDED.team_id,
+                                minutes = EXCLUDED.minutes,
+                                points = EXCLUDED.points,
+                                rebounds = EXCLUDED.rebounds,
+                                assists = EXCLUDED.assists,
+                                steals = EXCLUDED.steals,
+                                blocks = EXCLUDED.blocks,
+                                turnovers = EXCLUDED.turnovers,
+                                personal_fouls = EXCLUDED.personal_fouls,
+                                field_goals_made = EXCLUDED.field_goals_made,
+                                field_goals_attempted = EXCLUDED.field_goals_attempted,
+                                field_goal_pct = EXCLUDED.field_goal_pct,
+                                three_points_made = EXCLUDED.three_points_made,
+                                three_points_attempted = EXCLUDED.three_points_attempted,
+                                three_point_pct = EXCLUDED.three_point_pct,
+                                free_throws_made = EXCLUDED.free_throws_made,
+                                free_throws_attempted = EXCLUDED.free_throws_attempted,
+                                free_throw_pct = EXCLUDED.free_throw_pct,
+                                plus_minus = EXCLUDED.plus_minus,
+                                fantasy_points = EXCLUDED.fantasy_points
+                        """),
+                        logs_to_insert,
+                    )
                 
     except Exception as e:
         logger.error(f"    ❌ Error pulling player game logs: {e}")
@@ -954,15 +969,22 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
 # DATA INTEGRITY AUDIT
 # ==========================================
 
-def audit_data(engine):
+def audit_data(engine, season: Optional[str] = None):
     """
     Perform a consistency check on the ingested data.
-    
+
+    Args:
+        season: Scope the player-stats check to this season only.
+                Defaults to config.CURRENT_SEASON so historical seasons
+                that predate player-stats ingestion don't produce false
+                positives.
+
     🎓 WHY:
-        In professional ML engineering, model accuracy is only as good 
+        In professional ML engineering, model accuracy is only as good
         as your data. This function flags suspicious "gaps" in the dataset.
     """
-    logger.info("🔍 STARTING DATA INTEGRITY AUDIT...")
+    audit_season = season or config.CURRENT_SEASON
+    logger.info(f"🔍 STARTING DATA INTEGRITY AUDIT (season={audit_season})...")
     with engine.connect() as conn:
         # 1. Check for Matches without Team Stats (should be exactly 2 stats records per match)
         stats_check = conn.execute(text("""
@@ -973,21 +995,22 @@ def audit_data(engine):
             GROUP BY m.game_id
             HAVING COUNT(tgs.id) != 2;
         """)).fetchall()
-        
+
         if stats_check:
             logger.warning(f"  ⚠️ ALERT: Found {len(stats_check)} completed games with missing team stats!")
         else:
             logger.info("  ✅ Team Stats: Every match has exactly 2 team records.")
 
-        # 2. Check for Matches without Player Stats
+        # 2. Check for Matches without Player Stats (scoped to audit_season to avoid
+        #    false positives from historical seasons ingested before player-stats tracking)
         player_check = conn.execute(text("""
             SELECT m.game_id
             FROM matches m
             LEFT JOIN player_game_stats pgs ON m.game_id = pgs.game_id
-            WHERE m.is_completed = TRUE
+            WHERE m.is_completed = TRUE AND m.season = :season
             GROUP BY m.game_id
             HAVING COUNT(pgs.id) = 0;
-        """)).fetchall()
+        """), {"season": audit_season}).fetchall()
         
         if player_check:
             logger.warning(f"  ⚠️ ALERT: Found {len(player_check)} games with ZERO player stats!")
@@ -1065,8 +1088,8 @@ def run_full_ingestion(seasons: Optional[list] = None):
             total_player_games += ingest_player_game_logs(engine, season=season)
             total_season_stats += ingest_player_season_stats(engine, season=season)
         
-        # Step 5: Data Integrity Audit
-        audit_summary = audit_data(engine)
+        # Step 5: Data Integrity Audit (scoped to the last/most-current season)
+        audit_summary = audit_data(engine, season=seasons[-1])
         
         elapsed = time.time() - start_time
         total_processed = team_count + total_games + player_count + total_player_games + total_season_stats

@@ -45,6 +45,7 @@ engine = create_engine(
     max_overflow=10,       # Up to 10 additional on demand
     pool_timeout=30,       # Wait 30s for a connection before error
     pool_recycle=1800,     # Recycle connections every 30 min
+    pool_pre_ping=True,    # Test connection health before use (avoids stale conn errors)
     echo=False,            # Set True for SQL query logging (debug)
 )
 
