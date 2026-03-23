@@ -225,4 +225,12 @@
 
 ---
 
+## Phase 9 Decisions — Full Stack Deployment
+
+| # | Decision | Alternatives | Why This Choice | Trade-off | Interview Angle |
+|---|----------|-------------|-----------------|-----------|-----------------|
+| 220 | **Hybrid Serverless Deployment (Vercel + Cloud Run)** | Monolithic server (EC2/Droplet), full GCP (Cloud Run for both), full Vercel (Next.js serverless functions) | Vercel provides a globally distributed CDN and zero-config CI/CD for the React fast-refresh SPA. Cloud Run provides scalable container execution for the Python/FastAPI ML inference workload. Splitting them puts each workload on its optimal, purpose-built platform. | Requires managing two separate deployment platforms and handling CORS explicitly | "I architected a decoupled serverless deployment. The frontend sits on Vercel's global CDN for sub-second TTL delivery, while the ML backend scales to zero on Cloud Run. This is the modern standard for separating visualization compute from inference compute." |
+
+---
+
 *This log is updated as new decisions are made throughout the project.*
