@@ -59,6 +59,7 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Raw data playground & SQL lab',
     color: 'var(--accent-scrib)',
     subItems: [
+      { label: 'Explorer',      path: '/scribble?tab=explorer',     description: 'Browse raw tables and schemas' },
       { label: 'SQL Lab',       path: '/scribble?tab=sql',          description: 'Query raw tables directly' },
       { label: 'Notebooks',     path: '/scribble?tab=notebooks',    description: 'Saved analysis playgrounds' },
       { label: 'Feature Maker', path: '/scribble?tab=feature-maker',description: 'Create custom data attributes' },
