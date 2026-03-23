@@ -114,12 +114,27 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   const [viewListOpen, setViewListOpen] = useState(false)
   const [aiChatOpen, setAiChatOpen] = useState(false)
   const [isResultsOpen, setIsResultsOpen] = useState(false)
+  const [isResultsFullscreen, setIsResultsFullscreen] = useState(false)
   const [resultsHeight, setResultsHeight] = useState(0)
   const [isResizingResults, setIsResizingResults] = useState(false)
   const layoutRef = useRef<HTMLDivElement | null>(null)
+  const previousResultsHeightRef = useRef(DEFAULT_RESULTS_HEIGHT)
   const { result, loading, error, run, clear } = useSqlQuery()
   const { create: createView, refresh: refreshViews } = useViews()
   const hasQueryOutput = !!result || !!error
+
+  function getMaxResultsHeight(isFullscreen: boolean) {
+    const container = layoutRef.current
+    if (!container) return DEFAULT_RESULTS_HEIGHT
+    const rect = container.getBoundingClientRect()
+    if (isFullscreen) return Math.max(MIN_RESULTS_HEIGHT, rect.height)
+    return Math.max(MIN_RESULTS_HEIGHT, rect.height - MIN_EDITOR_HEIGHT)
+  }
+
+  function clampResultsHeight(nextHeight: number, isFullscreen: boolean) {
+    const maxHeight = getMaxResultsHeight(isFullscreen)
+    return Math.max(MIN_RESULTS_HEIGHT, Math.min(maxHeight, nextHeight))
+  }
 
   useEffect(() => {
     function onLoad(e: Event) {
@@ -127,6 +142,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
       if (detail) {
         setSql(detail)
         clear()
+        setIsResultsFullscreen(false)
         setIsResultsOpen(false)
         setResultsHeight(0)
       }
@@ -145,6 +161,26 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   }, [hasQueryOutput, resultsHeight])
 
   useEffect(() => {
+    if (isResultsFullscreen && !isResultsOpen) {
+      setIsResultsFullscreen(false)
+    }
+  }, [isResultsFullscreen, isResultsOpen])
+
+  useEffect(() => {
+    if (!isResultsOpen || isResultsFullscreen || resultsHeight <= 0) return
+    previousResultsHeightRef.current = resultsHeight
+  }, [isResultsOpen, isResultsFullscreen, resultsHeight])
+
+  useEffect(() => {
+    if (!isResultsFullscreen || !isResultsOpen) return
+    function onResize() {
+      setResultsHeight(getMaxResultsHeight(true))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isResultsFullscreen, isResultsOpen])
+
+  useEffect(() => {
     if (!isResizingResults) return
 
     function onMouseMove(e: MouseEvent) {
@@ -152,8 +188,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
       if (!container) return
       const rect = container.getBoundingClientRect()
       const nextHeight = rect.bottom - e.clientY
-      const maxHeight = Math.max(MIN_RESULTS_HEIGHT, rect.height - MIN_EDITOR_HEIGHT)
-      setResultsHeight(Math.max(MIN_RESULTS_HEIGHT, Math.min(maxHeight, nextHeight)))
+      setResultsHeight(clampResultsHeight(nextHeight, false))
     }
 
     function onMouseUp() {
@@ -176,8 +211,27 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   function executeQuery() {
     if (!sql.trim() || loading) return
     setIsResultsOpen(true)
-    setResultsHeight(prev => (prev > 0 ? prev : DEFAULT_RESULTS_HEIGHT))
+    setResultsHeight(prev => {
+      if (isResultsFullscreen) return getMaxResultsHeight(true)
+      return prev > 0 ? prev : DEFAULT_RESULTS_HEIGHT
+    })
     run(sql)
+  }
+
+  function toggleResultsFullscreen() {
+    if (!isResultsOpen) return
+    if (!isResultsFullscreen) {
+      if (resultsHeight > 0) {
+        previousResultsHeightRef.current = clampResultsHeight(resultsHeight, false)
+      }
+      setIsResultsFullscreen(true)
+      setIsResizingResults(false)
+      setResultsHeight(getMaxResultsHeight(true))
+      return
+    }
+    const restoredHeight = clampResultsHeight(previousResultsHeightRef.current, false)
+    setIsResultsFullscreen(false)
+    setResultsHeight(restoredHeight)
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -202,6 +256,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
   function loadExample(q: (typeof EXAMPLE_QUERIES)[0]) {
     setSql(q.sql)
     clear()
+    setIsResultsFullscreen(false)
     setIsResultsOpen(false)
     setResultsHeight(0)
   }
@@ -224,7 +279,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
         onLoadSql={(sql) => { setSql(sql); clear(); setAiChatOpen(false) }}
       />
 
-      <div className="sql-lab-layout" ref={layoutRef}>
+      <div className={`sql-lab-layout ${isResultsFullscreen ? 'results-fullscreen' : ''}`} ref={layoutRef}>
         {/* Editor pane */}
         <div className="sql-editor-pane">
 
@@ -359,6 +414,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
               onChange={e => {
                 setSql(e.target.value)
                 clear()
+                setIsResultsFullscreen(false)
                 setIsResultsOpen(false)
                 setResultsHeight(0)
               }}
@@ -382,7 +438,7 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
 
         {/* Results pane */}
         <div
-          className={`sql-results-pane ${isResultsOpen ? 'open' : ''} ${isResizingResults ? 'resizing' : ''}`}
+          className={`sql-results-pane ${isResultsOpen ? 'open' : ''} ${isResizingResults ? 'resizing' : ''} ${isResultsFullscreen ? 'fullscreen' : ''}`}
           style={{ height: isResultsOpen ? `${resultsHeight}px` : '0px' }}
         >
           <button
@@ -390,9 +446,9 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
             className="sql-results-resizer"
             onMouseDown={(e) => {
               e.preventDefault()
-              if (isResultsOpen) setIsResizingResults(true)
+              if (isResultsOpen && !isResultsFullscreen) setIsResizingResults(true)
             }}
-            title="Drag to resize results panel"
+            title={isResultsFullscreen ? 'Exit fullscreen to resize by drag' : 'Drag to resize results panel'}
             aria-label="Resize results panel"
           />
           <div className="sql-results-content">
@@ -424,9 +480,20 @@ export default function SqlLab({ onSaveRequest }: SqlLabProps) {
               >
                 <div className="sql-results-header">
                   <span className="sql-results-title">Results</span>
-                  <span className="sql-results-meta" style={{ color: ACCENT }}>
-                    {result.row_count} rows · {result.elapsed_ms.toFixed(1)} ms
-                  </span>
+                  <div className="sql-results-header-actions">
+                    <button
+                      type="button"
+                      className="sql-results-toggle-btn"
+                      onClick={toggleResultsFullscreen}
+                      title={isResultsFullscreen ? 'Restore results panel size' : 'Expand results panel'}
+                      aria-label={isResultsFullscreen ? 'Restore results panel size' : 'Expand results panel'}
+                    >
+                      {isResultsFullscreen ? 'Restore' : 'Expand'}
+                    </button>
+                    <span className="sql-results-meta" style={{ color: ACCENT }}>
+                      {result.row_count} rows · {result.elapsed_ms.toFixed(1)} ms
+                    </span>
+                  </div>
                 </div>
                 <DataTable
                   columns={result.columns}
