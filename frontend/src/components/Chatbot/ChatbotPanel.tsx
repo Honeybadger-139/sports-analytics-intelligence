@@ -6,11 +6,11 @@ import styles from './Chatbot.module.css'
 
 const SUGGESTED = [
   "Which NBA team has the best win rate this season?",
-  "What are today's top model predictions?",
-  "Explain the last prediction — what drove the outcome?",
-  "Are there any current data quality issues?",
-  "Summarise bankroll performance this season",
-  "Which players have the highest impact on model confidence?",
+  "Who are the top 10 scorers this season by points per game?",
+  "Show me the Lakers' record in 2025-26",
+  "Compare assists per game for the top 5 point guards",
+  "Which teams have improved the most from last season?",
+  "What are the average player stats for the Celtics this season?",
 ]
 
 interface ChatbotPanelProps {
