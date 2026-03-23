@@ -95,6 +95,37 @@ Flow:
 - Writes land in whichever Postgres instance `DATABASE_URL` points to (including cloud-hosted Postgres/Cloud SQL).
 - Airflow captures final pipeline health from `/api/v1/system/status`.
 
+## Cloud Orchestration (Composer-Ready DAG)
+
+For production GCP orchestration, a Composer-compatible DAG calls the Cloud Run backend over HTTPS:
+
+```
+Cloud Composer 2 / Local Airflow / CI Runner
+    │
+    ├─ check_backend_health    →  GET  /api/v1/chat/health (fallback: /healthz)
+    ├─ trigger_pipeline        →  POST /api/v1/admin/pipeline/run-now
+    ├─ trigger_rag_refresh     →  POST /api/v1/admin/rag/run-now (optional)
+    └─ verify_system_status    →  GET  /api/v1/system/status
+                                       │
+                               Cloud Run (gamethread-api)
+                                       │
+                               Cloud SQL (PostgreSQL)
+```
+
+Reference DAG:
+- `infra/airflow/dags/gamethread_cloud_pipeline.py` (Composer-ready)
+- `infra/airflow/dags/gamethread_local_api_pipeline.py` (local-only)
+
+Configuration (Airflow Variables or env vars):
+| Variable | Purpose |
+|---|---|
+| `GAMETHREAD_API_BASE_URL` | Cloud Run HTTPS URL |
+| `GAMETHREAD_CHAT_API_KEY` | X-API-Key for admin auth (from Secret Manager) |
+| `GAMETHREAD_PIPELINE_INCLUDE_RAG` | Enable RAG refresh step |
+| `GAMETHREAD_API_TIMEOUT_SECONDS` | Max pipeline wait (default 7200s) |
+
+Deployment docs: `infra/composer/README.md`
+
 ## Pipeline Guarantees
 
 ### 1. Idempotent writes

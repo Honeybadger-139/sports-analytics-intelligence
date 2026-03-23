@@ -231,6 +231,8 @@
 |---|----------|-------------|-----------------|-----------|-----------------|
 | 220 | **Hybrid Serverless Deployment (Vercel + Cloud Run)** | Monolithic server (EC2/Droplet), full GCP (Cloud Run for both), full Vercel (Next.js serverless functions) | Vercel provides a globally distributed CDN and zero-config CI/CD for the React fast-refresh SPA. Cloud Run provides scalable container execution for the Python/FastAPI ML inference workload. Splitting them puts each workload on its optimal, purpose-built platform. | Requires managing two separate deployment platforms and handling CORS explicitly | "I architected a decoupled serverless deployment. The frontend sits on Vercel's global CDN for sub-second TTL delivery, while the ML backend scales to zero on Cloud Run. This is the modern standard for separating visualization compute from inference compute." |
 
+| 221 | **Composer-Ready DAG with Deferred Provisioning** | A) Provision Cloud Composer 2 immediately (~$250/mo), B) Keep Cloud Scheduler + Cloud Run Jobs only, C) Create Composer-compatible DAG that runs anywhere | Option C: The DAG is production-ready for Composer but runs locally or in CI at zero cost today. Cloud Scheduler handles the simple daily trigger; Composer is ready for when multi-step dependency orchestration is needed. | No managed DAG visibility until Composer is provisioned; local runs depend on laptop uptime | "I designed the orchestration layer with a 'ready-but-deferred' pattern — the DAG is Composer-compatible from day one, using Airflow Variables with env-var fallback. This means zero migration work when scaling up, while avoiding $250/mo premature cost for a solo project." |
+
 ---
 
 *This log is updated as new decisions are made throughout the project.*
