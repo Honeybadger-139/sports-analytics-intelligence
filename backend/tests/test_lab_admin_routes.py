@@ -182,3 +182,61 @@ class TestAdminConfigRoutes:
         assert resp.status_code == 503
         # Restore for other tests
         os.environ["CHAT_API_KEY"] = "restored-test-key"
+
+
+class TestAdminPipelineTriggerRoutes:
+    def test_run_pipeline_now_triggers_pipeline_only_by_default(self):
+        tc, key = _make_app()
+        with patch("src.api.admin_routes._run_pipeline_job") as mock_pipeline, \
+             patch("src.api.admin_routes._run_rag_ingestion_job") as mock_rag:
+            resp = tc.post("/api/v1/admin/pipeline/run-now", headers={"X-API-Key": key})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert data["run_rag_refresh"] is False
+        assert data["rag_status"] == "skipped"
+        mock_pipeline.assert_called_once()
+        mock_rag.assert_not_called()
+
+    def test_run_pipeline_now_can_chain_rag_refresh(self):
+        tc, key = _make_app()
+        with patch("src.api.admin_routes._run_pipeline_job") as mock_pipeline, \
+             patch("src.api.admin_routes._run_rag_ingestion_job") as mock_rag:
+            resp = tc.post(
+                "/api/v1/admin/pipeline/run-now",
+                headers={"X-API-Key": key},
+                json={"run_rag_refresh": True},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["run_rag_refresh"] is True
+        assert data["rag_status"] == "success"
+        mock_pipeline.assert_called_once()
+        mock_rag.assert_called_once()
+
+    def test_run_pipeline_now_returns_500_on_failure(self):
+        tc, key = _make_app()
+        with patch("src.api.admin_routes._run_pipeline_job", side_effect=RuntimeError("boom")):
+            resp = tc.post("/api/v1/admin/pipeline/run-now", headers={"X-API-Key": key})
+
+        assert resp.status_code == 500
+        assert "Manual pipeline trigger failed" in resp.json()["detail"]
+
+    def test_run_rag_now_triggers_rag_job(self):
+        tc, key = _make_app()
+        with patch("src.api.admin_routes._run_rag_ingestion_job") as mock_rag:
+            resp = tc.post("/api/v1/admin/rag/run-now", headers={"X-API-Key": key})
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "completed"
+        mock_rag.assert_called_once()
+
+    def test_run_rag_now_returns_500_on_failure(self):
+        tc, key = _make_app()
+        with patch("src.api.admin_routes._run_rag_ingestion_job", side_effect=RuntimeError("rag-fail")):
+            resp = tc.post("/api/v1/admin/rag/run-now", headers={"X-API-Key": key})
+
+        assert resp.status_code == 500
+        assert "Manual RAG trigger failed" in resp.json()["detail"]

@@ -54,6 +54,28 @@ services:
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
 
+  airflow:
+    image: apache/airflow:2.9.3
+    container_name: sports-analytics-airflow
+    restart: unless-stopped
+    user: "${AIRFLOW_UID:-50000}:0"
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      GAMETHREAD_API_BASE_URL: ${GAMETHREAD_API_BASE_URL:-http://host.docker.internal:8000}
+      GAMETHREAD_CHAT_API_KEY: ${GAMETHREAD_CHAT_API_KEY:-${CHAT_API_KEY}}
+      GAMETHREAD_API_TIMEOUT_SECONDS: ${GAMETHREAD_API_TIMEOUT_SECONDS:-7200}
+      GAMETHREAD_PIPELINE_INCLUDE_RAG: ${GAMETHREAD_PIPELINE_INCLUDE_RAG:-false}
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_WWW_USER_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_WWW_USER_PASSWORD:-admin}
+    command: bash -c "airflow standalone"
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./infra/airflow/dags:/opt/airflow/dags
+      - ./infra/airflow/logs:/opt/airflow/logs
+      - ./infra/airflow/plugins:/opt/airflow/plugins
+
   # ChromaDB Vector Store (uncomment to run locally instead of using embedded mode)
   # chromadb:
   #   image: chromadb/chroma:latest

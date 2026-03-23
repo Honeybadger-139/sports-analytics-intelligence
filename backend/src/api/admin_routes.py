@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+import time
+from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -72,6 +74,27 @@ class ConfigEntry(BaseModel):
     description: Optional[str]
     updated_at: Optional[str]
     created_at: Optional[str]
+
+
+class PipelineRunRequest(BaseModel):
+    run_rag_refresh: bool = Field(
+        default=False,
+        description="When true, run a RAG vector refresh immediately after ingestion + features.",
+    )
+
+
+def _run_pipeline_job() -> None:
+    """Load raw data then feature tables using the scheduler's manual pipeline path."""
+    from scheduler import run_pipeline_job
+
+    run_pipeline_job()
+
+
+def _run_rag_ingestion_job() -> None:
+    """Refresh vector store using the scheduler's manual RAG path."""
+    from scheduler import run_rag_ingestion_job
+
+    run_rag_ingestion_job()
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -160,3 +183,69 @@ def delete_config_entry(key: str, db: Session = Depends(get_db)):
             detail=f"Config key '{key}' not found — nothing deleted.",
         )
     return {"status": "deleted", "key": key}
+
+
+@router.post("/pipeline/run-now", dependencies=[Depends(_require_api_key)])
+def run_pipeline_now(body: Optional[PipelineRunRequest] = None):
+    """
+    Trigger the full pipeline immediately (ingestion + feature engineering).
+
+    This endpoint is intentionally synchronous so external orchestrators (Airflow,
+    cron, etc.) can treat completion/failure as a deterministic task result.
+    """
+    request = body or PipelineRunRequest()
+    started_at = datetime.now(timezone.utc)
+    rag_status = "skipped"
+
+    try:
+        _run_pipeline_job()
+        if request.run_rag_refresh:
+            _run_rag_ingestion_job()
+            rag_status = "success"
+    except Exception as exc:
+        logger.error("❌ [admin_routes] Manual pipeline trigger failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Manual pipeline trigger failed: {exc}",
+        ) from exc
+
+    finished_at = datetime.now(timezone.utc)
+    elapsed_seconds = round((finished_at - started_at).total_seconds(), 2)
+    logger.info(
+        "✅ [admin_routes] Manual pipeline trigger completed in %.2fs (rag=%s)",
+        elapsed_seconds,
+        rag_status,
+    )
+    return {
+        "status": "completed",
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "elapsed_seconds": elapsed_seconds,
+        "run_rag_refresh": request.run_rag_refresh,
+        "rag_status": rag_status,
+    }
+
+
+@router.post("/rag/run-now", dependencies=[Depends(_require_api_key)])
+def run_rag_now():
+    """
+    Trigger only the RAG vector refresh path immediately.
+    """
+    started_at = time.perf_counter()
+    started_at_utc = datetime.now(timezone.utc)
+    try:
+        _run_rag_ingestion_job()
+    except Exception as exc:
+        logger.error("❌ [admin_routes] Manual RAG trigger failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Manual RAG trigger failed: {exc}",
+        ) from exc
+
+    elapsed_seconds = round(time.perf_counter() - started_at, 2)
+    logger.info("✅ [admin_routes] Manual RAG trigger completed in %.2fs", elapsed_seconds)
+    return {
+        "status": "completed",
+        "started_at": started_at_utc.isoformat(),
+        "elapsed_seconds": elapsed_seconds,
+    }

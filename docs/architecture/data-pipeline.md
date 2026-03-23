@@ -72,6 +72,29 @@ All jobs are started by FastAPI lifespan via APScheduler.
 - Refreshes intelligence context index at configured UTC hours (`RAG_SCHEDULE_HOURS`).
 - Keeps citations and brief outputs fresh for Pulse/Chatbot workflows.
 
+## Airflow Orchestration (Local API Trigger)
+
+For local-laptop orchestration, Airflow can trigger the backend directly via admin API routes:
+
+1. `POST /api/v1/admin/pipeline/run-now`
+- Runs ingestion + feature engineering immediately.
+- Optional body: `{ "run_rag_refresh": true }` to chain vector refresh.
+
+2. `POST /api/v1/admin/rag/run-now`
+- Runs only the RAG/vector refresh path.
+
+3. `GET /api/v1/system/status`
+- Used as post-run observability check.
+
+Reference DAG:
+- `infra/airflow/dags/gamethread_local_api_pipeline.py`
+
+Flow:
+- Airflow task triggers local FastAPI endpoint.
+- FastAPI executes the same ingestion/feature logic.
+- Writes land in whichever Postgres instance `DATABASE_URL` points to (including cloud-hosted Postgres/Cloud SQL).
+- Airflow captures final pipeline health from `/api/v1/system/status`.
+
 ## Pipeline Guarantees
 
 ### 1. Idempotent writes

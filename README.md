@@ -97,6 +97,33 @@ Pre-provisioned dashboards are available under the **GameThread** folder:
 - `GameThread - League Overview`
 - `GameThread - Team & Player Trends`
 
+### Optional: Start Airflow (local orchestration)
+
+Use this when you want scheduled API-triggered runs from your laptop.
+
+1. Ensure `CHAT_API_KEY` is set in `.env`.
+2. Set Airflow vars in `.env`:
+   - `GAMETHREAD_API_BASE_URL` (`http://host.docker.internal:8000` if backend runs on host)
+   - `GAMETHREAD_CHAT_API_KEY` (same value as `CHAT_API_KEY`)
+3. Start Airflow:
+
+```bash
+docker-compose -f docker-compose.base.yml -f docker-compose.dev.yml up -d airflow
+```
+
+4. Open Airflow UI at `http://localhost:8088` (default: `admin` / `admin`).
+5. Trigger DAG `gamethread_local_api_pipeline` from the UI, or run:
+
+```bash
+docker-compose -f docker-compose.base.yml -f docker-compose.dev.yml exec airflow airflow dags trigger gamethread_local_api_pipeline
+```
+
+This DAG calls:
+- `POST /api/v1/admin/pipeline/run-now`
+- optional `POST /api/v1/admin/rag/run-now`
+
+The run is triggered locally, and data is written to whichever DB `DATABASE_URL` points to (including cloud-hosted Postgres/Cloud SQL).
+
 ### 6. Stop everything
 
 ```bash
