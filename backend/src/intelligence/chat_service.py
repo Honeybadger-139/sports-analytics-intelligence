@@ -120,8 +120,8 @@ IMPORTANT COLUMN NOTES:
 PROVEN QUERY PATTERNS:
   Team win rates this season:
     SELECT t.full_name, t.abbreviation,
-           SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::float / NULLIF(COUNT(m.id),0) AS win_rate,
-           COUNT(m.id) AS games_played
+           SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::float / NULLIF(COUNT(m.game_id),0) AS win_rate,
+           COUNT(m.game_id) AS games_played
     FROM teams t
     JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id
     WHERE m.season = '2025-26' AND m.is_completed = true
@@ -386,6 +386,141 @@ class ChatService:
             lines.append(f"{prefix}: {msg.get('content', '')}")
         return "\n".join(lines)
 
+    # ── Deterministic NL→SQL fallback templates ─────────────────────────
+
+    @staticmethod
+    def _extract_season(message: str) -> str:
+        match = re.search(r"\b(20\d{2}-\d{2})\b", message)
+        return match.group(1) if match else "2025-26"
+
+    @staticmethod
+    def _extract_team_phrase_for_win_rate(message: str) -> Optional[str]:
+        lower = message.lower()
+        if "win rate" not in lower and "win%" not in lower and "win %" not in lower:
+            return None
+
+        patterns = [
+            r"(?:show|what is|whats|tell me|give me)?\s*(?:me\s+)?(?:the\s+)?(.+?)['’]?\s+win(?:\s*%| rate)\b",
+            r"\bfor\s+(?:the\s+)?(.+?)\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, lower)
+            if not match:
+                continue
+            candidate = re.sub(r"[^a-z0-9\s-]", " ", match.group(1)).strip()
+            candidate = re.sub(r"\s+", " ", candidate)
+            if not candidate:
+                continue
+            # Ignore generic words that are not teams.
+            if candidate in {"team", "teams", "this season", "season"}:
+                continue
+            if any(token in candidate.split() for token in {"which", "what", "best", "highest", "lowest", "team", "teams", "season", "rate", "has", "have"}):
+                continue
+            # Trim long phrases to likely team token window.
+            words = candidate.split()
+            if len(words) > 4:
+                candidate = " ".join(words[-4:])
+            return candidate
+        return None
+
+    @classmethod
+    def _rule_based_sql(cls, message: str) -> Optional[str]:
+        """
+        Deterministic SQL templates for high-frequency analytics asks.
+
+        This acts as a safety net when LLM SQL generation is unavailable or
+        returns invalid SQL.
+        """
+        lower = message.lower()
+        season = cls._extract_season(message)
+
+        # Team win-rate questions (e.g. "Show me the Lakers' win rate in 2025-26")
+        if "win rate" in lower or "win%" in lower or "win %" in lower:
+            if any(phrase in lower for phrase in ("which team", "best win rate", "highest win rate", "top win rate")):
+                return (
+                    "SELECT\n"
+                    "  t.full_name,\n"
+                    "  t.abbreviation,\n"
+                    "  SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,\n"
+                    "  COUNT(m.game_id) AS games_played,\n"
+                    "  ROUND(\n"
+                    "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::numeric\n"
+                    "    / NULLIF(COUNT(m.game_id), 0),\n"
+                    "    4\n"
+                    "  ) AS win_rate\n"
+                    "FROM teams t\n"
+                    "JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id\n"
+                    f"WHERE m.season = '{season}'\n"
+                    "  AND m.is_completed = TRUE\n"
+                    "GROUP BY t.full_name, t.abbreviation\n"
+                    "ORDER BY win_rate DESC\n"
+                    "LIMIT 10"
+                )
+            team_phrase = cls._extract_team_phrase_for_win_rate(message)
+            if team_phrase:
+                escaped_team = team_phrase.replace("'", "''")
+                return (
+                    "SELECT\n"
+                    "  t.full_name,\n"
+                    "  t.abbreviation,\n"
+                    "  SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,\n"
+                    "  COUNT(m.game_id) AS games_played,\n"
+                    "  ROUND(\n"
+                    "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::numeric\n"
+                    "    / NULLIF(COUNT(m.game_id), 0),\n"
+                    "    4\n"
+                    "  ) AS win_rate\n"
+                    "FROM teams t\n"
+                    "JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id\n"
+                    f"WHERE m.season = '{season}'\n"
+                    "  AND m.is_completed = TRUE\n"
+                    f"  AND (t.full_name ILIKE '%{escaped_team}%' OR t.abbreviation ILIKE '{escaped_team}')\n"
+                    "GROUP BY t.full_name, t.abbreviation\n"
+                    "ORDER BY win_rate DESC\n"
+                    "LIMIT 1"
+                )
+            # Generic team win-rate leaderboard
+            return (
+                "SELECT\n"
+                "  t.full_name,\n"
+                "  t.abbreviation,\n"
+                "  SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,\n"
+                "  COUNT(m.game_id) AS games_played,\n"
+                "  ROUND(\n"
+                "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::numeric\n"
+                "    / NULLIF(COUNT(m.game_id), 0),\n"
+                "    4\n"
+                "  ) AS win_rate\n"
+                "FROM teams t\n"
+                "JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id\n"
+                f"WHERE m.season = '{season}'\n"
+                "  AND m.is_completed = TRUE\n"
+                "GROUP BY t.full_name, t.abbreviation\n"
+                "ORDER BY win_rate DESC\n"
+                "LIMIT 10"
+            )
+
+        # Top scorers
+        if ("top" in lower or "highest" in lower or "leaders" in lower) and (
+            "scorer" in lower or "points" in lower
+        ):
+            return (
+                "SELECT\n"
+                "  p.full_name,\n"
+                "  t.abbreviation,\n"
+                "  pss.points,\n"
+                "  pss.games_played,\n"
+                "  ROUND(pss.points::numeric / NULLIF(pss.games_played, 0), 2) AS ppg\n"
+                "FROM player_season_stats pss\n"
+                "JOIN players p ON p.player_id = pss.player_id\n"
+                "JOIN teams t ON t.team_id = pss.team_id\n"
+                f"WHERE pss.season = '{season}'\n"
+                "ORDER BY pss.points DESC\n"
+                "LIMIT 10"
+            )
+
+        return None
+
     # ── Off-topic ─────────────────────────────────────────────────────────
 
     def _decline(self) -> str:
@@ -484,6 +619,8 @@ class ChatService:
                 "the ingestion pipeline has been run at least once."
             )
 
+        rule_sql = self._rule_based_sql(message)
+
         # ── Step 1: Generate SQL ──────────────────────────────────────────
         if self.llm.available:
             sql_prompt = (
@@ -509,12 +646,20 @@ class ChatService:
         else:
             raw_sql = None
 
+        # Deterministic fallback if LLM output is missing.
+        if not raw_sql and rule_sql:
+            raw_sql = rule_sql
+
         if not raw_sql:
             logger.warning("ChatService._db_reply: LLM returned empty SQL for: %s", message)
             return self._db_fallback(message)
 
         sql = _extract_sql(raw_sql)
         valid, err = _validate_sql(sql)
+        # If LLM generated invalid SQL but we have a deterministic match, use it.
+        if not valid and rule_sql:
+            sql = rule_sql
+            valid, err = _validate_sql(sql)
         if not valid:
             logger.warning("ChatService._db_reply: invalid SQL (%s): %s", err, sql)
             return self._db_fallback(message)
@@ -537,6 +682,41 @@ class ChatService:
                 len(rows), columns,
             )
         except Exception as exc:
+            # Retry once with deterministic SQL if we executed an LLM query first.
+            if rule_sql and sql.strip() != _cap_limit(rule_sql).strip():
+                retry_sql = _cap_limit(rule_sql)
+                try:
+                    result = self.db.execute(text(retry_sql))
+                    columns = list(result.keys())
+                    raw_rows = result.fetchall()
+                    rows = [
+                        {col: (str(v) if v is not None and not isinstance(v, (int, float, bool, str)) else v)
+                         for col, v in zip(columns, row)}
+                        for row in raw_rows
+                    ]
+                    if rows:
+                        if self.llm.available:
+                            header = " | ".join(columns)
+                            data_rows = "\n".join(
+                                " | ".join(str(row.get(c, "")) for c in columns)
+                                for row in rows[:20]
+                            )
+                            narrate_prompt = (
+                                f"You are a Sports Analytics AI assistant.\n"
+                                f"The user asked: \"{message}\"\n"
+                                f"A SQL query returned these results:\n\n"
+                                f"{header}\n{data_rows}\n\n"
+                                f"{'There are ' + str(len(rows)) + ' rows total. ' if len(rows) > 20 else ''}"
+                                f"Summarise the key findings in 2-4 plain-English sentences. "
+                                f"Be specific — mention numbers, team names, and player names from the data.\n"
+                                f"Assistant:"
+                            )
+                            narrated = self.llm.generate(narrate_prompt, max_tokens=250)
+                            if narrated:
+                                return narrated
+                        return self._rows_fallback(columns, rows)
+                except Exception:
+                    pass
             logger.warning("ChatService._db_reply: SQL execution failed: %s | SQL: %s", exc, sql)
             return (
                 "I tried to query your data but hit a database error. "
