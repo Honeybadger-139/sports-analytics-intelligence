@@ -4,7 +4,7 @@ LangGraph chatbot service (Phase 7).
 This service keeps the legacy chatbot path intact while adding a richer
 LangGraph workflow with LangChain runnable nodes:
 
-  route_intent -> rewrite_query ->
+  policy_gate -> route_intent -> rewrite_query ->
     rag: retrieve -> quality_gate -> respond -> finalize
     db : query -> optional_retry -> finalize
     off_topic -> finalize
@@ -16,13 +16,13 @@ legacy ChatService engine.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from src import config
-from src.intelligence.chat_service import ChatService, IntentRouter
+from src.intelligence.chat_service import ChatService, IntentRouter, PolicyGate
 from src.intelligence.langfuse_client import observe, set_session_context
 
 logger = logging.getLogger(__name__)
@@ -32,12 +32,20 @@ class ChatGraphState(TypedDict, total=False):
     original_message: str
     message: str
     history: List[Dict[str, str]]
+    policy_decision: str
+    policy_reason: str
     intent: str
     reply: str
     source_path: str
+    tool_path: str
     quality_score: float
     retrieval_docs: List[Dict]
     retrieval_meta: Dict
+    sources: List[Dict[str, Any]]
+    table: Optional[Dict[str, Any]]
+    key_numbers: List[Dict[str, Any]]
+    sql_latency_ms: Optional[float]
+    rows_returned: int
     needs_db_retry: bool
     db_attempts: int
 
@@ -45,6 +53,9 @@ class ChatGraphState(TypedDict, total=False):
 class GraphReplyContract(BaseModel):
     reply: str = Field(min_length=1)
     source_path: str = Field(default="db")
+    tool_path: str = Field(default="none")
+    policy_decision: str = Field(default="allowed")
+    policy_reason: str = Field(default="sports_analytics_scope")
     quality_score: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
@@ -61,6 +72,7 @@ class LangGraphChatService:
         self.sport = sport
         self._legacy = ChatService(db=db, sport=sport)
         self._graph = self._build_graph()
+        self.last_metadata: Dict[str, Any] = {}
 
     @property
     def graph_available(self) -> bool:
@@ -97,7 +109,6 @@ class LangGraphChatService:
             "couldn't generate a database query",
             "database error",
             "i tried to query your data but hit a database error",
-            "i ran the query but found no results",
         )
         return any(marker in lower for marker in retry_markers)
 
@@ -126,7 +137,7 @@ class LangGraphChatService:
         snippets = []
         for i, doc in enumerate(docs[:5], 1):
             snippets.append(
-                f"{i}. [{doc.get('source', 'source')}] {doc.get('title', '')} — "
+                f"{i}. [{doc.get('source', 'source')}] {doc.get('title', '')} - "
                 f"{str(doc.get('content', ''))[:260]}"
             )
         context_blob = "\n".join(snippets)
@@ -162,6 +173,7 @@ class LangGraphChatService:
             )
             return None
 
+        policy_runnable = RunnableLambda(lambda state: PolicyGate.evaluate(str(state.get("original_message", ""))))
         intent_runnable = RunnableLambda(lambda state: IntentRouter.route(str(state.get("original_message", ""))))
         rewrite_runnable = RunnableLambda(
             lambda state: self._rewrite_message(
@@ -187,9 +199,23 @@ class LangGraphChatService:
             lambda state: self._legacy._db_reply(
                 str(state.get("message", "")),
                 state.get("history", []),
+                return_meta=True,
             )
         )
         off_topic_runnable = RunnableLambda(lambda _state: self._legacy._decline())
+
+        def policy_gate(state: ChatGraphState) -> ChatGraphState:
+            decision, reason = policy_runnable.invoke(state)
+            return {"policy_decision": str(decision), "policy_reason": str(reason)}
+
+        def policy_refusal(state: ChatGraphState) -> ChatGraphState:
+            reason = str(state.get("policy_reason", "off_topic"))
+            return {
+                "reply": self._legacy._policy_refusal(reason),
+                "source_path": "off_topic",
+                "tool_path": "policy_gate",
+                "quality_score": 0.9,
+            }
 
         def route_intent(state: ChatGraphState) -> ChatGraphState:
             intent = str(intent_runnable.invoke(state))
@@ -218,26 +244,45 @@ class LangGraphChatService:
                     "Try asking a stats question, or retry after the next feed refresh."
                 ),
                 "source_path": "rag",
+                "tool_path": "rag_tool",
                 "quality_score": 0.0,
             }
 
         def rag_respond(state: ChatGraphState) -> ChatGraphState:
             reply = str(rag_generate_runnable.invoke(state))
+            docs = state.get("retrieval_docs", [])
+            sources = [
+                {
+                    "title": doc.get("title") or "Source",
+                    "url": doc.get("url") or "",
+                    "source": doc.get("source") or "unknown",
+                }
+                for doc in docs[:5]
+            ]
             return {
                 "reply": reply,
                 "source_path": "rag",
+                "tool_path": "rag_tool",
+                "sources": sources,
+                "table": None,
+                "key_numbers": [],
                 "quality_score": float(state.get("quality_score", 0.55)),
             }
 
         def db_query(state: ChatGraphState) -> ChatGraphState:
-            reply = str(db_runnable.invoke(state))
+            reply, db_meta = db_runnable.invoke(state)
             attempts = 1
             return {
-                "reply": reply,
+                "reply": str(reply),
                 "source_path": "db",
+                "tool_path": "sql_tool",
+                "table": db_meta.get("table"),
+                "key_numbers": db_meta.get("key_numbers", []),
+                "sql_latency_ms": db_meta.get("sql_latency_ms"),
+                "rows_returned": db_meta.get("rows_returned", 0),
                 "db_attempts": attempts,
-                "needs_db_retry": self._should_retry_db(reply, attempts),
-                "quality_score": 0.65,
+                "needs_db_retry": self._should_retry_db(str(reply), attempts),
+                "quality_score": float(db_meta.get("confidence", 0.65)),
             }
 
         def db_retry(state: ChatGraphState) -> ChatGraphState:
@@ -245,13 +290,22 @@ class LangGraphChatService:
                 f"{state.get('original_message', '')}. "
                 "Use available 2025-26 data and valid joins from schema relationships."
             )
-            reply = self._legacy._db_reply(retry_question, state.get("history", []))
+            reply, db_meta = self._legacy._db_reply(
+                retry_question,
+                state.get("history", []),
+                return_meta=True,
+            )
             return {
-                "reply": reply,
+                "reply": str(reply),
                 "source_path": "db",
+                "tool_path": "sql_tool",
+                "table": db_meta.get("table"),
+                "key_numbers": db_meta.get("key_numbers", []),
+                "sql_latency_ms": db_meta.get("sql_latency_ms"),
+                "rows_returned": db_meta.get("rows_returned", 0),
                 "db_attempts": int(state.get("db_attempts", 1)) + 1,
                 "needs_db_retry": False,
-                "quality_score": 0.7,
+                "quality_score": float(db_meta.get("confidence", 0.7)),
             }
 
         def off_topic_node(_state: ChatGraphState) -> ChatGraphState:
@@ -259,6 +313,7 @@ class LangGraphChatService:
             return {
                 "reply": reply,
                 "source_path": "off_topic",
+                "tool_path": "policy_gate",
                 "quality_score": 0.5,
             }
 
@@ -269,17 +324,46 @@ class LangGraphChatService:
             payload = {
                 "reply": reply,
                 "source_path": state.get("source_path", "db"),
+                "tool_path": state.get("tool_path", "none"),
+                "policy_decision": state.get("policy_decision", "allowed"),
+                "policy_reason": state.get("policy_reason", "sports_analytics_scope"),
                 "quality_score": float(state.get("quality_score", 0.5)),
+                "table": state.get("table"),
+                "key_numbers": state.get("key_numbers", []),
+                "sources": state.get("sources", []),
+                "sql_latency_ms": state.get("sql_latency_ms"),
+                "rows_returned": state.get("rows_returned", 0),
             }
             try:
                 contract = GraphReplyContract.model_validate(payload)
-                return contract.model_dump()
+                merged = contract.model_dump()
+                merged.update({
+                    "table": payload.get("table"),
+                    "key_numbers": payload.get("key_numbers", []),
+                    "sources": payload.get("sources", []),
+                    "sql_latency_ms": payload.get("sql_latency_ms"),
+                    "rows_returned": payload.get("rows_returned", 0),
+                })
+                return merged
             except ValidationError:
                 return {
                     "reply": reply,
                     "source_path": state.get("source_path", "db"),
+                    "tool_path": state.get("tool_path", "none"),
+                    "policy_decision": state.get("policy_decision", "allowed"),
+                    "policy_reason": state.get("policy_reason", "sports_analytics_scope"),
                     "quality_score": 0.5,
+                    "table": state.get("table"),
+                    "key_numbers": state.get("key_numbers", []),
+                    "sources": state.get("sources", []),
+                    "sql_latency_ms": state.get("sql_latency_ms"),
+                    "rows_returned": state.get("rows_returned", 0),
                 }
+
+        def policy_branch(state: ChatGraphState) -> str:
+            if state.get("policy_decision") == "blocked":
+                return "blocked"
+            return "allowed"
 
         def intent_branch(state: ChatGraphState) -> str:
             intent = state.get("intent", "db")
@@ -296,6 +380,8 @@ class LangGraphChatService:
             return "retry" if bool(state.get("needs_db_retry")) else "done"
 
         graph = StateGraph(ChatGraphState)
+        graph.add_node("policy_gate", policy_gate)
+        graph.add_node("policy_refusal", policy_refusal)
         graph.add_node("route_intent", route_intent)
         graph.add_node("rewrite_query", rewrite_query)
         graph.add_node("rag_retrieve", rag_retrieve)
@@ -306,7 +392,15 @@ class LangGraphChatService:
         graph.add_node("off_topic_node", off_topic_node)
         graph.add_node("finalize", finalize)
 
-        graph.set_entry_point("route_intent")
+        graph.set_entry_point("policy_gate")
+        graph.add_conditional_edges(
+            "policy_gate",
+            policy_branch,
+            {
+                "allowed": "route_intent",
+                "blocked": "policy_refusal",
+            },
+        )
         graph.add_edge("route_intent", "rewrite_query")
         graph.add_conditional_edges(
             "rewrite_query",
@@ -337,6 +431,7 @@ class LangGraphChatService:
         )
         graph.add_edge("db_retry", "finalize")
         graph.add_edge("off_topic_node", "finalize")
+        graph.add_edge("policy_refusal", "finalize")
         graph.add_edge("finalize", END)
 
         logger.info("LangGraph chatbot engine initialized (Phase 7 graph).")
@@ -352,7 +447,9 @@ class LangGraphChatService:
         history = history or []
 
         if not self.graph_available:
-            return self._legacy.reply(message=message, history=history, session_id=session_id)
+            answer = self._legacy.reply(message=message, history=history, session_id=session_id)
+            self.last_metadata = dict(self._legacy.last_metadata)
+            return answer
 
         set_session_context(
             session_id=session_id,
@@ -369,9 +466,29 @@ class LangGraphChatService:
             )
             reply = str(result.get("reply", "")).strip() if isinstance(result, dict) else ""
             if reply:
+                source_path = str(result.get("source_path", "db")) if isinstance(result, dict) else "db"
+                intent = "rag" if source_path == "rag" else ("off_topic" if source_path == "off_topic" else "db")
+                self.last_metadata = self._legacy._build_response_metadata(
+                    message=message,
+                    answer=reply,
+                    intent=intent,
+                    policy_decision=str(result.get("policy_decision", "allowed")) if isinstance(result, dict) else "allowed",
+                    policy_reason=str(result.get("policy_reason", "sports_analytics_scope")) if isinstance(result, dict) else "sports_analytics_scope",
+                    meta={
+                        "tool_path": result.get("tool_path", "none") if isinstance(result, dict) else "none",
+                        "table": result.get("table") if isinstance(result, dict) else None,
+                        "key_numbers": result.get("key_numbers", []) if isinstance(result, dict) else [],
+                        "sources": result.get("sources", []) if isinstance(result, dict) else [],
+                        "confidence": float(result.get("quality_score", 0.5)) if isinstance(result, dict) else 0.5,
+                        "sql_latency_ms": result.get("sql_latency_ms") if isinstance(result, dict) else None,
+                        "rows_returned": result.get("rows_returned", 0) if isinstance(result, dict) else 0,
+                    },
+                )
                 return reply
             logger.warning("LangGraph returned empty reply; falling back to legacy engine.")
         except Exception as exc:
             logger.warning("LangGraph execution failed; falling back to legacy engine: %s", exc)
 
-        return self._legacy.reply(message=message, history=history, session_id=session_id)
+        answer = self._legacy.reply(message=message, history=history, session_id=session_id)
+        self.last_metadata = dict(self._legacy.last_metadata)
+        return answer

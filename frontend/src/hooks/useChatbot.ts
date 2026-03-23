@@ -73,13 +73,13 @@ async function postChatStream(
     }
     if (!data) return
 
-    const payloadData = JSON.parse(data) as { token?: string; reply?: string; message?: string }
+    const payloadData = JSON.parse(data) as ChatResponse & { token?: string; message?: string }
     if (event === 'token' && payloadData.token) {
       handlers.onToken(payloadData.token)
       return
     }
     if (event === 'done') {
-      handlers.onDone({ reply: payloadData.reply || '' })
+      handlers.onDone(payloadData)
       return
     }
     if (event === 'error') {
@@ -156,11 +156,22 @@ export function useChatbot() {
                 )
               },
               onDone: (payload) => {
-                if (!payload.reply) return
+                const text = payload.answer || payload.reply
+                if (!text) return
                 setMessages(prev =>
                   prev.map(msg =>
                     msg.id === assistantMsgId
-                      ? { ...msg, content: payload.reply }
+                      ? {
+                          ...msg,
+                          content: text,
+                          format_mode: payload.format_mode,
+                          table: payload.table ?? null,
+                          key_numbers: payload.key_numbers ?? [],
+                          sources: payload.sources ?? [],
+                          confidence: payload.confidence,
+                          policy_decision: payload.policy_decision,
+                          tool_path: payload.tool_path,
+                        }
                       : msg
                   )
                 )
@@ -187,7 +198,17 @@ export function useChatbot() {
           setMessages(prev =>
             prev.map(msg =>
               msg.id === assistantMsgId
-                ? { ...msg, content: res.reply }
+                ? {
+                    ...msg,
+                    content: res.answer || res.reply,
+                    format_mode: res.format_mode,
+                    table: res.table ?? null,
+                    key_numbers: res.key_numbers ?? [],
+                    sources: res.sources ?? [],
+                    confidence: res.confidence,
+                    policy_decision: res.policy_decision,
+                    tool_path: res.tool_path,
+                  }
                 : msg
             )
           )

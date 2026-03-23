@@ -44,11 +44,15 @@ def test_langgraph_db_retry_path(monkeypatch):
 
     calls = []
 
-    def _db_reply(message, history):
+    def _db_reply(message, history, return_meta=False):
         calls.append((message, history))
         if len(calls) == 1:
-            return "I couldn't generate a database query for that question."
-        return "Recovered DB answer."
+            reply = "I couldn't generate a database query for that question."
+        else:
+            reply = "Recovered DB answer."
+        if return_meta:
+            return reply, {"confidence": 0.6, "table": None, "key_numbers": []}
+        return reply
 
     monkeypatch.setattr(service._legacy, "_db_reply", _db_reply)
     reply = service.reply("Which team has the best win rate this season?", history=[])
@@ -61,6 +65,7 @@ def test_langgraph_off_topic_decline(monkeypatch):
     if not service.graph_available:
         return
 
+    monkeypatch.setattr(service._legacy, "_policy_refusal", lambda _reason: "Off-topic decline.")
     monkeypatch.setattr(service._legacy, "_decline", lambda: "Off-topic decline.")
     reply = service.reply("What is the weather in Delhi today?", history=[])
     assert reply == "Off-topic decline."

@@ -87,6 +87,15 @@ _OFF_TOPIC_PATTERNS = [
                r"capital of|translate|poem|essay|joke)\b", re.IGNORECASE),
 ]
 
+_WEB_SEARCH_PATTERNS = [
+    re.compile(r"\b(search the web|google|bing|duckduckgo|internet|browse|reddit|youtube)\b", re.IGNORECASE),
+]
+
+_TABLE_FORMAT_HINTS = frozenset([
+    "compare", "comparison", "vs", "versus", "top", "rank", "ranking", "leaderboard",
+    "highest", "lowest", "table", "tabular",
+])
+
 # Whitelisted tables for NL→SQL (only raw data tables — no internal/audit tables)
 _SQL_SAFE_TABLES = (
     "matches", "teams", "players",
@@ -265,6 +274,27 @@ class IntentRouter:
         return "db"
 
 
+class PolicyGate:
+    """
+    Hard-wall policy enforcement for production.
+
+    Blocks:
+    - clearly off-topic prompts
+    - explicit runtime web-search requests
+    """
+
+    @staticmethod
+    def evaluate(message: str) -> Tuple[str, str]:
+        lower = (message or "").lower()
+        for pattern in _OFF_TOPIC_PATTERNS:
+            if pattern.search(lower):
+                return "blocked", "off_topic"
+        for pattern in _WEB_SEARCH_PATTERNS:
+            if pattern.search(lower):
+                return "blocked", "runtime_web_disallowed"
+        return "allowed", "sports_analytics_scope"
+
+
 # ── DB Schema Helper ─────────────────────────────────────────────────────────
 
 def _fetch_schema_context(db: Session) -> str:
@@ -330,6 +360,10 @@ def _validate_sql(sql: str) -> Tuple[bool, str]:
         return False, "Generated query is not a SELECT statement."
     if _SQL_FORBIDDEN.search(sql):
         return False, "Generated query contains forbidden keywords."
+    if len(re.findall(r"\bJOIN\b", sql, flags=re.IGNORECASE)) > config.CHAT_MAX_SQL_JOINS:
+        return False, "Generated query exceeds allowed JOIN count."
+    if len(re.findall(r"\bWITH\b", sql, flags=re.IGNORECASE)) > config.CHAT_MAX_SQL_CTES:
+        return False, "Generated query exceeds allowed CTE count."
     return True, ""
 
 
@@ -368,6 +402,7 @@ class ChatService:
         self._vector_store = VectorStore()
         self._retriever = ContextRetriever(self._embedding_client, self._vector_store)
         self._schema_context: Optional[str] = None  # Lazy-loaded
+        self.last_metadata: Dict[str, Any] = {}
 
     def _get_schema(self) -> str:
         if self._schema_context is None:
@@ -529,17 +564,32 @@ class ChatService:
     # ── RAG path ──────────────────────────────────────────────────────────
 
     @observe(name="chatbot.rag_reply", as_type="retriever")
-    def _rag_reply(self, message: str, history: List[Dict[str, str]]) -> str:
+    def _rag_reply(
+        self,
+        message: str,
+        history: List[Dict[str, str]],
+        *,
+        return_meta: bool = False,
+    ):
         """Retrieve recent sports news/context from ChromaDB, then synthesise an answer."""
+        meta: Dict[str, Any] = {
+            "tool_path": "rag_tool",
+            "sources": [],
+            "table": None,
+            "key_numbers": [],
+            "confidence": 0.55,
+        }
         try:
-            docs, _ = self._retriever.retrieve(
+            docs, retrieval_meta = self._retriever.retrieve(
                 message,
                 top_k=RAG_TOP_K,
                 max_age_hours=config.RAG_MAX_AGE_HOURS,
             )
+            meta["confidence"] = 0.7 if (retrieval_meta.get("docs_used") or 0) > 0 else 0.4
         except Exception as exc:
             logger.warning("RAG retrieval failed: %s", exc)
             docs = []
+            retrieval_meta = {"docs_used": 0}
 
         if not docs:
             lower_msg = message.lower()
@@ -547,18 +597,22 @@ class ChatService:
                 "tomorrow", "tonight", "fixture", "schedule", "upcoming", "next game", "this week"
             ))
             if is_schedule_q:
-                return (
+                reply = (
                     "I don't have today's or tomorrow's schedule indexed yet — the news feeds "
                     "may not have published the matchup previews. The database only stores "
                     "completed games, so future fixtures aren't queryable directly. "
                     "Try checking NBA.com for today's schedule, or ask me about "
                     "recent results, standings, or player stats."
                 )
-            return (
+            else:
+                reply = (
                 "I don't have recent news or context documents indexed for that topic. "
                 "The context store may be empty or the RSS feeds haven't been fetched yet. "
                 "Try asking a stats question instead — I can query your live Postgres data directly."
             )
+            if return_meta:
+                return reply, meta
+            return reply
 
         # Build context blob
         snippets = []
@@ -569,14 +623,25 @@ class ChatService:
             )
         context_blob = "\n".join(snippets)
         history_str = self._format_history(history)
+        meta["sources"] = [
+            {
+                "title": doc.get("title") or "Source",
+                "url": doc.get("url") or "",
+                "source": doc.get("source") or "unknown",
+            }
+            for doc in docs[:5]
+        ]
 
         if not self.llm.available:
             # Deterministic fallback
             titles = "; ".join(d.get("title", "update") for d in docs[:3] if d.get("title"))
-            return (
+            reply = (
                 f"Recent sports context: {titles}. "
                 "Add your GEMINI_API_KEY to backend/.env for richer AI-generated answers."
             )
+            if return_meta:
+                return reply, meta
+            return reply
 
         prompt = (
             f"You are a Sports Analytics AI assistant for an NBA analytics platform.\n"
@@ -589,7 +654,10 @@ class ChatService:
             f"User: {message}\nAssistant:"
         )
         reply = self.llm.generate(prompt, max_tokens=300)
-        return reply or self._rag_fallback(docs)
+        output = reply or self._rag_fallback(docs)
+        if return_meta:
+            return output, meta
+        return output
 
     @staticmethod
     def _rag_fallback(docs: List[Dict]) -> str:
@@ -599,7 +667,13 @@ class ChatService:
     # ── DB path ───────────────────────────────────────────────────────────
 
     @observe(name="chatbot.db_reply", as_type="chain")
-    def _db_reply(self, message: str, history: List[Dict[str, str]]) -> str:
+    def _db_reply(
+        self,
+        message: str,
+        history: List[Dict[str, str]],
+        *,
+        return_meta: bool = False,
+    ):
         """
         Natural language → SQL → execute → narrate.
 
@@ -608,12 +682,37 @@ class ChatService:
         Step 3: Execute against Postgres.
         Step 4: Ask LLM to narrate the result in plain English.
         """
+        meta: Dict[str, Any] = {
+            "tool_path": "sql_tool",
+            "sql_used": None,
+            "sql_latency_ms": None,
+            "rows_returned": 0,
+            "table": None,
+            "key_numbers": [],
+            "confidence": 0.65,
+        }
+
+        def _ret(reply_text: str):
+            return (reply_text, meta) if return_meta else reply_text
+
+        def _set_rows(columns: List[str], rows: List[Dict[str, Any]], latency_ms: Optional[float] = None) -> None:
+            if latency_ms is not None:
+                meta["sql_latency_ms"] = round(float(latency_ms), 2)
+            meta["rows_returned"] = len(rows)
+            meta["table"] = {
+                "columns": columns,
+                "rows": rows[: min(len(rows), 20)],
+                "row_count": len(rows),
+            }
+            meta["key_numbers"] = self._extract_key_numbers(columns, rows)
+
         schema = self._get_schema()
         history_str = self._format_history(history)
 
         # Guard: if schema is empty the LLM cannot generate valid SQL
         if not schema:
-            return (
+            meta["confidence"] = 0.25
+            return _ret(
                 "I can't query the database right now — the database schema appears to be "
                 "empty or unreachable. Make sure the backend is connected to PostgreSQL and "
                 "the ingestion pipeline has been run at least once."
@@ -652,7 +751,8 @@ class ChatService:
 
         if not raw_sql:
             logger.warning("ChatService._db_reply: LLM returned empty SQL for: %s", message)
-            return self._db_fallback(message)
+            meta["confidence"] = 0.3
+            return _ret(self._db_fallback(message))
 
         sql = _extract_sql(raw_sql)
         valid, err = _validate_sql(sql)
@@ -662,21 +762,31 @@ class ChatService:
             valid, err = _validate_sql(sql)
         if not valid:
             logger.warning("ChatService._db_reply: invalid SQL (%s): %s", err, sql)
-            return self._db_fallback(message)
+            meta["confidence"] = 0.3
+            return _ret(self._db_fallback(message))
 
         sql = _cap_limit(sql)
+        meta["sql_used"] = sql
         logger.debug("ChatService._db_reply: executing SQL:\n%s", sql)
 
         # ── Step 2: Execute ───────────────────────────────────────────────
         try:
+            started = time.perf_counter()
+            self.db.execute(text(f"SET LOCAL statement_timeout = {int(config.CHAT_SQL_STATEMENT_TIMEOUT_MS)}"))
             result = self.db.execute(text(sql))
             columns = list(result.keys())
+            if len(columns) > config.CHAT_MAX_SQL_COLUMNS:
+                raise ValueError(
+                    f"Query returned too many columns ({len(columns)}), "
+                    f"max allowed is {config.CHAT_MAX_SQL_COLUMNS}"
+                )
             raw_rows = result.fetchall()
             rows: List[Dict[str, Any]] = [
                 {col: (str(v) if v is not None and not isinstance(v, (int, float, bool, str)) else v)
                  for col, v in zip(columns, row)}
                 for row in raw_rows
             ]
+            _set_rows(columns, rows, (time.perf_counter() - started) * 1000)
             logger.info(
                 "ChatService._db_reply: query returned %d row(s) | columns: %s",
                 len(rows), columns,
@@ -686,14 +796,22 @@ class ChatService:
             if rule_sql and sql.strip() != _cap_limit(rule_sql).strip():
                 retry_sql = _cap_limit(rule_sql)
                 try:
+                    started = time.perf_counter()
                     result = self.db.execute(text(retry_sql))
                     columns = list(result.keys())
+                    if len(columns) > config.CHAT_MAX_SQL_COLUMNS:
+                        raise ValueError(
+                            f"Query returned too many columns ({len(columns)}), "
+                            f"max allowed is {config.CHAT_MAX_SQL_COLUMNS}"
+                        )
                     raw_rows = result.fetchall()
                     rows = [
                         {col: (str(v) if v is not None and not isinstance(v, (int, float, bool, str)) else v)
                          for col, v in zip(columns, row)}
                         for row in raw_rows
                     ]
+                    meta["sql_used"] = retry_sql
+                    _set_rows(columns, rows, (time.perf_counter() - started) * 1000)
                     if rows:
                         if self.llm.available:
                             header = " | ".join(columns)
@@ -713,12 +831,15 @@ class ChatService:
                             )
                             narrated = self.llm.generate(narrate_prompt, max_tokens=250)
                             if narrated:
-                                return narrated
-                        return self._rows_fallback(columns, rows)
+                                meta["confidence"] = 0.72
+                                return _ret(narrated)
+                        meta["confidence"] = 0.62
+                        return _ret(self._rows_fallback(columns, rows))
                 except Exception:
                     pass
             logger.warning("ChatService._db_reply: SQL execution failed: %s | SQL: %s", exc, sql)
-            return (
+            meta["confidence"] = 0.2
+            return _ret(
                 "I tried to query your data but hit a database error. "
                 "Could you rephrase the question? "
                 f"_(Technical detail: {str(exc)[:120]})_"
@@ -729,21 +850,25 @@ class ChatService:
             lower_msg = message.lower()
             # Specific hints based on what the query was about
             if any(w in lower_msg for w in ("tomorrow", "tonight", "fixture", "schedule", "upcoming", "next game")):
-                return (
+                meta["confidence"] = 0.42
+                return _ret(
                     "The database only stores **completed** games — upcoming fixtures and schedules "
                     "aren't stored yet. The ingestion pipeline runs daily and only records results "
                     "after games finish. Try asking about recent results or standings instead, "
                     "for example: \"Which team has the best win rate this season?\""
                 )
             if "predictions" in sql.lower():
-                return (
+                meta["confidence"] = 0.46
+                return _ret(
                     "The predictions table is currently empty — model predictions are stored here "
                     "once the ML pipeline runs against scheduled games. No predictions have been "
                     "generated yet for upcoming matches."
                 )
             if "bets" in sql.lower():
-                return "The bets table has very limited data so far — only 1 bet has been recorded."
-            return (
+                meta["confidence"] = 0.5
+                return _ret("The bets table has very limited data so far — only 1 bet has been recorded.")
+            meta["confidence"] = 0.45
+            return _ret(
                 "I ran the query but found no results for that question. "
                 "Try rephrasing — for example: \"Which team has the best win rate this season?\" "
                 "or \"Who are the top 5 scorers in 2025-26?\""
@@ -772,11 +897,13 @@ class ChatService:
             reply = self.llm.generate(narrate_prompt, max_tokens=250)
             if reply:
                 logger.info("ChatService._db_reply: LLM narrated %d-row result.", len(rows))
-                return reply
+                meta["confidence"] = 0.76
+                return _ret(reply)
             logger.warning("ChatService._db_reply: LLM narration empty — using plain-text fallback.")
         else:
             logger.info("ChatService._db_reply: LLM unavailable — using plain-text row fallback.")
-        return self._rows_fallback(columns, rows)
+        meta["confidence"] = 0.64
+        return _ret(self._rows_fallback(columns, rows))
 
     @staticmethod
     def _rows_fallback(columns: List[str], rows: List[Dict]) -> str:
@@ -797,6 +924,72 @@ class ChatService:
             "Try rephrasing — for example: \"What are the top 10 scorers this season?\" "
             "or \"Show me the Lakers' win rate in 2025-26.\""
         )
+
+    @staticmethod
+    def _extract_key_numbers(columns: List[str], rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not rows:
+            return []
+        first = rows[0]
+        out: List[Dict[str, Any]] = []
+        for col in columns:
+            value = first.get(col)
+            if isinstance(value, (int, float)):
+                out.append({"label": col, "value": value})
+            elif isinstance(value, str) and value and len(out) < 2:
+                out.append({"label": col, "value": value})
+            if len(out) >= 5:
+                break
+        return out
+
+    @staticmethod
+    def _policy_refusal(reason: str) -> str:
+        if reason == "runtime_web_disallowed":
+            return (
+                "Runtime web search is disabled for this assistant. "
+                "I can only answer from your internal sports analytics data and curated local context."
+            )
+        return _DECLINE_MSG
+
+    @staticmethod
+    def _is_table_question(message: str) -> bool:
+        lower = (message or "").lower()
+        return any(hint in lower for hint in _TABLE_FORMAT_HINTS)
+
+    def _build_response_metadata(
+        self,
+        *,
+        message: str,
+        answer: str,
+        intent: str,
+        policy_decision: str,
+        policy_reason: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = dict(meta or {})
+        tool_path = str(payload.get("tool_path") or "none")
+        if tool_path and "format_tool" not in tool_path:
+            tool_path = f"{tool_path}->format_tool"
+        elif not tool_path:
+            tool_path = "format_tool"
+
+        has_table = bool(payload.get("table"))
+        format_mode = "table_first" if has_table and self._is_table_question(message) else "narrative"
+
+        return {
+            "intent": intent,
+            "policy_decision": policy_decision,
+            "policy_reason": policy_reason,
+            "tool_path": tool_path,
+            "format_mode": format_mode,
+            "answer": answer,
+            "table": payload.get("table"),
+            "key_numbers": payload.get("key_numbers", []),
+            "sources": payload.get("sources", []),
+            "confidence": float(payload.get("confidence", 0.5)),
+            "sql_latency_ms": payload.get("sql_latency_ms"),
+            "rows_returned": payload.get("rows_returned", 0),
+            "external_calls_made": 0,
+        }
 
     # ── Public Interface ──────────────────────────────────────────────────
 
@@ -831,11 +1024,44 @@ class ChatService:
             trace_name=f"chatbot/{self.sport}",
         )
 
+        policy_decision, policy_reason = PolicyGate.evaluate(message)
+        if policy_decision == "blocked":
+            answer = self._policy_refusal(policy_reason)
+            self.last_metadata = self._build_response_metadata(
+                message=message,
+                answer=answer,
+                intent="off_topic",
+                policy_decision=policy_decision,
+                policy_reason=policy_reason,
+                meta={"tool_path": "policy_gate", "confidence": 0.92},
+            )
+            return answer
+
         intent = IntentRouter.route(message)
         logger.info("ChatService.reply: intent=%s sport=%s session=%s", intent, self.sport, session_id)
 
         if intent == "off_topic":
-            return self._decline()
+            answer = self._decline()
+            self.last_metadata = self._build_response_metadata(
+                message=message,
+                answer=answer,
+                intent=intent,
+                policy_decision="allowed",
+                policy_reason=policy_reason,
+                meta={"tool_path": "policy_gate", "confidence": 0.9},
+            )
+            return answer
         if intent == "rag":
-            return self._rag_reply(message, history)
-        return self._db_reply(message, history)
+            answer, meta = self._rag_reply(message, history, return_meta=True)
+        else:
+            answer, meta = self._db_reply(message, history, return_meta=True)
+
+        self.last_metadata = self._build_response_metadata(
+            message=message,
+            answer=answer,
+            intent=intent,
+            policy_decision="allowed",
+            policy_reason=policy_reason,
+            meta=meta,
+        )
+        return answer

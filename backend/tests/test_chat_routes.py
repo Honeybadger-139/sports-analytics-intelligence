@@ -56,6 +56,7 @@ def test_get_chat_service_langgraph(monkeypatch):
 
 def test_chat_endpoint_uses_configured_service(monkeypatch):
     monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
 
     class _FakeService:
         active_engine = "legacy"
@@ -73,6 +74,7 @@ def test_chat_endpoint_uses_configured_service(monkeypatch):
                 "history": [{"role": "user", "content": "Old turn"}],
                 "session_id": "session-123",
             },
+            headers={"X-API-Key": "wave1-secret"},
         )
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -82,6 +84,8 @@ def test_chat_endpoint_uses_configured_service(monkeypatch):
     assert payload["reply"] == "echo::Hello::1::session-123"
     assert payload["intent"] in {"db", "rag", "off_topic"}
     assert payload["engine"] == "legacy"
+    assert payload["policy_decision"] in {"allowed", "blocked"}
+    assert payload["external_calls_made"] == 0
 
 
 def test_chat_health_includes_engine_fields(monkeypatch):
@@ -157,6 +161,35 @@ def test_chat_stream_endpoint_requires_api_key(monkeypatch):
     assert "X-API-Key" in response.json()["detail"]
 
 
+def test_chat_endpoint_requires_api_key(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "No auth", "history": []},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 401
+    assert "X-API-Key" in response.json()["detail"]
+
+
+def test_chat_endpoint_returns_503_when_api_key_not_configured(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "")
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "No config", "history": []},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 503
+
+
 def test_chat_stream_endpoint_returns_503_when_api_key_not_configured(monkeypatch):
     monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "")
     app.dependency_overrides[get_db] = _override_get_db
@@ -174,6 +207,7 @@ def test_chat_stream_endpoint_returns_503_when_api_key_not_configured(monkeypatc
 def test_chat_endpoint_rate_limits_after_twenty_requests(monkeypatch):
     _reset_rate_limits()
     monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
 
     class _FakeService:
         active_engine = "legacy"
@@ -185,11 +219,61 @@ def test_chat_endpoint_rate_limits_after_twenty_requests(monkeypatch):
     app.dependency_overrides[get_db] = _override_get_db
     try:
         for _ in range(20):
-            response = client.post("/api/v1/chat", json={"message": "ping", "history": []})
+            response = client.post(
+                "/api/v1/chat",
+                json={"message": "ping", "history": []},
+                headers={"X-API-Key": "wave1-secret"},
+            )
             assert response.status_code == 200
-        limited = client.post("/api/v1/chat", json={"message": "ping", "history": []})
+        limited = client.post(
+            "/api/v1/chat",
+            json={"message": "ping", "history": []},
+            headers={"X-API-Key": "wave1-secret"},
+        )
     finally:
         app.dependency_overrides.pop(get_db, None)
         _reset_rate_limits()
 
     assert limited.status_code == 429
+
+
+def test_chat_endpoint_exposes_structured_policy_metadata(monkeypatch):
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_ENGINE", "legacy")
+    monkeypatch.setattr(chat_routes_module.config, "CHAT_API_KEY", "wave1-secret")
+
+    class _FakeService:
+        active_engine = "legacy"
+
+        def __init__(self):
+            self.last_metadata = {
+                "intent": "off_topic",
+                "policy_decision": "blocked",
+                "tool_path": "policy_gate->format_tool",
+                "format_mode": "narrative",
+                "answer": "Runtime web search is disabled for this assistant.",
+                "table": None,
+                "key_numbers": [],
+                "sources": [],
+                "confidence": 0.92,
+                "external_calls_made": 0,
+            }
+
+        def reply(self, message, history, session_id=None):
+            return "Runtime web search is disabled for this assistant."
+
+    monkeypatch.setattr(chat_routes_module, "_get_chat_service", lambda db, sport: _FakeService())
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "search the web for nba trades", "history": []},
+            headers={"X-API-Key": "wave1-secret"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["policy_decision"] == "blocked"
+    assert payload["tool_path"] == "policy_gate->format_tool"
+    assert payload["external_calls_made"] == 0

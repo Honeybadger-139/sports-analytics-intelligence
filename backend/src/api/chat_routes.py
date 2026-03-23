@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from src.data.db import get_db
+from src.intelligence.chat_guard import ChatAbuseGuard
 from src.intelligence.chat_service import ChatService, LLMClient
 from src.intelligence.langgraph_chat_service import LangGraphChatService
 from src.rate_limit import limit
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["chatbot"])
 
 _llm_client: Optional[LLMClient] = None
+_chat_abuse_guard = ChatAbuseGuard()
 
 
 def _get_llm_client() -> LLMClient:
@@ -60,6 +62,15 @@ class ChatResponse(BaseModel):
     reply: str
     intent: Optional[str] = None  # 'rag' | 'db' | 'off_topic' — useful for debugging
     engine: Optional[str] = None  # 'legacy' | 'langgraph'
+    format_mode: Optional[str] = None
+    answer: Optional[str] = None
+    table: Optional[Dict] = None
+    key_numbers: Optional[List[Dict]] = None
+    sources: Optional[List[Dict]] = None
+    confidence: Optional[float] = None
+    policy_decision: Optional[str] = None
+    tool_path: Optional[str] = None
+    external_calls_made: int = 0
 
 
 class ChatHealthResponse(BaseModel):
@@ -98,17 +109,42 @@ def _chunk_reply(reply: str, chunk_size: int = 24) -> List[str]:
     return [text_value[i : i + chunk_size] for i in range(0, len(text_value), chunk_size)]
 
 
-def _require_chat_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
+def _require_chat_api_key(x_api_key: Optional[str] = Header(default=None)) -> str:
     if not config.CHAT_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Chat streaming is disabled until CHAT_API_KEY is configured.",
+            detail="Chat endpoint is disabled until CHAT_API_KEY is configured.",
         )
     if x_api_key != config.CHAT_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-API-Key.",
         )
+    return x_api_key
+
+
+def _extract_service_metadata(service, fallback_intent: str, fallback_reply: str) -> Dict:
+    metadata = dict(getattr(service, "last_metadata", {}) or {})
+    if not metadata:
+        metadata = {
+            "intent": fallback_intent,
+            "policy_decision": "allowed",
+            "policy_reason": "sports_analytics_scope",
+            "tool_path": "unknown->format_tool",
+            "format_mode": "narrative",
+            "answer": fallback_reply,
+            "table": None,
+            "key_numbers": [],
+            "sources": [],
+            "confidence": 0.5,
+            "sql_latency_ms": None,
+            "rows_returned": 0,
+            "external_calls_made": 0,
+        }
+    metadata.setdefault("answer", fallback_reply)
+    metadata.setdefault("intent", fallback_intent)
+    metadata.setdefault("external_calls_made", 0)
+    return metadata
 
 
 @router.get("/chat/health", response_model=ChatHealthResponse)
@@ -173,6 +209,7 @@ async def chat_health(db: Session = Depends(get_db)):
 async def chat(
     request: Request,
     payload: ChatRequest,
+    api_key: str = Depends(_require_chat_api_key),
     db: Session = Depends(get_db),
 ):
     """
@@ -189,6 +226,8 @@ async def chat(
     try:
         history = [h.model_dump() for h in (payload.history or [])]
         service = _get_chat_service(db=db, sport=payload.sport or "nba")
+        history_chars = sum(len(item.get("content", "")) for item in history)
+        _chat_abuse_guard.precheck(api_key=api_key, message=payload.message, history_chars=history_chars)
 
         # Expose intent for frontend debug (not shown in UI, available in network tab)
         from src.intelligence.chat_service import IntentRouter
@@ -199,10 +238,34 @@ async def chat(
             history=history,
             session_id=payload.session_id,
         )
+        metadata = _extract_service_metadata(service, intent, reply)
+        _chat_abuse_guard.record_policy_outcome(
+            api_key=api_key,
+            policy_decision=str(metadata.get("policy_decision", "allowed")),
+        )
+        logger.info(
+            "chat.turn intent=%s policy=%s tool_path=%s sql_latency_ms=%s rows=%s format_mode=%s external_calls_made=%s",
+            metadata.get("intent", intent),
+            metadata.get("policy_decision"),
+            metadata.get("tool_path"),
+            metadata.get("sql_latency_ms"),
+            metadata.get("rows_returned"),
+            metadata.get("format_mode"),
+            metadata.get("external_calls_made"),
+        )
         return ChatResponse(
             reply=reply,
-            intent=intent,
+            intent=metadata.get("intent", intent),
             engine=getattr(service, "active_engine", "legacy"),
+            format_mode=metadata.get("format_mode"),
+            answer=metadata.get("answer"),
+            table=metadata.get("table"),
+            key_numbers=metadata.get("key_numbers", []),
+            sources=metadata.get("sources", []),
+            confidence=metadata.get("confidence"),
+            policy_decision=metadata.get("policy_decision"),
+            tool_path=metadata.get("tool_path"),
+            external_calls_made=int(metadata.get("external_calls_made", 0)),
         )
 
     except HTTPException:
@@ -220,7 +283,7 @@ async def chat(
 async def chat_stream(
     request: Request,
     payload: ChatRequest,
-    _auth: None = Depends(_require_chat_api_key),
+    api_key: str = Depends(_require_chat_api_key),
     db: Session = Depends(get_db),
 ):
     """
@@ -234,34 +297,72 @@ async def chat_stream(
     """
     history = [h.model_dump() for h in (payload.history or [])]
     service = _get_chat_service(db=db, sport=payload.sport or "nba")
+    history_chars = sum(len(item.get("content", "")) for item in history)
+    _chat_abuse_guard.precheck(api_key=api_key, message=payload.message, history_chars=history_chars)
 
     from src.intelligence.chat_service import IntentRouter
 
     intent = IntentRouter.route(payload.message)
     engine = getattr(service, "active_engine", "legacy")
+    try:
+        reply = service.reply(
+            message=payload.message,
+            history=history,
+            session_id=payload.session_id,
+        )
+        metadata = _extract_service_metadata(service, intent, reply)
+        _chat_abuse_guard.record_policy_outcome(
+            api_key=api_key,
+            policy_decision=str(metadata.get("policy_decision", "allowed")),
+        )
+        logger.info(
+            "chat.stream intent=%s policy=%s tool_path=%s sql_latency_ms=%s rows=%s format_mode=%s external_calls_made=%s",
+            metadata.get("intent", intent),
+            metadata.get("policy_decision"),
+            metadata.get("tool_path"),
+            metadata.get("sql_latency_ms"),
+            metadata.get("rows_returned"),
+            metadata.get("format_mode"),
+            metadata.get("external_calls_made"),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("ChatService stream error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="The AI assistant encountered an error. Please try again.",
+        ) from exc
 
     async def event_generator():
         yield _sse_event(
             "meta",
             {
-                "intent": intent,
+                "intent": metadata.get("intent", intent),
                 "engine": engine,
+                "policy_decision": metadata.get("policy_decision"),
+                "format_mode": metadata.get("format_mode"),
+                "tool_path": metadata.get("tool_path"),
             },
         )
         try:
-            reply = service.reply(
-                message=payload.message,
-                history=history,
-                session_id=payload.session_id,
-            )
             for chunk in _chunk_reply(reply):
                 yield _sse_event("token", {"token": chunk})
             yield _sse_event(
                 "done",
                 {
                     "reply": reply,
-                    "intent": intent,
+                    "intent": metadata.get("intent", intent),
                     "engine": engine,
+                    "format_mode": metadata.get("format_mode"),
+                    "answer": metadata.get("answer"),
+                    "table": metadata.get("table"),
+                    "key_numbers": metadata.get("key_numbers", []),
+                    "sources": metadata.get("sources", []),
+                    "confidence": metadata.get("confidence"),
+                    "policy_decision": metadata.get("policy_decision"),
+                    "tool_path": metadata.get("tool_path"),
+                    "external_calls_made": int(metadata.get("external_calls_made", 0)),
                 },
             )
         except Exception as exc:

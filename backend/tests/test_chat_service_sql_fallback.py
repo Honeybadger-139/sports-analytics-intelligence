@@ -68,3 +68,34 @@ def test_db_reply_uses_deterministic_sql_when_llm_is_unavailable():
 
     assert "Los Angeles Lakers" in reply
     assert any("FROM teams" in sql for sql in fake_db.executed)
+
+
+def test_reply_blocks_runtime_web_search_requests():
+    service = ChatService.__new__(ChatService)
+    service.sport = "nba"
+    service.last_metadata = {}
+
+    reply = service.reply("search the web for NBA trade rumors", history=[])
+
+    assert "Runtime web search is disabled" in reply
+    assert service.last_metadata["policy_decision"] == "blocked"
+    assert service.last_metadata["external_calls_made"] == 0
+
+
+def test_response_metadata_switches_to_table_mode_for_comparison_questions():
+    service = ChatService.__new__(ChatService)
+    payload = service._build_response_metadata(
+        message="Compare the top 5 teams by win rate",
+        answer="Comparison ready",
+        intent="db",
+        policy_decision="allowed",
+        policy_reason="sports_analytics_scope",
+        meta={
+            "tool_path": "sql_tool",
+            "table": {"columns": ["team", "win_rate"], "rows": [{"team": "A", "win_rate": 0.7}], "row_count": 1},
+            "key_numbers": [{"label": "win_rate", "value": 0.7}],
+            "confidence": 0.8,
+        },
+    )
+    assert payload["format_mode"] == "table_first"
+    assert payload["tool_path"] == "sql_tool->format_tool"

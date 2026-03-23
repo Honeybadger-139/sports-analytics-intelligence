@@ -59,6 +59,13 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'error'
   content: string
   timestamp: string
+  format_mode?: 'table_first' | 'narrative'
+  table?: ChatTable | null
+  key_numbers?: ChatKeyNumber[]
+  sources?: ChatSource[]
+  confidence?: number
+  policy_decision?: string
+  tool_path?: string
 }
 
 export interface ChatRequest {
@@ -71,6 +78,32 @@ export interface ChatResponse {
   reply: string
   intent?: 'rag' | 'db' | 'off_topic'
   engine?: 'legacy' | 'langgraph'
+  format_mode?: 'table_first' | 'narrative'
+  answer?: string
+  table?: ChatTable | null
+  key_numbers?: ChatKeyNumber[]
+  sources?: ChatSource[]
+  confidence?: number
+  policy_decision?: string
+  tool_path?: string
+  external_calls_made?: number
+}
+
+export interface ChatKeyNumber {
+  label: string
+  value: string | number | boolean | null
+}
+
+export interface ChatSource {
+  title: string
+  url?: string
+  source?: string
+}
+
+export interface ChatTable {
+  columns: string[]
+  rows: Record<string, unknown>[]
+  row_count: number
 }
 
 export interface SportLeagueSelection {
