@@ -20,7 +20,7 @@ class ContextSummarizer:
             try:
                 import google.generativeai as genai  # type: ignore
 
-                genai.configure(api_key=config.GEMINI_API_KEY)
+                genai.configure(api_key=config.GEMINI_API_KEY, transport="rest")
                 self._genai = genai
                 self._use_gemini = True
             except Exception as exc:

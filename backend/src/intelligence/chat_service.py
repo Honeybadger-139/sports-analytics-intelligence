@@ -171,7 +171,7 @@ class LLMClient:
         else:
             try:
                 import google.generativeai as genai  # type: ignore
-                genai.configure(api_key=config.GEMINI_API_KEY)
+                genai.configure(api_key=config.GEMINI_API_KEY, transport="rest")
                 self._genai = genai
                 logger.info("LLMClient: Gemini %s ready", self._model_name)
             except Exception as exc:
