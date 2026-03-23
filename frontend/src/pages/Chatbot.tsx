@@ -6,7 +6,7 @@ import ChatbotPanel from '../components/Chatbot/ChatbotPanel'
 type ChatbotIntent = 'data-inquiry' | 'model-insight' | 'draft-help'
 
 const INTENT_PROMPTS: Record<ChatbotIntent, string> = {
-  'data-inquiry': 'Show me the top 5 NBA teams by win percentage in the current season and explain the trend briefly.',
+  'data-inquiry': 'Show me the top 5 NBA teams by win rate in the current season and explain the trend briefly.',
   'model-insight': 'For today’s highest-confidence game prediction, explain the key model drivers and confidence risks.',
   'draft-help': 'Compare two high-impact players by recent points, rebounds, assists, and consistency so I can evaluate draft value.',
 }
