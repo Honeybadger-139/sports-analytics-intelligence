@@ -894,12 +894,28 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
         )
         
         df = dash.get_data_frames()[0]
-        
+
         with engine.begin() as conn:
+            # Pre-filter: only insert for player_ids that exist in the players table.
+            # Historical seasons can contain players no longer in active rosters (retired,
+            # G-League, overseas) who were never seeded into `players`. Inserting without
+            # this check causes FK violations and silently rolls back the whole batch.
+            candidate_ids = [int(r["PLAYER_ID"]) for _, r in df.iterrows() if pd.notna(r.get("PLAYER_ID"))]
+            if candidate_ids:
+                valid_rows = conn.execute(
+                    text("SELECT player_id FROM players WHERE player_id = ANY(:ids)"),
+                    {"ids": candidate_ids},
+                ).fetchall()
+                valid_player_ids = {r[0] for r in valid_rows}
+                skipped = len(candidate_ids) - len(df[df["PLAYER_ID"].apply(lambda x: int(x) if pd.notna(x) else -1).isin(valid_player_ids)])
+                if skipped:
+                    logger.warning(f"   Skipping {skipped} season-stat rows: player_id not in players table (retired/inactive)")
+                df = df[df["PLAYER_ID"].apply(lambda x: int(x) if pd.notna(x) else -1).isin(valid_player_ids)]
+
             for _, row in df.iterrows():
                 player_id = int(row["PLAYER_ID"])
                 team_id = int(row["TEAM_ID"]) if pd.notna(row.get("TEAM_ID")) and row["TEAM_ID"] != 0 and str(row["TEAM_ID"]) != "0" else None
-                
+
                 conn.execute(
                     text("""
                         INSERT INTO player_season_stats (

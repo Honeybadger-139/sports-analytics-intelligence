@@ -1,19 +1,33 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import TableBrowser   from '../components/Scribble/TableBrowser'
 import SqlLab         from '../components/Scribble/SqlLab'
 import NotebooksPanel from '../components/Scribble/NotebooksPanel'
 
-type Tab = 'explorer' | 'sql' | 'notebooks'
+type Tab = 'explorer' | 'sql' | 'notebooks' | 'feature-maker'
 
 const TABS: { id: Tab; label: string; icon: string; description: string }[] = [
-  { id: 'explorer',   label: 'Explorer',   icon: '🗄️', description: 'Browse raw Postgres tables' },
-  { id: 'sql',        label: 'SQL Lab',    icon: '⌨️', description: 'Ad-hoc SELECT queries' },
-  { id: 'notebooks',  label: 'Notebooks',  icon: '📓', description: 'Saved queries & logic' },
+  { id: 'explorer',       label: 'Explorer',       icon: '🗄️', description: 'Browse raw Postgres tables' },
+  { id: 'sql',            label: 'SQL Lab',         icon: '⌨️', description: 'Ad-hoc SELECT queries' },
+  { id: 'notebooks',      label: 'Notebooks',       icon: '📓', description: 'Saved queries & logic' },
+  { id: 'feature-maker',  label: 'Feature Maker',   icon: '🔧', description: 'Create custom data attributes' },
 ]
 
+const VALID_TABS: Tab[] = ['explorer', 'sql', 'notebooks', 'feature-maker']
+
 export default function Scribble() {
-  const [activeTab, setActiveTab] = useState<Tab>('explorer')
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const param = searchParams.get('tab') as Tab | null
+    return param && VALID_TABS.includes(param) ? param : 'explorer'
+  })
+
+  // Sync tab if the user navigates via the navbar mega-menu while already on this page
+  useEffect(() => {
+    const param = searchParams.get('tab') as Tab | null
+    if (param && VALID_TABS.includes(param)) setActiveTab(param)
+  }, [searchParams])
   const [pendingSql, setPendingSql] = useState('')
 
   function handleSaveRequest(sql: string) {
@@ -77,6 +91,14 @@ export default function Scribble() {
               onClearPending={() => setPendingSql('')}
               onLoad={handleLoadNotebook}
             />
+          )}
+
+          {activeTab === 'feature-maker' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, opacity: 0.6 }}>
+              <span style={{ fontSize: 40 }}>🔧</span>
+              <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>Feature Maker — Coming Soon</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Create custom derived attributes from raw data columns. Use SQL Lab for now.</p>
+            </div>
           )}
         </motion.div>
       </div>
