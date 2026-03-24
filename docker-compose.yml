@@ -29,8 +29,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-analyst}:${POSTGRES_PASSWORD:-analytics2026}@postgres:5432/${POSTGRES_DB:-sports_analytics}
+      # Use Cloud SQL proxy on host (host.docker.internal:5434) so data lands in Google Cloud SQL.
+      # Falls back to local postgres if CLOUD_SQL_URL is not set.
+      DATABASE_URL: ${CLOUD_SQL_URL:-postgresql://${POSTGRES_USER:-analyst}:${POSTGRES_PASSWORD:-analytics2026}@postgres:5432/${POSTGRES_DB:-sports_analytics}}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CHAT_API_KEY: ${CHAT_API_KEY}
+      EMBEDDED_SCHEDULER_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
