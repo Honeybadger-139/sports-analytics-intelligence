@@ -72,10 +72,16 @@ ENV_LABEL = _get_config("GAMETHREAD_ENV", "cloud")
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 def _headers() -> Dict[str, str]:
-    return {
+    base_url = _get_api_base_url()
+    headers = {
         "X-API-Key": _get_api_key(),
         "Content-Type": "application/json",
     }
+    # ngrok free-tier shows a browser warning page unless this header is present.
+    # Safe to include for all requests — ignored by non-ngrok servers.
+    if "ngrok" in base_url:
+        headers["ngrok-skip-browser-warning"] = "true"
+    return headers
 
 
 def _request(
@@ -129,10 +135,11 @@ def check_api_health(**context) -> Dict[str, Any]:
     base_url = _get_api_base_url()
 
     # Try /healthz first (works locally), fall back to /api/v1/chat/health (Cloud Run)
+    extra = {"ngrok-skip-browser-warning": "true"} if "ngrok" in base_url else {}
     for path in ["/healthz", "/api/v1/chat/health"]:
         try:
             log.info("Health check: %s%s", base_url, path)
-            response = requests.get(f"{base_url}{path}", timeout=30)
+            response = requests.get(f"{base_url}{path}", headers=extra, timeout=30)
             if response.status_code == 200:
                 payload = response.json()
                 health_status = payload.get("status")
