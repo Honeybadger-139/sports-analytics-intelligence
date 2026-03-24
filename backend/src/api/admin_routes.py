@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
+import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -224,6 +226,82 @@ def run_pipeline_now(body: Optional[PipelineRunRequest] = None):
         "run_rag_refresh": request.run_rag_refresh,
         "rag_status": rag_status,
     }
+
+
+# ── In-process async job registry ─────────────────────────────────────────────
+# Simple dict keyed by job_id. Fine for single-process local use.
+_PIPELINE_JOBS: Dict[str, dict] = {}
+
+
+@router.post("/pipeline/trigger", dependencies=[Depends(_require_api_key)])
+def trigger_pipeline_async(body: Optional[PipelineRunRequest] = None):
+    """
+    Fire-and-forget pipeline trigger. Returns immediately with a job_id.
+
+    Use GET /api/v1/admin/pipeline/status/{job_id} to poll for completion.
+    This avoids long-running HTTP connections that time out through tunnels/proxies.
+    """
+    request = body or PipelineRunRequest()
+    job_id = str(uuid.uuid4())
+    started_at = datetime.now(timezone.utc)
+
+    _PIPELINE_JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "started_at": started_at.isoformat(),
+        "finished_at": None,
+        "elapsed_seconds": None,
+        "error": None,
+        "run_rag_refresh": request.run_rag_refresh,
+    }
+
+    def _run():
+        try:
+            _run_pipeline_job()
+            if request.run_rag_refresh:
+                _run_rag_ingestion_job()
+            finished = datetime.now(timezone.utc)
+            _PIPELINE_JOBS[job_id].update({
+                "status": "completed",
+                "finished_at": finished.isoformat(),
+                "elapsed_seconds": round((finished - started_at).total_seconds(), 2),
+            })
+            logger.info("✅ [admin_routes] Async pipeline job %s completed", job_id)
+        except Exception as exc:
+            finished = datetime.now(timezone.utc)
+            _PIPELINE_JOBS[job_id].update({
+                "status": "failed",
+                "finished_at": finished.isoformat(),
+                "elapsed_seconds": round((finished - started_at).total_seconds(), 2),
+                "error": str(exc),
+            })
+            logger.error("❌ [admin_routes] Async pipeline job %s failed: %s", job_id, exc)
+
+    thread = threading.Thread(target=_run, daemon=True, name=f"pipeline-{job_id[:8]}")
+    thread.start()
+    logger.info("🚀 [admin_routes] Async pipeline job %s started (thread=%s)", job_id, thread.name)
+
+    return {
+        "job_id": job_id,
+        "status": "running",
+        "started_at": started_at.isoformat(),
+        "poll_url": f"/api/v1/admin/pipeline/status/{job_id}",
+    }
+
+
+@router.get("/pipeline/status/{job_id}", dependencies=[Depends(_require_api_key)])
+def get_pipeline_status(job_id: str):
+    """
+    Poll the status of an async pipeline job started via POST /pipeline/trigger.
+    Returns status: running | completed | failed.
+    """
+    job = _PIPELINE_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found. It may have expired or never existed.",
+        )
+    return job
 
 
 @router.post("/rag/run-now", dependencies=[Depends(_require_api_key)])

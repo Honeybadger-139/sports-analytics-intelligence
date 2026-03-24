@@ -157,24 +157,75 @@ def check_api_health(**context) -> Dict[str, Any]:
 
 
 def trigger_pipeline_run(**context) -> Dict[str, Any]:
-    """Trigger ingestion + feature engineering via admin API."""
-    log.info("Triggering pipeline (include_rag=False)...")
-    payload = _request(
+    """
+    Trigger ingestion + feature engineering via async admin API.
+
+    Uses fire-and-forget POST /pipeline/trigger (returns immediately with job_id)
+    then polls GET /pipeline/status/{job_id} every 60s until completed or failed.
+
+    Why async?  The synchronous /pipeline/run-now blocks for 20-30+ minutes.
+    ngrok free tier drops HTTP connections after ~5 minutes of a long-running
+    request, causing the Airflow task to fail even though the pipeline keeps
+    running server-side. The async pattern keeps each HTTP call < 5 seconds —
+    no connection timeout is possible.
+    """
+    import time as _time
+
+    POLL_INTERVAL_SECONDS = 60
+    max_wait = API_TIMEOUT  # honour the same overall ceiling
+
+    log.info("Triggering async pipeline (include_rag=False)...")
+    trigger_payload = _request(
         "POST",
-        "/api/v1/admin/pipeline/run-now",
+        "/api/v1/admin/pipeline/trigger",
         payload={"run_rag_refresh": False},
+        timeout=30,  # fire-and-forget — should return in < 1s
     )
 
-    status = payload.get("status")
-    elapsed = payload.get("elapsed_seconds", "?")
-    log.info("Pipeline result: status=%s elapsed=%ss", status, elapsed)
+    job_id = trigger_payload.get("job_id")
+    poll_url = trigger_payload.get("poll_url", f"/api/v1/admin/pipeline/status/{job_id}")
+    log.info("Pipeline job started: job_id=%s  poll_url=%s", job_id, poll_url)
 
-    if status != "completed":
-        raise RuntimeError(f"Pipeline did not complete: {payload}")
+    started = _time.monotonic()
+    attempt = 0
 
-    # Push result for downstream tasks
-    context["ti"].xcom_push(key="pipeline_result", value=payload)
-    return payload
+    while True:
+        elapsed_wall = _time.monotonic() - started
+        if elapsed_wall > max_wait:
+            raise RuntimeError(
+                f"Pipeline job {job_id} did not complete within {max_wait}s "
+                f"(last poll at {elapsed_wall:.0f}s)."
+            )
+
+        _time.sleep(POLL_INTERVAL_SECONDS)
+        attempt += 1
+
+        status_payload = _request(
+            "GET",
+            poll_url,
+            timeout=30,
+        )
+
+        job_status = status_payload.get("status", "unknown")
+        elapsed_job = status_payload.get("elapsed_seconds", "?")
+        log.info(
+            "Poll #%d — job_id=%s  status=%s  elapsed=%ss  wall=%.0fs",
+            attempt, job_id, job_status, elapsed_job, elapsed_wall,
+        )
+
+        if job_status == "completed":
+            log.info("✅ Pipeline job %s completed after %.0fs wall time.", job_id, elapsed_wall)
+            context["ti"].xcom_push(key="pipeline_result", value=status_payload)
+            return status_payload
+
+        if job_status == "failed":
+            error = status_payload.get("error", "unknown error")
+            raise RuntimeError(
+                f"Pipeline job {job_id} failed after {elapsed_job}s: {error}"
+            )
+
+        # status == "running" — keep polling
+        log.info("  → Still running, next poll in %ds...", POLL_INTERVAL_SECONDS)
 
 
 def trigger_rag_refresh(**context) -> Dict[str, Any]:
