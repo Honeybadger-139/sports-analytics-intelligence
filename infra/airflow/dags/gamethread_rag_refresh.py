@@ -43,9 +43,18 @@ def _get_config(key: str, default: str = "") -> str:
 
 
 def _get_api_base_url() -> str:
-    url = _get_config("GAMETHREAD_API_BASE_URL", "").rstrip("/")
+    # RAG refresh uses its own URL that points directly at Cloud Run —
+    # bypassing the ngrok laptop tunnel entirely. RSS feeds (CBS Sports,
+    # ESPN, RotoWire) are not blocked on GCP, unlike stats.nba.com.
+    # Falls back to the shared pipeline URL if the RAG-specific one isn't set.
+    url = (
+        _get_config("GAMETHREAD_RAG_API_BASE_URL", "")
+        or _get_config("GAMETHREAD_API_BASE_URL", "")
+    ).rstrip("/")
     if not url:
-        raise ValueError("GAMETHREAD_API_BASE_URL is required.")
+        raise ValueError(
+            "GAMETHREAD_RAG_API_BASE_URL (or GAMETHREAD_API_BASE_URL) is required."
+        )
     return url
 
 
