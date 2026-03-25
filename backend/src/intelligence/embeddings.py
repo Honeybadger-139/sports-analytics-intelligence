@@ -61,6 +61,7 @@ class EmbeddingClient:
                 model=config.RAG_EMBEDDING_MODEL,
                 content=text[:6000],
                 task_type="retrieval_document",
+                output_dimensionality=768,
             )
             return [float(v) for v in payload["embedding"]]
         except Exception as exc:
@@ -75,6 +76,7 @@ class EmbeddingClient:
                 model=config.RAG_EMBEDDING_MODEL,
                 content=text[:3000],
                 task_type="retrieval_query",
+                output_dimensionality=768,
             )
             return [float(v) for v in payload["embedding"]]
         except Exception as exc:

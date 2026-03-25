@@ -5,7 +5,6 @@ import { useDashboard } from '../hooks/useDashboard'
 import type { DashboardItem, DashboardSource } from '../types'
 import { findSportOption } from '../config/sports'
 import {
-  getDashboardLibraryUrl,
   getDashboardPresetUrls,
   getDashboardToolLabel,
   openGrafanaCreateDashboard,
@@ -262,7 +261,6 @@ export default function Dashboard() {
   const [sourceFilter, setSourceFilter] = useState<'all' | DashboardSource>('all')
   const dashboardToolLabel = getDashboardToolLabel()
   const dashboardPresetUrls = getDashboardPresetUrls()
-  const dashboardLibraryUrl = getDashboardLibraryUrl()
 
   const sourceOptions = useMemo(() => Object.keys(SOURCE_META) as DashboardSource[], [])
 
@@ -340,29 +338,42 @@ export default function Dashboard() {
             </h1>
             <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.6, maxWidth: 560 }}>
               Pre-built analytics dashboards for NBA stats, player performance, and pipeline monitoring.
-              Click any dashboard to open it in {dashboardToolLabel}.
+              Click any dashboard to open it without signing in.
             </p>
           </div>
 
-          <a
-            href={dashboardLibraryUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              padding: '9px 16px',
-              borderRadius: 'var(--r-sm)',
-              border: `1px solid ${ACCENT}`,
-              background: `${ACCENT}15`,
-              color: ACCENT,
-              fontSize: '0.78rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Browse All in {dashboardToolLabel} →
-          </a>
+          {/* Admin action — clearly separated from public viewer experience */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
+          }}>
+            <a
+              href={`${String(import.meta.env.VITE_METABASE_URL || 'https://gamethread-metabase-vxjxsnk3gq-uc.a.run.app').replace(/\/$/, '')}/auth/login`}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                padding: '8px 14px',
+                borderRadius: 'var(--r-sm)',
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-2)',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <span style={{ fontSize: '0.8rem' }}>🔐</span>
+              Admin: Create Dashboard
+            </a>
+            <p style={{ fontSize: '0.65rem', color: 'var(--text-3)', textAlign: 'right', fontFamily: 'var(--font-mono)', maxWidth: 200 }}>
+              Requires {dashboardToolLabel} login to create or edit dashboards
+            </p>
+          </div>
+
         </div>
 
         {/* ── Analytics Dashboards ─────────────────────────────────────── */}
@@ -475,16 +486,6 @@ export default function Dashboard() {
                   }}
                 >
                   Open Arena
-                </button>
-                <button
-                  onClick={() => openGrafanaCreateDashboard()}
-                  style={{
-                    padding: '8px 16px', borderRadius: 'var(--r-sm)',
-                    border: '1px solid var(--border)', background: 'var(--bg-elevated)',
-                    color: 'var(--text-2)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
-                  }}
-                >
-                  Build in {dashboardToolLabel}
                 </button>
               </div>
             </div>

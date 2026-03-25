@@ -1,13 +1,22 @@
 """
-Vector store abstraction with Chroma primary backend and JSON fallback.
+Vector store with pgvector (Cloud SQL) primary backend.
+
+Priority order:
+  1. pgvector on Cloud SQL  — persistent, shared across Cloud Run + Docker
+  2. ChromaDB               — local fallback when DATABASE_URL unavailable
+  3. JSON file              — last-resort fallback when ChromaDB unavailable
+
+This means the RAG chatbot always has fresh context regardless of container
+restarts, because embeddings live in Cloud SQL rather than inside a container.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from src import config
 from src.intelligence.embeddings import cosine_similarity
@@ -31,16 +40,190 @@ class VectorStore:
     def count(self) -> int:
         return self._impl.count()
 
+    @property
+    def backend_name(self) -> str:
+        return self._impl.__class__.__name__
+
 
 def _build_store():
+    """Build the best available vector store backend."""
+    # 1. Try pgvector on Cloud SQL (preferred — persistent and shared)
+    database_url = getattr(config, "DATABASE_URL", None) or os.getenv("DATABASE_URL", "")
+    if database_url:
+        try:
+            store = _PgVectorStore(database_url)
+            logger.info("VectorStore: using pgvector on Cloud SQL (persistent)")
+            return store
+        except Exception as exc:
+            logger.warning("pgvector unavailable, falling back: %s", exc)
+
+    # 2. Try ChromaDB (local dev without Cloud SQL)
     try:
         import chromadb  # type: ignore
-
-        return _ChromaStore(chromadb)
+        store = _ChromaStore(chromadb)
+        logger.info("VectorStore: using ChromaDB (local fallback)")
+        return store
     except Exception as exc:
-        logger.warning("Chroma unavailable, using JSON vector fallback: %s", exc)
-        return _JsonVectorStore(config.RAG_CHROMA_DIR, config.RAG_COLLECTION)
+        logger.warning("ChromaDB unavailable, using JSON fallback: %s", exc)
 
+    # 3. JSON file (absolute last resort)
+    logger.warning("VectorStore: using JSON file (ephemeral fallback)")
+    return _JsonVectorStore(config.RAG_CHROMA_DIR, config.RAG_COLLECTION)
+
+
+# ── pgvector backend ──────────────────────────────────────────────────────────
+
+class _PgVectorStore:
+    """
+    Stores embeddings in Cloud SQL using the pgvector extension.
+    All containers share the same database so embeddings are never lost.
+
+    Table schema (created once via migration):
+        rag_documents (
+            doc_id       TEXT PRIMARY KEY,
+            content      TEXT,
+            source       TEXT,
+            title        TEXT,
+            url          TEXT,
+            published_at TEXT,
+            team_tags    TEXT,   -- comma-separated
+            player_tags  TEXT,   -- comma-separated
+            embedding    vector(768),
+            created_at   TIMESTAMPTZ,
+            updated_at   TIMESTAMPTZ
+        )
+    """
+
+    def __init__(self, database_url: str) -> None:
+        import psycopg2  # type: ignore
+        from pgvector.psycopg2 import register_vector  # type: ignore
+
+        self._dsn = database_url
+        self._psycopg2 = psycopg2
+        self._register_vector = register_vector
+        # Verify the table exists and pgvector is enabled
+        self._check_ready()
+
+    def _connect(self):
+        conn = self._psycopg2.connect(self._dsn)
+        self._register_vector(conn)
+        return conn
+
+    def _check_ready(self) -> None:
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM rag_documents")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def upsert_with_stats(self, records: List[Dict]) -> Dict[str, int]:
+        if not records:
+            return {"processed": 0, "created": 0, "updated": 0}
+
+        import numpy as np  # type: ignore
+
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            # Find which doc_ids already exist
+            ids = [r["doc_id"] for r in records]
+            cur.execute(
+                "SELECT doc_id FROM rag_documents WHERE doc_id = ANY(%s)",
+                (ids,)
+            )
+            existing_ids = {row[0] for row in cur.fetchall()}
+
+            created = updated = 0
+            for rec in records:
+                emb = rec.get("embedding")
+                emb_val = np.array(emb) if emb else None
+                if rec["doc_id"] in existing_ids:
+                    cur.execute(
+                        """UPDATE rag_documents
+                           SET content=%s, source=%s, title=%s, url=%s,
+                               published_at=%s, team_tags=%s, player_tags=%s,
+                               embedding=%s, updated_at=NOW()
+                           WHERE doc_id=%s""",
+                        (
+                            rec["content"], rec.get("source", "unknown"),
+                            rec.get("title", "Untitled"), rec.get("url", ""),
+                            rec.get("published_at"), ",".join(rec.get("team_tags", [])),
+                            ",".join(rec.get("player_tags", [])), emb_val, rec["doc_id"],
+                        ),
+                    )
+                    updated += 1
+                else:
+                    cur.execute(
+                        """INSERT INTO rag_documents
+                           (doc_id, content, source, title, url, published_at,
+                            team_tags, player_tags, embedding)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            rec["doc_id"], rec["content"], rec.get("source", "unknown"),
+                            rec.get("title", "Untitled"), rec.get("url", ""),
+                            rec.get("published_at"), ",".join(rec.get("team_tags", [])),
+                            ",".join(rec.get("player_tags", [])), emb_val,
+                        ),
+                    )
+                    created += 1
+
+            conn.commit()
+            return {"processed": len(records), "created": created, "updated": updated}
+        finally:
+            conn.close()
+
+    def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
+        if self.count() == 0:
+            return []
+
+        import numpy as np  # type: ignore
+
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            emb = np.array(query_embedding)
+            cur.execute(
+                """SELECT doc_id, content, source, title, url, published_at,
+                          team_tags, player_tags,
+                          1 - (embedding <=> %s) AS score
+                   FROM rag_documents
+                   WHERE embedding IS NOT NULL
+                   ORDER BY embedding <=> %s
+                   LIMIT %s""",
+                (emb, emb, top_k),
+            )
+            rows = []
+            for row in cur.fetchall():
+                doc_id, content, source, title, url, published_at, \
+                    team_tags, player_tags, score = row
+                rows.append({
+                    "doc_id": doc_id,
+                    "content": content,
+                    "source": source,
+                    "title": title,
+                    "url": url or "",
+                    "published_at": published_at,
+                    "team_tags": [t for t in (team_tags or "").split(",") if t],
+                    "player_tags": [t for t in (player_tags or "").split(",") if t],
+                    "score": float(score) if score is not None else 0.0,
+                })
+            return rows
+        finally:
+            conn.close()
+
+    def count(self) -> int:
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM rag_documents")
+            return int(cur.fetchone()[0])
+        finally:
+            conn.close()
+
+
+# ── ChromaDB backend (local dev fallback) ────────────────────────────────────
 
 class _ChromaStore:
     def __init__(self, chromadb_module) -> None:
@@ -51,30 +234,31 @@ class _ChromaStore:
         if not records:
             return {"processed": 0, "created": 0, "updated": 0}
         ids = [record["doc_id"] for record in records]
-        existing_ids = set()
+        existing_ids: set = set()
         try:
             existing = self._collection.get(ids=ids, include=[])
             existing_ids = set(existing.get("ids", []))
         except Exception:
-            existing_ids = set()
-        documents = [record["content"] for record in records]
-        embeddings = [record["embedding"] for record in records]
-        metadatas = [
-            {
-                "source": record["source"],
-                "title": record["title"],
-                "url": record["url"],
-                "published_at": record["published_at"],
-                "team_tags": ",".join(record.get("team_tags", [])),
-                "player_tags": ",".join(record.get("player_tags", [])),
-            }
-            for record in records
-        ]
-        self._collection.upsert(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
+            pass
+        self._collection.upsert(
+            ids=ids,
+            documents=[r["content"] for r in records],
+            embeddings=[r["embedding"] for r in records],
+            metadatas=[
+                {
+                    "source": r["source"],
+                    "title": r["title"],
+                    "url": r["url"],
+                    "published_at": r["published_at"],
+                    "team_tags": ",".join(r.get("team_tags", [])),
+                    "player_tags": ",".join(r.get("player_tags", [])),
+                }
+                for r in records
+            ],
+        )
         unique_ids = set(ids)
-        created = len([doc_id for doc_id in unique_ids if doc_id not in existing_ids])
-        updated = len(unique_ids) - created
-        return {"processed": len(records), "created": created, "updated": updated}
+        created = len([i for i in unique_ids if i not in existing_ids])
+        return {"processed": len(records), "created": created, "updated": len(unique_ids) - created}
 
     def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
         if self.count() == 0:
@@ -84,28 +268,27 @@ class _ChromaStore:
         docs = result.get("documents", [[]])[0]
         metas = result.get("metadatas", [[]])[0]
         distances = result.get("distances", [[]])[0]
-
         rows: List[Dict] = []
         for idx, doc_id in enumerate(ids):
             meta = metas[idx] if idx < len(metas) else {}
-            rows.append(
-                {
-                    "doc_id": doc_id,
-                    "content": docs[idx] if idx < len(docs) else "",
-                    "source": meta.get("source", "unknown-source"),
-                    "title": meta.get("title", "Untitled"),
-                    "url": meta.get("url", ""),
-                    "published_at": meta.get("published_at"),
-                    "team_tags": [tag for tag in (meta.get("team_tags", "") or "").split(",") if tag],
-                    "player_tags": [tag for tag in (meta.get("player_tags", "") or "").split(",") if tag],
-                    "score": 1.0 - float(distances[idx] if idx < len(distances) else 1.0),
-                }
-            )
+            rows.append({
+                "doc_id": doc_id,
+                "content": docs[idx] if idx < len(docs) else "",
+                "source": meta.get("source", "unknown-source"),
+                "title": meta.get("title", "Untitled"),
+                "url": meta.get("url", ""),
+                "published_at": meta.get("published_at"),
+                "team_tags": [t for t in (meta.get("team_tags", "") or "").split(",") if t],
+                "player_tags": [t for t in (meta.get("player_tags", "") or "").split(",") if t],
+                "score": 1.0 - float(distances[idx] if idx < len(distances) else 1.0),
+            })
         return rows
 
     def count(self) -> int:
         return int(self._collection.count())
 
+
+# ── JSON fallback (absolute last resort) ─────────────────────────────────────
 
 class _JsonVectorStore:
     def __init__(self, base_dir: Path, collection: str) -> None:
@@ -130,24 +313,20 @@ class _JsonVectorStore:
         existing_ids = set(existing)
         for record in records:
             existing[record["doc_id"]] = record
-        merged = list(existing.values())
-        self._save(merged)
-        unique_ids = {record["doc_id"] for record in records}
-        created = len([doc_id for doc_id in unique_ids if doc_id not in existing_ids])
-        updated = len(unique_ids) - created
-        return {"processed": len(records), "created": created, "updated": updated}
+        self._save(list(existing.values()))
+        unique_ids = {r["doc_id"] for r in records}
+        created = len([i for i in unique_ids if i not in existing_ids])
+        return {"processed": len(records), "created": created, "updated": len(unique_ids) - created}
 
     def query(self, query_embedding: List[float], top_k: int) -> List[Dict]:
         rows = self._load()
         if not rows:
             return []
-        scored = []
-        for row in rows:
-            score = cosine_similarity(query_embedding, row.get("embedding", []))
-            item = dict(row)
-            item["score"] = score
-            scored.append(item)
-        scored.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+        scored = sorted(
+            [{**row, "score": cosine_similarity(query_embedding, row.get("embedding", []))} for row in rows],
+            key=lambda r: r.get("score", 0.0),
+            reverse=True,
+        )
         return scored[:top_k]
 
     def count(self) -> int:

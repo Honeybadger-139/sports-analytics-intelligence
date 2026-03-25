@@ -1,6 +1,7 @@
 # === Minimal RAG refresh runtime ===
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
+pgvector>=0.3.6
 google-generativeai==0.8.4
 chromadb==0.5.23
 langchain==0.2.16
