@@ -18,7 +18,10 @@ set -euo pipefail
 PROJECT_ID="${GCP_PROJECT:-sports-analytics-intelligence}"
 REGION="${GCP_REGION:-us-central1}"
 COMPOSER_ENV="${COMPOSER_ENV_NAME:-gamethread-composer}"
-CLOUD_RUN_URL="${CLOUD_RUN_URL:-https://gamethread-api-vxjxsnk3gq-uc.a.run.app}"
+COMPOSER_SA="${COMPOSER_SERVICE_ACCOUNT:-gamethread-runtime@${PROJECT_ID}.iam.gserviceaccount.com}"
+CLOUD_RUN_SERVICE="${CLOUD_RUN_SERVICE:-gamethread-api}"
+CLOUD_RUN_URL="${CLOUD_RUN_URL:-}"
+COMPOSER_UPDATE_PYPI_REQUESTS="${COMPOSER_UPDATE_PYPI_REQUESTS:-false}"
 DAG_SOURCE="infra/airflow/dags/gamethread_cloud_pipeline.py"
 
 echo "══════════════════════════════════════════════"
@@ -27,31 +30,92 @@ echo "════════════════════════�
 echo "  Project:       $PROJECT_ID"
 echo "  Region:        $REGION"
 echo "  Composer Env:  $COMPOSER_ENV"
-echo "  Cloud Run URL: $CLOUD_RUN_URL"
+echo "  Composer SA:   $COMPOSER_SA"
+echo "  Cloud Run Svc: $CLOUD_RUN_SERVICE"
+echo "  Cloud Run URL: ${CLOUD_RUN_URL:-<auto-resolve>}"
+echo "  Update PyPI:   $COMPOSER_UPDATE_PYPI_REQUESTS"
 echo "  DAG source:    $DAG_SOURCE"
 echo "══════════════════════════════════════════════"
 
 # ── Step 1: Enable APIs ──────────────────────────────────────────────────────
 echo ""
-echo "Step 1/6: Enabling required APIs..."
+echo "Step 1/7: Enabling required APIs..."
 gcloud services enable \
   composer.googleapis.com \
   secretmanager.googleapis.com \
+  run.googleapis.com \
   --project="$PROJECT_ID" \
   --quiet
 
-# ── Step 2: Create Composer 2 environment (smallest config) ──────────────────
-echo ""
-echo "Step 2/6: Creating Composer 2 environment (this takes 15-25 minutes)..."
-echo "  ⚠️  Composer costs ~\$0.35/hr. Consider using Cloud Scheduler for $0 idle cost."
+if [ -z "$CLOUD_RUN_URL" ]; then
+  CLOUD_RUN_URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+    --region="$REGION" \
+    --project="$PROJECT_ID" \
+    --format='value(status.url)' 2>/dev/null || true)
+fi
 
-if gcloud composer environments describe "$COMPOSER_ENV" \
-    --location="$REGION" --project="$PROJECT_ID" &>/dev/null; then
-  echo "  ✅ Environment '$COMPOSER_ENV' already exists. Skipping creation."
+if [ -z "$CLOUD_RUN_URL" ]; then
+  echo "❌ Could not resolve Cloud Run URL."
+  echo "   Set CLOUD_RUN_URL explicitly or ensure service '$CLOUD_RUN_SERVICE' exists in $REGION."
+  exit 1
+fi
+
+echo "  ✅ Cloud Run URL: $CLOUD_RUN_URL"
+
+# ── Step 2: Ensure Composer runtime IAM role ──────────────────────────────────
+echo ""
+echo "Step 2/7: Ensuring Composer runtime IAM bindings..."
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$COMPOSER_SA" \
+  --role="roles/composer.worker" \
+  --quiet >/dev/null
+
+echo "  ✅ Ensured role roles/composer.worker for $COMPOSER_SA"
+
+# ── Step 3: Create Composer 2 environment (smallest config) ──────────────────
+echo ""
+echo "Step 3/7: Creating Composer 2 environment (this takes 15-25 minutes)..."
+echo "  ⚠️  Composer costs ~\$0.35/hr. Consider using Cloud Scheduler for \$0 idle cost."
+
+ENV_STATE=$(gcloud composer environments describe "$COMPOSER_ENV" \
+  --location="$REGION" \
+  --project="$PROJECT_ID" \
+  --format="value(state)" 2>/dev/null || true)
+
+if [ "$ENV_STATE" = "ERROR" ]; then
+  echo "  ⚠️  Environment '$COMPOSER_ENV' is in ERROR. Deleting for clean recreation..."
+  gcloud composer environments delete "$COMPOSER_ENV" \
+    --location="$REGION" \
+    --project="$PROJECT_ID" \
+    --quiet \
+    --async
+
+  echo "  ⏳ Waiting for environment deletion..."
+  for _ in $(seq 1 120); do
+    if ! gcloud composer environments describe "$COMPOSER_ENV" \
+      --location="$REGION" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+      ENV_STATE=""
+      break
+    fi
+    sleep 30
+  done
+
+  if [ -n "$ENV_STATE" ]; then
+    echo "  ❌ Timed out waiting for '$COMPOSER_ENV' deletion."
+    echo "     Check operation status and rerun once delete completes."
+    exit 1
+  fi
+fi
+
+if [ -n "$ENV_STATE" ]; then
+  echo "  ✅ Environment '$COMPOSER_ENV' already exists with state: $ENV_STATE. Skipping creation."
 else
   gcloud composer environments create "$COMPOSER_ENV" \
     --location="$REGION" \
     --project="$PROJECT_ID" \
+    --service-account="$COMPOSER_SA" \
     --image-version="composer-2.9.7-airflow-2.9.3" \
     --environment-size=small \
     --scheduler-cpu=0.5 \
@@ -67,25 +131,33 @@ else
     --max-workers=2
 fi
 
-# ── Step 3: Set Airflow Variables (from Secret Manager) ──────────────────────
+# ── Step 4: Set Airflow Variables (from Secret Manager) ──────────────────────
 echo ""
-echo "Step 3/6: Setting Airflow variables..."
+echo "Step 4/7: Setting Airflow variables..."
 
 # Get API key from Secret Manager
 CHAT_API_KEY=$(gcloud secrets versions access latest \
   --secret="CHAT_API_KEY" \
-  --project="$PROJECT_ID" 2>/dev/null || echo "")
+  --project="$PROJECT_ID" 2>/dev/null || true)
 
 if [ -z "$CHAT_API_KEY" ]; then
-  echo "  ⚠️  Secret 'CHAT_API_KEY' not found in Secret Manager."
-  echo "  Creating it now..."
-  echo -n "$CHAT_API_KEY" | gcloud secrets create CHAT_API_KEY \
-    --data-file=- \
-    --project="$PROJECT_ID" \
-    --replication-policy="automatic" 2>/dev/null || true
-  echo "  ⚠️  Please set the secret value manually:"
-  echo "     echo -n 'your-key' | gcloud secrets versions add CHAT_API_KEY --data-file=-"
-  CHAT_API_KEY="PLACEHOLDER_SET_ME"
+  if [ -n "${CHAT_API_KEY_VALUE:-}" ]; then
+    echo "  ⚠️  Secret 'CHAT_API_KEY' missing. Creating from CHAT_API_KEY_VALUE..."
+    gcloud secrets create CHAT_API_KEY \
+      --project="$PROJECT_ID" \
+      --replication-policy="automatic" >/dev/null 2>&1 || true
+    echo -n "$CHAT_API_KEY_VALUE" | gcloud secrets versions add CHAT_API_KEY \
+      --data-file=- \
+      --project="$PROJECT_ID" >/dev/null
+    CHAT_API_KEY="$CHAT_API_KEY_VALUE"
+  else
+    echo "  ❌ Secret 'CHAT_API_KEY' not found in Secret Manager."
+    echo "     Create it first (or set CHAT_API_KEY_VALUE), then rerun:"
+    echo "     echo -n 'your-key' | gcloud secrets create CHAT_API_KEY --data-file=- --replication-policy=automatic"
+    echo "     # If secret exists:"
+    echo "     echo -n 'your-key' | gcloud secrets versions add CHAT_API_KEY --data-file=-"
+    exit 1
+  fi
 fi
 
 gcloud composer environments run "$COMPOSER_ENV" \
@@ -120,20 +192,23 @@ gcloud composer environments run "$COMPOSER_ENV" \
 
 echo "  ✅ Airflow variables configured."
 
-# ── Step 4: Install Python dependencies ──────────────────────────────────────
+# ── Step 5: Install Python dependencies ──────────────────────────────────────
 echo ""
-echo "Step 4/6: Installing Python dependencies in Composer..."
+echo "Step 5/7: Installing Python dependencies in Composer..."
 
-gcloud composer environments update "$COMPOSER_ENV" \
-  --location="$REGION" \
-  --project="$PROJECT_ID" \
-  --update-pypi-package="requests>=2.31.0"
+if [ "$COMPOSER_UPDATE_PYPI_REQUESTS" = "true" ]; then
+  gcloud composer environments update "$COMPOSER_ENV" \
+    --location="$REGION" \
+    --project="$PROJECT_ID" \
+    --update-pypi-package="requests>=2.31.0"
+  echo "  ✅ Dependencies installed."
+else
+  echo "  ⏭️  Skipped PyPI update (set COMPOSER_UPDATE_PYPI_REQUESTS=true to enable)."
+fi
 
-echo "  ✅ Dependencies installed."
-
-# ── Step 5: Upload DAG ───────────────────────────────────────────────────────
+# ── Step 6: Upload DAG ───────────────────────────────────────────────────────
 echo ""
-echo "Step 5/6: Uploading DAG to Composer..."
+echo "Step 6/7: Uploading DAG to Composer..."
 
 if [ ! -f "$DAG_SOURCE" ]; then
   echo "  ❌ DAG file not found: $DAG_SOURCE"
@@ -150,9 +225,9 @@ DAG_BUCKET=$(gcloud composer environments describe "$COMPOSER_ENV" \
 gsutil cp "$DAG_SOURCE" "$DAG_BUCKET/"
 echo "  ✅ DAG uploaded to $DAG_BUCKET/"
 
-# ── Step 6: Verify ───────────────────────────────────────────────────────────
+# ── Step 7: Verify ───────────────────────────────────────────────────────────
 echo ""
-echo "Step 6/6: Verifying DAG is visible..."
+echo "Step 7/7: Verifying DAG is visible..."
 sleep 30  # Wait for Airflow to parse the DAG
 
 gcloud composer environments run "$COMPOSER_ENV" \

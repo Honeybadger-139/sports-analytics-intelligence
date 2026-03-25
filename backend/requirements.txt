@@ -20,7 +20,7 @@ lightgbm==4.5.0
 shap==0.46.0
 
 # === NBA Data ===
-nba_api==1.5.2
+nba_api==1.10.2
 
 # === Visualization (EDA) ===
 matplotlib==3.10.0

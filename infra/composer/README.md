@@ -4,6 +4,7 @@
 
 ```
 Cloud Composer 2 (Airflow)
+    │   (DAGs stored in Composer-managed GCS bucket)
     │
     ├── check_backend_health     →  GET  /healthz
     ├── trigger_pipeline         →  POST /api/v1/admin/pipeline/run-now
@@ -23,6 +24,12 @@ Cloud Composer 2 (Airflow)
 # From repo root:
 ./infra/composer/setup-composer.sh
 ```
+
+The setup script now:
+- ensures `roles/composer.worker` is bound to the Composer runtime service account,
+- auto-recovers if the Composer environment exists in `ERROR` by deleting/recreating,
+- sets Airflow Variables and uploads DAGs into the Composer GCS DAG prefix,
+- skips Composer PyPI updates by default (set `COMPOSER_UPDATE_PYPI_REQUESTS=true` if needed).
 
 ### Option B: Local Airflow (Free, Docker)
 
@@ -85,6 +92,18 @@ DAG_BUCKET=$(gcloud composer environments describe gamethread-composer \
 
 # Upload:
 gsutil cp infra/airflow/dags/gamethread_cloud_pipeline.py "$DAG_BUCKET/"
+```
+
+### Recover Environment In `ERROR`
+
+```bash
+# 1) Ensure required IAM role
+gcloud projects add-iam-policy-binding sports-analytics-intelligence \
+  --member="serviceAccount:gamethread-runtime@sports-analytics-intelligence.iam.gserviceaccount.com" \
+  --role="roles/composer.worker"
+
+# 2) Re-run automated setup (handles delete/recreate if needed)
+./infra/composer/setup-composer.sh
 ```
 
 ### View Logs

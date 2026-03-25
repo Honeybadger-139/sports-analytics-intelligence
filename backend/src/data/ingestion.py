@@ -490,6 +490,12 @@ def ingest_season_games(engine, season: str = "2025-26") -> int:
     game_count = 0
     
     for i, team in enumerate(all_teams):
+        # Pause between teams to avoid NBA API burst detection
+        if i > 0:
+            cooldown = config.INTER_TEAM_DELAY + random.uniform(0, 2)
+            logger.info(f"    💤 Cooling down {cooldown:.1f}s before next team...")
+            time.sleep(cooldown)
+
         team_id = team["id"]
         team_abbrev = team["abbreviation"]
         logger.info(f"  [{i+1}/30] Pulling games for {team_abbrev}...")

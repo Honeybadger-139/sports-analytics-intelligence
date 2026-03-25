@@ -50,11 +50,12 @@ def get_config_value(env_var: str, secret_id: Optional[str] = None, default: Opt
 DATABASE_URL = get_config_value("DATABASE_URL", "DATABASE_URL")
 
 # API Settings
-# We use a 2s delay because NBA.com is very sensitive to scraping.
-# If we fire requests too fast, we'll get blocked (429 Too Many Requests).
-REQUEST_DELAY = 2.0  
-MAX_RETRIES = 3      
-BASE_BACKOFF = 10    
+# NBA.com aggressively throttles scrapers — residential IPs get blocked after
+# sustained bursts.  4.5s base delay + jitter keeps us under the radar.
+REQUEST_DELAY = 4.5
+MAX_RETRIES = 5
+BASE_BACKOFF = 15
+INTER_TEAM_DELAY = 5  # seconds to pause between teams to avoid burst detection
 
 # Ingestion Settings
 # Change this to pull different seasons (e.g., "2023-24")

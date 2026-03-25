@@ -6,7 +6,7 @@
 # - min instances = 1
 # - max instances = 5
 # - concurrency = 80
-# - timeout = 120s
+# - timeout = 3600s
 # - Cloud SQL via the Unix socket / Cloud SQL Auth Proxy
 # - Secrets sourced from Secret Manager
 
@@ -25,7 +25,7 @@ spec:
         run.googleapis.com/cloudsql-instances: "sports-analytics-intelligence:us-central1:sports-analytics"
     spec:
       containerConcurrency: 80
-      timeoutSeconds: 120
+      timeoutSeconds: 3600
       containers:
         - name: api
           image: us-central1-docker.pkg.dev/sports-analytics-intelligence/gamethread/api:latest
@@ -50,4 +50,9 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: LANGFUSE_SECRET_KEY
+                  key: latest
+            - name: CHAT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: CHAT_API_KEY
                   key: latest

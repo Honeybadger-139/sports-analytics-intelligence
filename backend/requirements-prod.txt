@@ -18,7 +18,7 @@ lightgbm==4.5.0
 shap==0.46.0
 
 # === NBA Data ===
-nba_api==1.5.2
+nba_api==1.10.2
 
 # === RAG / Intelligence (Phase 4) ===
 google-generativeai==0.8.4
