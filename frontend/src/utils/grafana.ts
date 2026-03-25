@@ -3,7 +3,7 @@ type DashboardProvider = 'metabase' | 'grafana'
 const DEFAULT_PROVIDER: DashboardProvider = 'metabase'
 
 const DEFAULT_METABASE_URL = 'http://localhost:3000'
-const DEFAULT_METABASE_CREATE_PATH = '/question/new'
+const DEFAULT_METABASE_CREATE_PATH = '/collection/root'
 const DEFAULT_METABASE_LIBRARY_PATH = '/collection/root'
 
 const DEFAULT_GRAFANA_URL = 'http://localhost:3301'
@@ -58,23 +58,34 @@ export function getDashboardLibraryUrl(): string {
   )
 }
 
-export function getDashboardPresetUrls(): { prediction: string | null; pipeline: string | null } {
+export function getDashboardPresetUrls(): {
+  prediction: string | null
+  pipeline: string | null
+  standings: string | null
+  players: string | null
+  matches: string | null
+} {
   if (getDashboardProvider() === 'grafana') {
     const prediction = String(import.meta.env.VITE_GRAFANA_DASHBOARD_PREDICTION_URL || '').trim()
     const pipeline = String(import.meta.env.VITE_GRAFANA_DASHBOARD_PIPELINE_URL || '').trim()
-    return {
-      prediction: prediction || null,
-      pipeline: pipeline || null,
-    }
+    return { prediction: prediction || null, pipeline: pipeline || null, standings: null, players: null, matches: null }
   }
 
+  // Prefer public URLs (no login required). Fall back to ID-based URLs if not set.
   const base = normalizeBaseUrl(import.meta.env.VITE_METABASE_URL || DEFAULT_METABASE_URL)
-  const predictionId = String(import.meta.env.VITE_METABASE_DASHBOARD_PREDICTION_ID || '').trim()
-  const pipelineId = String(import.meta.env.VITE_METABASE_DASHBOARD_PIPELINE_ID || '').trim()
+  const pub = (pubKey: string, idKey: string) => {
+    const publicUrl = String(import.meta.env[pubKey] || '').trim()
+    if (publicUrl) return publicUrl
+    const id = String(import.meta.env[idKey] || '').trim()
+    return id ? `${base}/dashboard/${id}` : null
+  }
 
   return {
-    prediction: predictionId ? `${base}/dashboard/${predictionId}` : null,
-    pipeline: pipelineId ? `${base}/dashboard/${pipelineId}` : null,
+    standings:  pub('VITE_METABASE_PUBLIC_STANDINGS',  'VITE_METABASE_DASHBOARD_STANDINGS_ID'),
+    players:    pub('VITE_METABASE_PUBLIC_PLAYERS',    'VITE_METABASE_DASHBOARD_PLAYERS_ID'),
+    matches:    pub('VITE_METABASE_PUBLIC_MATCHES',    'VITE_METABASE_DASHBOARD_MATCHES_ID'),
+    prediction: pub('VITE_METABASE_PUBLIC_PREDICTION', 'VITE_METABASE_DASHBOARD_PREDICTION_ID'),
+    pipeline:   pub('VITE_METABASE_PUBLIC_PIPELINE',   'VITE_METABASE_DASHBOARD_PIPELINE_ID'),
   }
 }
 

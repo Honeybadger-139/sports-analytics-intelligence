@@ -28,6 +28,8 @@ interface ExternalDashboardCard {
   description: string
   highlights: string[]
   url: string | null
+  accentColor: string
+  icon: string
 }
 
 function fmtDateTime(iso: string): string {
@@ -42,6 +44,122 @@ function fmtDateTime(iso: string): string {
   } catch {
     return iso
   }
+}
+
+function MetabaseCard({ card, toolLabel }: { card: ExternalDashboardCard; toolLabel: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ translateY: -2 }}
+      transition={{ duration: 0.18 }}
+      style={{
+        background: 'var(--bg-panel)',
+        border: '1px solid var(--border)',
+        borderTop: `3px solid ${card.accentColor}`,
+        borderRadius: 'var(--r-md)',
+        padding: '20px 20px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        cursor: 'default',
+      }}
+    >
+      {/* Icon + Title */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            background: `${card.accentColor}18`,
+            border: `1px solid ${card.accentColor}30`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.1rem',
+            flexShrink: 0,
+          }}
+        >
+          {card.icon}
+        </div>
+        <div>
+          <p style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 4 }}>
+            {card.title}
+          </p>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
+            {card.description}
+          </p>
+        </div>
+      </div>
+
+      {/* Highlights */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {card.highlights.map(h => (
+          <span
+            key={h}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 999,
+              border: `1px solid ${card.accentColor}30`,
+              background: `${card.accentColor}0e`,
+              fontSize: '0.68rem',
+              color: card.accentColor,
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+            }}
+          >
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <button
+        onClick={() => {
+          if (card.url) {
+            window.open(card.url, '_blank', 'noopener,noreferrer')
+          } else {
+            openGrafanaCreateDashboard()
+          }
+        }}
+        style={{
+          marginTop: 'auto',
+          padding: '9px 14px',
+          borderRadius: 'var(--r-sm)',
+          border: `1px solid ${card.accentColor}`,
+          background: card.url ? `${card.accentColor}18` : 'transparent',
+          color: card.accentColor,
+          fontSize: '0.78rem',
+          fontWeight: 800,
+          cursor: 'pointer',
+          letterSpacing: '0.02em',
+        }}
+      >
+        {card.url ? `Open Dashboard →` : `Create In ${toolLabel}`}
+      </button>
+    </motion.div>
+  )
+}
+
+function SectionHeader({ label, count, color = 'var(--text-3)' }: { label: string; count?: number; color?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <span style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color, fontFamily: 'var(--font-mono)' }}>
+        {label}
+      </span>
+      {count !== undefined && (
+        <span style={{
+          padding: '1px 7px', borderRadius: 999,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          fontSize: '0.65rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)',
+        }}>
+          {count}
+        </span>
+      )}
+      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    </div>
+  )
 }
 
 function DashboardCard({
@@ -73,19 +191,12 @@ function DashboardCard({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <span
-          style={{
-            padding: '4px 10px',
-            borderRadius: 20,
-            background: `${meta.color}20`,
-            color: meta.color,
-            fontSize: '0.68rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.07em',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
+        <span style={{
+          padding: '4px 10px', borderRadius: 20,
+          background: `${meta.color}20`, color: meta.color,
+          fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.07em', fontFamily: 'var(--font-mono)',
+        }}>
           {meta.section} · {meta.label}
         </span>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
@@ -108,18 +219,11 @@ function DashboardCard({
       {!!item.stats?.length && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {item.stats.map((stat, idx) => (
-            <span
-              key={`${stat.label}_${idx}`}
-              style={{
-                padding: '4px 8px',
-                borderRadius: 8,
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                color: stat.color ?? 'var(--text-2)',
-                fontSize: '0.72rem',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
+            <span key={`${stat.label}_${idx}`} style={{
+              padding: '4px 8px', borderRadius: 8,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              color: stat.color ?? 'var(--text-2)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)',
+            }}>
               <strong style={{ color: 'var(--text-1)' }}>{stat.label}:</strong> {stat.value}
             </span>
           ))}
@@ -130,14 +234,9 @@ function DashboardCard({
         <button
           onClick={() => onOpen(item)}
           style={{
-            padding: '7px 12px',
-            borderRadius: 'var(--r-sm)',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-1)',
-            fontSize: '0.76rem',
-            fontWeight: 700,
-            cursor: 'pointer',
+            padding: '7px 12px', borderRadius: 'var(--r-sm)',
+            border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+            color: 'var(--text-1)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
           }}
         >
           {isCustom ? 'Open Builder' : 'Open Source'}
@@ -145,14 +244,9 @@ function DashboardCard({
         <button
           onClick={() => onRemove(item.id)}
           style={{
-            padding: '7px 12px',
-            borderRadius: 'var(--r-sm)',
-            border: '1px solid rgba(255,76,106,0.35)',
-            background: 'rgba(255,76,106,0.08)',
-            color: 'var(--error)',
-            fontSize: '0.76rem',
-            fontWeight: 700,
-            cursor: 'pointer',
+            padding: '7px 12px', borderRadius: 'var(--r-sm)',
+            border: '1px solid rgba(255,76,106,0.35)', background: 'rgba(255,76,106,0.08)',
+            color: 'var(--error)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
           }}
         >
           Remove
@@ -170,286 +264,249 @@ export default function Dashboard() {
   const dashboardPresetUrls = getDashboardPresetUrls()
   const dashboardLibraryUrl = getDashboardLibraryUrl()
 
-  const sourceOptions = useMemo(() => {
-    return Object.keys(SOURCE_META) as DashboardSource[]
-  }, [])
+  const sourceOptions = useMemo(() => Object.keys(SOURCE_META) as DashboardSource[], [])
 
   const filteredItems = useMemo(() => {
     if (sourceFilter === 'all') return items
     return items.filter(item => item.source === sourceFilter)
   }, [items, sourceFilter])
 
-  const starterCards = useMemo<ExternalDashboardCard[]>(() => {
-    return [
-      {
-        id: 'prediction-performance',
-        title: 'Prediction Performance',
-        description: 'Track rolling accuracy, Brier score, calibration quality, and confidence distribution.',
-        highlights: ['Rolling accuracy', 'Brier trend', 'Calibration curve'],
-        url: dashboardPresetUrls.prediction,
-      },
-      {
-        id: 'pipeline-health',
-        title: 'Pipeline Health',
-        description: 'Monitor ingestion status, feature freshness, and operational reliability trends.',
-        highlights: ['Run status timeline', 'Rows/day', 'Freshness monitors'],
-        url: dashboardPresetUrls.pipeline,
-      },
-    ]
-  }, [dashboardPresetUrls.pipeline, dashboardPresetUrls.prediction])
+  const analyticsCards = useMemo<ExternalDashboardCard[]>(() => [
+    {
+      id: 'team-standings',
+      title: 'NBA Team Standings 2025-26',
+      description: 'Full W-L records, win percentages, and points-per-game breakdown across all 30 NBA teams.',
+      highlights: ['Win % ranking', 'W-L record', 'Pts/game'],
+      url: dashboardPresetUrls.standings,
+      accentColor: '#06C5F8',
+      icon: '🏆',
+    },
+    {
+      id: 'player-leaderboard',
+      title: 'NBA Player Leaderboard 2025-26',
+      description: 'Top scorers, assist leaders, and rebounders with full season stats for all active players.',
+      highlights: ['Top scorers (PPG)', 'Assist leaders', 'Full stats table'],
+      url: dashboardPresetUrls.players,
+      accentColor: '#22D3EE',
+      icon: '🏀',
+    },
+    {
+      id: 'match-results',
+      title: 'NBA Match Results & Trends',
+      description: 'Recent game results, team scoring trends, and home vs away win rate analysis.',
+      highlights: ['Last 30 results', 'Scoring trend', 'Home vs Away %'],
+      url: dashboardPresetUrls.matches,
+      accentColor: '#38BDF8',
+      icon: '📊',
+    },
+  ], [dashboardPresetUrls.standings, dashboardPresetUrls.players, dashboardPresetUrls.matches])
+
+  const operationalCards = useMemo<ExternalDashboardCard[]>(() => [
+    {
+      id: 'prediction-performance',
+      title: 'Prediction Performance',
+      description: 'Track model accuracy over time, confidence calibration, and prediction volume by day.',
+      highlights: ['Rolling accuracy', 'Confidence bands', 'Daily volume'],
+      url: dashboardPresetUrls.prediction,
+      accentColor: '#A78BFA',
+      icon: '🎯',
+    },
+    {
+      id: 'pipeline-health',
+      title: 'Pipeline Health',
+      description: 'Monitor daily ingestion runs, records inserted per module, and pipeline reliability trends.',
+      highlights: ['Run status', 'Records/day', 'Module breakdown'],
+      url: dashboardPresetUrls.pipeline,
+      accentColor: '#34D399',
+      icon: '⚙️',
+    },
+  ], [dashboardPresetUrls.prediction, dashboardPresetUrls.pipeline])
 
   return (
     <div className="page-shell">
-      <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '32px 28px 56px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 22 }}>
+      <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '32px 28px 64px' }}>
+
+        {/* ── Page Header ─────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 36,
+        }}>
           <div>
-            <p style={{ fontSize: '0.72rem', color: ACCENT, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
-              Dashboard
+            <p style={{ fontSize: '0.68rem', color: ACCENT, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>
+              Analytics Hub
             </p>
-            <h1 style={{ fontSize: '1.42rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 8, fontFamily: 'var(--font-display)' }}>
-              Created Dashboards
+            <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text-1)', marginBottom: 10, fontFamily: 'var(--font-display)', lineHeight: 1.15 }}>
+              Dashboards
             </h1>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.5, maxWidth: 720 }}>
-              Review all previously created dashboards first, then use Create Dashboard to open {dashboardToolLabel} and build reporting views.
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-2)', lineHeight: 1.6, maxWidth: 560 }}>
+              Pre-built analytics dashboards for NBA stats, player performance, and pipeline monitoring.
+              Click any dashboard to open it in {dashboardToolLabel}.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              onClick={() => openGrafanaCreateDashboard()}
-              style={{
-                padding: '7px 12px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${ACCENT}`,
-                background: `${ACCENT}15`,
-                color: ACCENT,
-                fontSize: '0.76rem',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              Create In {dashboardToolLabel}
-            </button>
+          <a
+            href={dashboardLibraryUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              padding: '9px 16px',
+              borderRadius: 'var(--r-sm)',
+              border: `1px solid ${ACCENT}`,
+              background: `${ACCENT}15`,
+              color: ACCENT,
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Browse All in {dashboardToolLabel} →
+          </a>
+        </div>
+
+        {/* ── Analytics Dashboards ─────────────────────────────────────── */}
+        <section style={{ marginBottom: 40 }}>
+          <SectionHeader label="Analytics Dashboards" color="#06C5F8" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+            {analyticsCards.map(card => (
+              <MetabaseCard key={card.id} card={card} toolLabel={dashboardToolLabel} />
+            ))}
+          </div>
+        </section>
+
+        {/* ── Operational Dashboards ───────────────────────────────────── */}
+        <section style={{ marginBottom: 48 }}>
+          <SectionHeader label="Operational Dashboards" color="#34D399" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+            {operationalCards.map(card => (
+              <MetabaseCard key={card.id} card={card} toolLabel={dashboardToolLabel} />
+            ))}
+          </div>
+        </section>
+
+        {/* ── My Saved Views ───────────────────────────────────────────── */}
+        <section>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                My Saved Views
+              </span>
+              <span style={{
+                padding: '1px 7px', borderRadius: 999,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                fontSize: '0.65rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)',
+              }}>
+                {items.length}
+              </span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
             {!!items.length && (
               <button
                 onClick={clearAll}
                 style={{
-                  padding: '7px 12px',
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid rgba(255,76,106,0.35)',
-                  background: 'rgba(255,76,106,0.08)',
-                  color: 'var(--error)',
-                  fontSize: '0.76rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
+                  marginLeft: 12, padding: '5px 10px', borderRadius: 'var(--r-sm)',
+                  border: '1px solid rgba(255,76,106,0.35)', background: 'rgba(255,76,106,0.08)',
+                  color: 'var(--error)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
                 }}
               >
                 Clear All
               </button>
             )}
           </div>
-        </div>
 
-        <section
-          style={{
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-md)',
-            background: 'var(--bg-panel)',
-            padding: '16px 18px',
-            marginBottom: 18,
-          }}
-        >
-          <p style={{ fontSize: '0.72rem', color: ACCENT, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Starter Dashboards
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
-            {starterCards.map(card => (
-              <div
-                key={card.id}
+          {/* Filter tabs */}
+          {!!items.length && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              <button
+                onClick={() => setSourceFilter('all')}
                 style={{
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  background: 'var(--bg-elevated)',
-                  padding: '12px 12px 10px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 8,
+                  padding: '5px 12px', borderRadius: 16,
+                  border: `1px solid ${sourceFilter === 'all' ? ACCENT : 'var(--border)'}`,
+                  background: sourceFilter === 'all' ? `${ACCENT}20` : 'var(--bg-panel)',
+                  color: sourceFilter === 'all' ? ACCENT : 'var(--text-2)',
+                  fontSize: '0.72rem', fontWeight: 700, fontFamily: 'var(--font-mono)', cursor: 'pointer',
                 }}
               >
-                <p style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-1)' }}>{card.title}</p>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', lineHeight: 1.45 }}>{card.description}</p>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {card.highlights.map(highlight => (
-                    <span
-                      key={highlight}
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: 999,
-                        border: '1px solid var(--border)',
-                        background: 'var(--bg-panel)',
-                        fontSize: '0.68rem',
-                        color: 'var(--text-3)',
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
-                      {highlight}
-                    </span>
-                  ))}
-                </div>
+                All ({items.length})
+              </button>
+              {sourceOptions.map(source => {
+                const count = items.filter(item => item.source === source).length
+                if (count === 0) return null
+                const active = sourceFilter === source
+                return (
+                  <button
+                    key={source}
+                    onClick={() => setSourceFilter(source)}
+                    style={{
+                      padding: '5px 12px', borderRadius: 16,
+                      border: `1px solid ${active ? SOURCE_META[source].color : 'var(--border)'}`,
+                      background: active ? `${SOURCE_META[source].color}20` : 'var(--bg-panel)',
+                      color: active ? SOURCE_META[source].color : 'var(--text-2)',
+                      fontSize: '0.72rem', fontWeight: 700, fontFamily: 'var(--font-mono)', cursor: 'pointer',
+                    }}
+                  >
+                    {SOURCE_META[source].label} ({count})
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {filteredItems.length === 0 ? (
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+              background: 'var(--bg-panel)', padding: '40px 24px', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '2rem', marginBottom: 12 }}>📋</div>
+              <p style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
+                {items.length === 0 ? 'No saved views yet' : 'No views for this filter'}
+              </p>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: 20, maxWidth: 380, margin: '0 auto 20px' }}>
+                Navigate to any Arena page and click <strong>Save to Dashboard</strong> to bookmark a view here.
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                 <button
-                  onClick={() => {
-                    if (card.url) {
-                      window.open(card.url, '_blank', 'noopener,noreferrer')
-                      return
-                    }
-                    openGrafanaCreateDashboard()
-                  }}
+                  onClick={() => navigate('/arena/deep-dive')}
                   style={{
-                    marginTop: 'auto',
-                    padding: '7px 10px',
-                    borderRadius: 'var(--r-sm)',
-                    border: `1px solid ${ACCENT}`,
-                    background: `${ACCENT}18`,
-                    color: ACCENT,
-                    fontSize: '0.74rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
+                    padding: '8px 16px', borderRadius: 'var(--r-sm)',
+                    border: `1px solid ${ACCENT}`, background: `${ACCENT}15`,
+                    color: ACCENT, fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
                   }}
                 >
-                  {card.url ? 'Open Dashboard' : `Create In ${dashboardToolLabel}`}
+                  Open Arena
+                </button>
+                <button
+                  onClick={() => openGrafanaCreateDashboard()}
+                  style={{
+                    padding: '8px 16px', borderRadius: 'var(--r-sm)',
+                    border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+                    color: 'var(--text-2)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  Build in {dashboardToolLabel}
                 </button>
               </div>
-            ))}
-          </div>
-          {!starterCards.every(card => card.url) && (
-            <p style={{ marginTop: 10, fontSize: '0.72rem', color: 'var(--text-3)', lineHeight: 1.45 }}>
-              Missing dashboard IDs. Set
-              {' '}
-              <code>VITE_METABASE_DASHBOARD_PREDICTION_ID</code>
-              {' '}
-              and
-              {' '}
-              <code>VITE_METABASE_DASHBOARD_PIPELINE_ID</code>
-              {' '}
-              to open these directly, or create them now in
-              {' '}
-              <a href={dashboardLibraryUrl} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>
-                {dashboardToolLabel}
-              </a>
-              .
-            </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+              {filteredItems.map(item => (
+                <DashboardCard
+                  key={item.id}
+                  item={item}
+                  onOpen={(selectedItem) => {
+                    if (selectedItem.source === 'dashboard/custom') {
+                      openGrafanaCreateDashboard()
+                      return
+                    }
+                    navigate(selectedItem.route)
+                  }}
+                  onRemove={removeItem}
+                />
+              ))}
+            </div>
           )}
         </section>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-          <button
-            onClick={() => setSourceFilter('all')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 16,
-              border: `1px solid ${sourceFilter === 'all' ? ACCENT : 'var(--border)'}`,
-              background: sourceFilter === 'all' ? `${ACCENT}20` : 'var(--bg-panel)',
-              color: sourceFilter === 'all' ? ACCENT : 'var(--text-2)',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
-              cursor: 'pointer',
-            }}
-          >
-            All ({items.length})
-          </button>
-
-          {sourceOptions.map(source => {
-            const count = items.filter(item => item.source === source).length
-            const active = sourceFilter === source
-            return (
-              <button
-                key={source}
-                onClick={() => setSourceFilter(source)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 16,
-                  border: `1px solid ${active ? SOURCE_META[source].color : 'var(--border)'}`,
-                  background: active ? `${SOURCE_META[source].color}20` : 'var(--bg-panel)',
-                  color: active ? SOURCE_META[source].color : 'var(--text-2)',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-mono)',
-                  cursor: 'pointer',
-                }}
-              >
-                {SOURCE_META[source].label} ({count})
-              </button>
-            )
-          })}
-        </div>
-
-        {filteredItems.length === 0 ? (
-          <div
-            style={{
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-md)',
-              background: 'var(--bg-panel)',
-              padding: '34px 24px',
-              textAlign: 'center',
-            }}
-          >
-            <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
-              {items.length === 0 ? 'No dashboards created yet' : 'No created items for this filter'}
-            </p>
-            <p style={{ fontSize: '0.84rem', color: 'var(--text-2)', marginBottom: 14 }}>
-              Open Arena pages and use the <strong>Create Dashboard</strong> button on any view.
-            </p>
-            <button
-              onClick={() => navigate('/arena/deep-dive')}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${ACCENT}`,
-                background: `${ACCENT}15`,
-                color: ACCENT,
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Open Arena
-            </button>
-            <button
-              onClick={() => openGrafanaCreateDashboard()}
-              style={{
-                marginLeft: 8,
-                padding: '8px 14px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${ACCENT}`,
-                background: `${ACCENT}12`,
-                color: ACCENT,
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Create In {dashboardToolLabel}
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
-            {filteredItems.map(item => (
-              <DashboardCard
-                key={item.id}
-                item={item}
-                onOpen={(selectedItem) => {
-                  if (selectedItem.source === 'dashboard/custom') {
-                    openGrafanaCreateDashboard()
-                    return
-                  }
-                  navigate(selectedItem.route)
-                }}
-                onRemove={removeItem}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
