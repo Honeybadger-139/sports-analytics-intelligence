@@ -6,8 +6,16 @@
 
 ## Session Start (Do This First)
 1. Read `docs/decisions/decision-log.md` to restore project context
-2. Read relevant files in `docs/learning-notes/` for the current module
-3. Confirm current project: **Sports Analytics Intelligence Platform** (Linear team: Personal)
+2. Read `AGENT_HANDOFF.md` for current Phase 6 implementation status and next steps
+3. Read relevant files in `docs/learning-notes/` for the current module
+4. Confirm current project: **Sports Analytics Intelligence Platform** (Linear team: Personal)
+
+## Current Phase: Phase 6 — Advanced Skills Modules
+- **Master Linear issue**: [SCR-307](https://linear.app/scrape-project/issue/SCR-307)
+- **Full plan**: `docs/architecture/phase-6-advanced-skills-plan.md`
+- **Agent handoff**: `AGENT_HANDOFF.md` — read this to know what to build next
+- **Build order**: LangChain (SCR-313) → PyTorch (SCR-308) → Multi-Agent (SCR-309) → Statistics (SCR-310) → Time-Series (SCR-311) → Fine-tuning (SCR-312)
+- **Deferred**: NLP Engine (SCR-314), Knowledge Graphs (SCR-315)
 
 ---
 
