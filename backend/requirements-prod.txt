@@ -28,8 +28,8 @@ langchain==0.2.16
 langgraph==0.2.28
 
 # === LangChain Enhancements (Phase 6.1 — SCR-317) ===
-langchain-google-genai>=2.0.0
-langchain-community>=0.2.0
+# langchain-google-genai and langchain-community removed — not imported in prod code
+# and conflict with langchain==0.2.16 (requires langchain-core<0.3.0 vs >=0.3.27)
 
 # === Statistics + Time-Series (Phase 6.4/6.5 — SCR-326/327) ===
 statsmodels>=0.14.0           # ARIMA forecasting + SPRT p-values (lightweight)
