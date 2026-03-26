@@ -304,7 +304,7 @@ export default function Forecast() {
           {leagueErr && (
             <div style={{ padding: '20px 16px', background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', textAlign: 'center' }}>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>Momentum data unavailable</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>The forecast API is deploying — check back in a few minutes.</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>The forecast API is deploying — try refreshing in 10–15 minutes.</div>
             </div>
           )}
 
@@ -341,7 +341,7 @@ export default function Forecast() {
                 Forecast unavailable for {team}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', maxWidth: 340, margin: '0 auto' }}>
-                The backend is still deploying the new forecast routes. This usually takes 5–10 minutes after a push to main.
+                The backend is still deploying — this usually takes 10–15 minutes. Try refreshing in a moment.
               </div>
             </div>
           )}
