@@ -1,425 +1,416 @@
-import { useState, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useTeamForecast, useLeagueMomentum } from '../hooks/useApi'
 import { useSportContext } from '../context/SportContext'
 import type { ForecastPoint, LeagueMomentumEntry } from '../types'
 
-const ACCENT = '#2BC9FF'     // matches --accent-arena (blue)
+const ACCENT = '#2BC9FF'
 const ACCENT_DIM = 'rgba(43, 201, 255, 0.12)'
 
-const TREND_CONFIG = {
-  hot:     { color: '#34D399', icon: '↑', label: 'Hot' },
-  cold:    { color: '#FB7185', icon: '↓', label: 'Cold' },
-  neutral: { color: '#F7B24A', icon: '→', label: 'Neutral' },
+const TREND: Record<string, { color: string; bg: string; icon: string; label: string }> = {
+  hot:     { color: '#34D399', bg: 'rgba(52,211,153,0.12)',  icon: '↑', label: 'Hot' },
+  cold:    { color: '#FB7185', bg: 'rgba(251,113,133,0.12)', icon: '↓', label: 'Cold' },
+  neutral: { color: '#F7B24A', bg: 'rgba(247,178,74,0.12)',  icon: '→', label: 'Neutral' },
 }
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 10 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
-
-const stagger = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.03 } },
-}
+const NBA_TEAMS = [
+  'Atlanta Hawks','Boston Celtics','Brooklyn Nets','Charlotte Hornets',
+  'Chicago Bulls','Cleveland Cavaliers','Dallas Mavericks','Denver Nuggets',
+  'Detroit Pistons','Golden State Warriors','Houston Rockets','Indiana Pacers',
+  'LA Clippers','Los Angeles Lakers','Memphis Grizzlies','Miami Heat',
+  'Milwaukee Bucks','Minnesota Timberwolves','New Orleans Pelicans','New York Knicks',
+  'Oklahoma City Thunder','Orlando Magic','Philadelphia 76ers','Phoenix Suns',
+  'Portland Trail Blazers','Sacramento Kings','San Antonio Spurs','Toronto Raptors',
+  'Utah Jazz','Washington Wizards',
+]
 
 function pct(n: number | null | undefined) {
   if (n == null) return '--'
   return `${Math.round(n * 100)}%`
 }
 
-// ── Inline SVG Line Chart ────────────────────────────────────────────────────
+// ── Inline SVG forecast chart ─────────────────────────────────────────────────
 
 function ForecastChart({ points }: { points: ForecastPoint[] }) {
-  const W = 560
-  const H = 160
-  const PAD = { top: 14, right: 16, bottom: 28, left: 38 }
-  const chartW = W - PAD.left - PAD.right
-  const chartH = H - PAD.top - PAD.bottom
+  if (!points.length) return (
+    <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
+      Forecast unavailable — Prophet requires <code style={{ color: ACCENT }}>pip install prophet</code> in the Cloud Run environment.
+      ARIMA baseline will appear once <code style={{ color: ACCENT }}>statsmodels</code> finishes deploying.
+    </div>
+  )
 
-  const allValues = points.flatMap(p => [
-    p.prophet_forecast, p.ci_lower, p.ci_upper, p.arima_forecast,
-  ]).filter((v): v is number => v != null)
+  const W = 520, H = 140
+  const PAD = { top: 12, right: 12, bottom: 24, left: 36 }
+  const cW = W - PAD.left - PAD.right
+  const cH = H - PAD.top - PAD.bottom
 
-  const minY = Math.max(0, Math.min(...allValues) - 0.05)
-  const maxY = Math.min(1, Math.max(...allValues) + 0.05)
+  const allVals = points.flatMap(p =>
+    [p.prophet_forecast, p.ci_lower, p.ci_upper, p.arima_forecast].filter((v): v is number => v != null)
+  )
+  const minY = Math.max(0, (Math.min(...allVals) - 0.06))
+  const maxY = Math.min(1, (Math.max(...allVals) + 0.06))
+  const range = Math.max(maxY - minY, 0.01)
 
-  const scaleX = (i: number) => PAD.left + (i / Math.max(points.length - 1, 1)) * chartW
-  const scaleY = (v: number) => PAD.top + chartH - ((v - minY) / Math.max(maxY - minY, 0.01)) * chartH
+  const sx = (i: number) => PAD.left + (i / Math.max(points.length - 1, 1)) * cW
+  const sy = (v: number) => PAD.top + cH - ((v - minY) / range) * cH
 
-  if (points.length === 0) {
-    return (
-      <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
-        No forecast data available — Prophet requires prophet to be installed.
-      </div>
-    )
-  }
+  const ciPoly = [
+    ...points.filter(p => p.ci_upper != null).map((p, i) => `${sx(i)},${sy(p.ci_upper!)}`),
+    ...[...points].reverse().filter(p => p.ci_lower != null).map((p, i) => `${sx(points.length - 1 - i)},${sy(p.ci_lower!)}`),
+  ].join(' ')
 
-  // CI area (shaded region)
-  const ciPoints = points
-    .filter(p => p.ci_upper != null)
-    .map((p, i) => `${scaleX(i)},${scaleY(p.ci_upper!)}`)
-    .concat(
-      [...points].reverse()
-        .filter(p => p.ci_lower != null)
-        .map((p, i) => `${scaleX(points.length - 1 - i)},${scaleY(p.ci_lower!)}`)
-    )
-    .join(' ')
-
-  // Prophet line
-  const prophetPath = points
+  const propLine = points
     .filter(p => p.prophet_forecast != null)
-    .map((p, idx) => {
-      const x = scaleX(points.findIndex((_, i) => points[i] === p))
-      return `${idx === 0 ? 'M' : 'L'}${x},${scaleY(p.prophet_forecast!)}`
-    })
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(points.findIndex(x => x === p))},${sy(p.prophet_forecast!)}`)
     .join(' ')
 
-  // ARIMA line
-  const arimaPath = points
+  const arimaLine = points
     .filter(p => p.arima_forecast != null)
-    .map((p, idx) => {
-      const x = scaleX(points.findIndex((_, i) => points[i] === p))
-      return `${idx === 0 ? 'M' : 'L'}${x},${scaleY(p.arima_forecast!)}`
-    })
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(points.findIndex(x => x === p))},${sy(p.arima_forecast!)}`)
     .join(' ')
 
-  // Y-axis ticks
-  const yTicks = [0.25, 0.50, 0.75].map(v => ({
-    y: scaleY(minY + (v * (maxY - minY))),
-    label: pct(minY + (v * (maxY - minY))),
+  const yLabels = [0.25, 0.5, 0.75].map(t => ({
+    y: sy(minY + t * range), label: pct(minY + t * range),
   }))
-
-  // X-axis date labels (first, middle, last)
   const xLabels = [0, Math.floor(points.length / 2), points.length - 1]
     .filter(i => i < points.length)
-    .map(i => ({
-      x: scaleX(i),
-      label: points[i]?.date?.slice(5) ?? '', // MM-DD
-    }))
+    .map(i => ({ x: sx(i), label: (points[i]?.date ?? '').slice(5) }))
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: W, height: 'auto', display: 'block' }}>
-      {/* Grid lines */}
-      {yTicks.map(t => (
-        <line key={t.label} x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y}
-          stroke="var(--bg-elevated)" strokeWidth="1" />
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: W, display: 'block' }}>
+      {yLabels.map(t => (
+        <g key={t.label}>
+          <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke="var(--bg-elevated)" strokeWidth="1" />
+          <text x={PAD.left - 4} y={t.y + 4} textAnchor="end" fontSize="9" fill="var(--text-tertiary)">{t.label}</text>
+        </g>
       ))}
-
-      {/* CI shaded area */}
-      {ciPoints.length > 0 && (
-        <polygon points={ciPoints} fill={`${ACCENT}18`} />
-      )}
-
-      {/* ARIMA dashed line */}
-      {arimaPath && (
-        <path d={arimaPath} fill="none" stroke="#F7B24A" strokeWidth="1.5"
-          strokeDasharray="4 3" opacity={0.7} />
-      )}
-
-      {/* Prophet solid line */}
-      {prophetPath && (
-        <path d={prophetPath} fill="none" stroke={ACCENT} strokeWidth="2" />
-      )}
-
-      {/* Y-axis labels */}
-      {yTicks.map(t => (
-        <text key={t.label} x={PAD.left - 4} y={t.y + 4}
-          textAnchor="end" fontSize="9" fill="var(--text-tertiary)">
-          {t.label}
-        </text>
-      ))}
-
-      {/* X-axis date labels */}
+      {ciPoly && <polygon points={ciPoly} fill={`${ACCENT}20`} />}
+      {arimaLine && <path d={arimaLine} fill="none" stroke="#F7B24A" strokeWidth="1.5" strokeDasharray="4 3" opacity={0.65} />}
+      {propLine && <path d={propLine} fill="none" stroke={ACCENT} strokeWidth="2" />}
       {xLabels.map(l => (
-        <text key={l.label} x={l.x} y={H - 8}
-          textAnchor="middle" fontSize="9" fill="var(--text-tertiary)">
-          {l.label}
-        </text>
+        <text key={l.label} x={l.x} y={H - 6} textAnchor="middle" fontSize="9" fill="var(--text-tertiary)">{l.label}</text>
       ))}
-
-      {/* Legend */}
-      <g transform={`translate(${PAD.left + 4}, ${PAD.top + 4})`}>
-        <line x1="0" y1="5" x2="14" y2="5" stroke={ACCENT} strokeWidth="2" />
-        <text x="17" y="9" fontSize="9" fill="var(--text-secondary)">Prophet</text>
-        <line x1="58" y1="5" x2="72" y2="5" stroke="#F7B24A" strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x="75" y="9" fontSize="9" fill="var(--text-secondary)">ARIMA</text>
-        <rect x="118" y="1" width="12" height="8" fill={`${ACCENT}30`} rx="2" />
-        <text x="133" y="9" fontSize="9" fill="var(--text-secondary)">95% CI</text>
+      <g transform={`translate(${PAD.left + 4},${PAD.top + 2})`}>
+        <line x1="0" y1="5" x2="12" y2="5" stroke={ACCENT} strokeWidth="2" />
+        <text x="15" y="9" fontSize="8" fill="var(--text-secondary)">Prophet</text>
+        <line x1="55" y1="5" x2="67" y2="5" stroke="#F7B24A" strokeWidth="1.5" strokeDasharray="3 2" />
+        <text x="70" y="9" fontSize="8" fill="var(--text-secondary)">ARIMA</text>
+        <rect x="108" y="1" width="10" height="7" fill={`${ACCENT}28`} rx="1" />
+        <text x="121" y="9" fontSize="8" fill="var(--text-secondary)">95% CI</text>
       </g>
     </svg>
   )
 }
 
-// ── League Momentum Table ─────────────────────────────────────────────────────
+// ── Team dropdown ─────────────────────────────────────────────────────────────
 
-function LeagueMomentumTable({ season }: { season: string }) {
-  const { data, loading } = useLeagueMomentum(season)
+function TeamDropdown({ value, onChange }: { value: string; onChange: (t: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
 
-  if (loading) return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {[...Array(6)].map((_, i) => (
-        <div key={i} style={{ height: 44, background: 'var(--bg-panel)', borderRadius: 7, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.05}s` }} />
-      ))}
-    </div>
-  )
+  useEffect(() => {
+    function onOut(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [])
 
-  if (!data?.teams?.length) return (
-    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
-      No momentum data for {season}.
-    </div>
+  const filtered = useMemo(
+    () => NBA_TEAMS.filter(t => t.toLowerCase().includes(q.toLowerCase())),
+    [q],
   )
 
   return (
-    <motion.div initial="hidden" animate="show" variants={stagger}>
-      <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 70px 70px 70px 70px', gap: 10, padding: '6px 12px', marginBottom: 4 }}>
-        {['#', 'Team', 'Trend', 'Momentum', 'Streak', 'Last 10'].map(h => (
-          <span key={h} style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</span>
-        ))}
-      </div>
-      {data.teams.map((t: LeagueMomentumEntry) => {
-        const trend = TREND_CONFIG[t.trend]
-        return (
+    <div ref={ref} style={{ position: 'relative', width: 220 }}>
+      <button
+        onClick={() => { setOpen(o => !o); setQ('') }}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px', background: 'var(--bg-panel)', border: `1px solid ${open ? ACCENT : 'var(--bg-elevated)'}`,
+          borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+          transition: 'border-color 0.15s',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, marginLeft: 6, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        </svg>
+      </button>
+      <AnimatePresence>
+        {open && (
           <motion.div
-            key={t.team}
-            variants={fadeUp}
+            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12 }}
             style={{
-              display: 'grid',
-              gridTemplateColumns: '32px 1fr 70px 70px 70px 70px',
-              gap: 10,
-              alignItems: 'center',
-              padding: '10px 12px',
-              background: 'var(--bg-panel)',
-              borderRadius: 7,
-              border: '1px solid var(--bg-elevated)',
-              marginBottom: 3,
+              position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50,
+              background: 'var(--bg-elevated)', border: '1px solid var(--bg-hover)',
+              borderRadius: 8, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
             }}
           >
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>{t.rank}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.team}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: trend.color }}>
-              {trend.icon} {trend.label}
-            </span>
-            {/* Momentum bar */}
-            <div style={{ position: 'relative' }}>
-              <div style={{ height: 5, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${t.momentum_score * 100}%`, background: trend.color, borderRadius: 3 }} />
-              </div>
-              <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 2, display: 'block' }}>{(t.momentum_score * 100).toFixed(0)}</span>
+            <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--bg-hover)' }}>
+              <input
+                autoFocus value={q} onChange={e => setQ(e.target.value)}
+                placeholder="Search team…"
+                style={{
+                  width: '100%', background: 'var(--bg-panel)', border: 'none', borderRadius: 5,
+                  padding: '6px 8px', fontSize: 12, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
             </div>
-            <span style={{ fontSize: 11, color: t.streak_type === 'win' ? '#34D399' : '#FB7185', fontWeight: 600 }}>
-              {t.streak_type === 'none' ? '--' : `${t.streak_length}${t.streak_type === 'win' ? 'W' : 'L'}`}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{pct(t.recent_win_pct)}</span>
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {filtered.map(t => (
+                <button key={t} onClick={() => { onChange(t); setOpen(false); setQ('') }}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+                    border: 'none', background: t === value ? ACCENT_DIM : 'transparent',
+                    color: t === value ? ACCENT : 'var(--text-secondary)',
+                    fontSize: 12, fontWeight: t === value ? 600 : 400, cursor: 'pointer',
+                    transition: 'background 0.1s',
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </motion.div>
-        )
-      })}
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── League momentum row ───────────────────────────────────────────────────────
+
+function MomentumRow({ entry, onSelect }: { entry: LeagueMomentumEntry; onSelect: (t: string) => void }) {
+  const t = TREND[entry.trend]
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      onClick={() => onSelect(entry.team)}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '28px 1fr 80px 120px 60px 52px',
+        gap: 10, alignItems: 'center',
+        padding: '10px 14px',
+        background: 'var(--bg-panel)',
+        borderRadius: 7,
+        border: '1px solid var(--bg-elevated)',
+        cursor: 'pointer',
+        transition: 'background 0.12s',
+      }}
+    >
+      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>{entry.rank}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.team}</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: t.color, background: t.bg, padding: '2px 7px', borderRadius: 5 }}>
+        {t.icon} {t.label}
+      </span>
+      {/* momentum bar */}
+      <div>
+        <div style={{ height: 5, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', marginBottom: 3 }}>
+          <div style={{ height: '100%', width: `${entry.momentum_score * 100}%`, background: t.color, borderRadius: 3, transition: 'width 0.5s ease' }} />
+        </div>
+        <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>{(entry.momentum_score * 100).toFixed(0)}/100</span>
+      </div>
+      <span style={{ fontSize: 11, color: entry.streak_type === 'win' ? '#34D399' : entry.streak_type === 'loss' ? '#FB7185' : 'var(--text-tertiary)', fontWeight: 600 }}>
+        {entry.streak_type === 'none' ? '--' : `${entry.streak_length}${entry.streak_type === 'win' ? 'W' : 'L'}`}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(entry.recent_win_pct)}</span>
     </motion.div>
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
-
-const NBA_TEAMS = [
-  'Atlanta Hawks', 'Boston Celtics', 'Brooklyn Nets', 'Charlotte Hornets',
-  'Chicago Bulls', 'Cleveland Cavaliers', 'Dallas Mavericks', 'Denver Nuggets',
-  'Detroit Pistons', 'Golden State Warriors', 'Houston Rockets', 'Indiana Pacers',
-  'LA Clippers', 'Los Angeles Lakers', 'Memphis Grizzlies', 'Miami Heat',
-  'Milwaukee Bucks', 'Minnesota Timberwolves', 'New Orleans Pelicans', 'New York Knicks',
-  'Oklahoma City Thunder', 'Orlando Magic', 'Philadelphia 76ers', 'Phoenix Suns',
-  'Portland Trail Blazers', 'Sacramento Kings', 'San Antonio Spurs', 'Toronto Raptors',
-  'Utah Jazz', 'Washington Wizards',
-]
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Forecast() {
   const { selection } = useSportContext()
-  const [selectedTeam, setSelectedTeam] = useState<string>('Boston Celtics')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<'team' | 'league'>('team')
+  const [tab, setTab] = useState<'league' | 'team'>('league')
+  const [team, setTeam] = useState('Boston Celtics')
 
-  const filteredTeams = useMemo(
-    () => NBA_TEAMS.filter(t => t.toLowerCase().includes(searchQuery.toLowerCase())),
-    [searchQuery],
+  const { data: league, loading: leagueLoading, error: leagueErr } = useLeagueMomentum(selection.season)
+  const { data: forecast, loading: forecastLoading, error: forecastErr } = useTeamForecast(
+    tab === 'team' ? team : null, selection.season
   )
 
-  const { data, loading, error } = useTeamForecast(selectedTeam, selection.season)
-  const trend = data ? TREND_CONFIG[data.momentum.trend] : null
+  function selectTeam(t: string) {
+    setTeam(t)
+    setTab('team')
+  }
+
+  const trend = forecast ? TREND[forecast.momentum.trend] : null
 
   return (
     <div style={{ maxWidth: 'var(--content-w, 1140px)', margin: '0 auto', padding: '24px 20px' }}>
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 22 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ display: 'inline-flex', width: 32, height: 32, borderRadius: 8, background: ACCENT_DIM, alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 12L6 7L9 9.5L13 4" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="13" cy="4" r="1.5" fill={ACCENT}/>
+
+      {/* ── Header ── */}
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <span style={{ display: 'inline-flex', width: 30, height: 30, borderRadius: 7, background: ACCENT_DIM, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 11L5.5 6.5L8 8.5L12 3" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="12" cy="3" r="1.4" fill={ACCENT}/>
             </svg>
           </span>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Forecast</h1>
+          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Forecast</h1>
         </div>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)' }}>
-          14-day win-rate forecast · Prophet + ARIMA ensemble · {selection.season}
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)', paddingLeft: 38 }}>
+          14-day win-rate · Prophet + ARIMA ensemble · {selection.season}
         </p>
       </motion.div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-panel)', borderRadius: 8, padding: 4, width: 'fit-content' }}>
-        {(['team', 'league'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              padding: '7px 18px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: activeTab === tab ? ACCENT_DIM : 'transparent',
-              color: activeTab === tab ? ACCENT : 'var(--text-secondary)',
-              fontWeight: 600, fontSize: 12, textTransform: 'capitalize',
+      {/* ── Tab bar + team selector ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: 'var(--bg-panel)', borderRadius: 8, padding: 3, gap: 2 }}>
+          {(['league', 'team'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: tab === t ? ACCENT_DIM : 'transparent',
+              color: tab === t ? ACCENT : 'var(--text-secondary)',
+              fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em',
               transition: 'all 0.15s',
-            }}
-          >
-            {tab === 'team' ? 'Team Forecast' : 'League Momentum'}
-          </button>
-        ))}
+            }}>
+              {t === 'league' ? 'League Momentum' : 'Team Forecast'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'team' && (
+          <TeamDropdown value={team} onChange={selectTeam} />
+        )}
       </div>
 
-      {activeTab === 'league' ? (
-        <motion.div initial="hidden" animate="show" variants={fadeUp}>
-          <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-tertiary)' }}>
-            All teams ranked by current momentum score (exponentially-weighted last 10 games)
+      {/* ── League tab ── */}
+      {tab === 'league' && (
+        <motion.div key="league" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {/* Column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 80px 120px 60px 52px', gap: 10, padding: '4px 14px', marginBottom: 6 }}>
+            {['#', 'Team', 'Trend', 'Momentum', 'Streak', 'L10'].map(h => (
+              <span key={h} style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</span>
+            ))}
           </div>
-          <LeagueMomentumTable season={selection.season} />
-        </motion.div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
-          {/* Team selector */}
-          <div style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--bg-elevated)' }}>
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search team…"
-                style={{
-                  width: '100%', background: 'var(--bg-elevated)', border: 'none',
-                  borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'var(--text-primary)',
-                  outline: 'none', boxSizing: 'border-box',
-                }}
-              />
-            </div>
-            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-              {filteredTeams.map(team => (
-                <button
-                  key={team}
-                  onClick={() => setSelectedTeam(team)}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left',
-                    padding: '9px 12px', border: 'none', cursor: 'pointer',
-                    background: selectedTeam === team ? ACCENT_DIM : 'transparent',
-                    color: selectedTeam === team ? ACCENT : 'var(--text-secondary)',
-                    fontSize: 12, fontWeight: selectedTeam === team ? 600 : 400,
-                    transition: 'background 0.12s',
-                  }}
-                >
-                  {team}
-                </button>
+
+          {leagueLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {[...Array(10)].map((_, i) => (
+                <div key={i} style={{ height: 44, background: 'var(--bg-panel)', borderRadius: 7, opacity: 1 - i * 0.07, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.04}s` }} />
               ))}
             </div>
-          </div>
+          )}
 
-          {/* Forecast panel */}
-          <div>
-            {loading && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} style={{ height: 80, background: 'var(--bg-panel)', borderRadius: 10, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.1}s` }} />
-                ))}
+          {leagueErr && (
+            <div style={{ padding: '20px 16px', background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>Momentum data unavailable</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>The forecast API is deploying — check back in a few minutes.</div>
+            </div>
+          )}
+
+          {league && !leagueLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {league.teams.map(entry => (
+                <MomentumRow key={entry.team} entry={entry} onSelect={selectTeam} />
+              ))}
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textAlign: 'center', padding: '10px 0 4px' }}>
+                Click any team to view 14-day forecast →
               </div>
-            )}
+            </div>
+          )}
+        </motion.div>
+      )}
 
-            {error && (
-              <div style={{ padding: 20, background: 'rgba(251,113,133,0.08)', borderRadius: 8, border: '1px solid rgba(251,113,133,0.3)', color: '#FB7185', fontSize: 13 }}>
-                {error}
+      {/* ── Team forecast tab ── */}
+      {tab === 'team' && (
+        <motion.div key="team" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {forecastLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[160, 220, 100].map((h, i) => (
+                <div key={i} style={{ height: h, background: 'var(--bg-panel)', borderRadius: 10, animation: 'pulse 1.5s infinite', animationDelay: `${i * 0.1}s` }} />
+              ))}
+            </div>
+          )}
+
+          {forecastErr && !forecastLoading && (
+            <div style={{ padding: '28px 24px', background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', textAlign: 'center' }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 5V8M8 11H8.01" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="8" cy="8" r="6.5" stroke="var(--text-tertiary)" strokeWidth="1.3"/></svg>
               </div>
-            )}
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Forecast unavailable for {team}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', maxWidth: 340, margin: '0 auto' }}>
+                The backend is still deploying the new forecast routes. This usually takes 5–10 minutes after a push to main.
+              </div>
+            </div>
+          )}
 
-            {data && !loading && (
-              <motion.div initial="hidden" animate="show" variants={stagger} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Team header */}
-                <motion.div variants={fadeUp} style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '16px 18px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{data.team}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{data.n_games_used} games analysed · {data.model}</div>
+          {forecast && !forecastLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Team summary card */}
+              <div style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '16px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{forecast.team}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                      {forecast.n_games_used} games · {forecast.model}
                     </div>
-                    {trend && (
-                      <span style={{
-                        fontSize: 12, fontWeight: 700,
-                        color: trend.color, background: `${trend.color}18`,
-                        padding: '5px 12px', borderRadius: 6,
-                      }}>
-                        {trend.icon} {trend.label.toUpperCase()}
-                      </span>
-                    )}
                   </div>
+                  {trend && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: trend.color, background: trend.bg, padding: '5px 12px', borderRadius: 6 }}>
+                      {trend.icon} {trend.label.toUpperCase()} STREAK
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Season Win %', value: pct(forecast.current_win_rate) },
+                    { label: 'Last 10', value: pct(forecast.last_10_win_rate) },
+                    { label: 'Momentum', value: (forecast.momentum.momentum_score * 100).toFixed(0), color: trend?.color },
+                    {
+                      label: 'Streak',
+                      value: forecast.momentum.streak_type === 'none' ? '--' : `${forecast.momentum.streak_length}${forecast.momentum.streak_type === 'win' ? 'W' : 'L'}`,
+                      color: forecast.momentum.streak_type === 'win' ? '#34D399' : forecast.momentum.streak_type === 'loss' ? '#FB7185' : undefined,
+                    },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: 'var(--bg-elevated)', borderRadius: 7, padding: '8px 14px', flex: '1 1 80px' }}>
+                      <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{s.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: s.color ?? 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-                  {/* Stats row */}
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {[
-                      { label: 'Season Win %', value: pct(data.current_win_rate) },
-                      { label: 'Last 10 Win %', value: pct(data.last_10_win_rate) },
-                      { label: 'Momentum', value: (data.momentum.momentum_score * 100).toFixed(0), accent: trend?.color },
-                      {
-                        label: 'Streak',
-                        value: data.momentum.streak_type === 'none' ? '--' : `${data.momentum.streak_length}${data.momentum.streak_type === 'win' ? 'W' : 'L'}`,
-                        accent: data.momentum.streak_type === 'win' ? '#34D399' : data.momentum.streak_type === 'loss' ? '#FB7185' : undefined,
-                      },
-                    ].map(s => (
-                      <div key={s.label} style={{ background: 'var(--bg-elevated)', borderRadius: 7, padding: '8px 12px', minWidth: 80 }}>
-                        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 3 }}>{s.label}</div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: s.accent ?? 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+              {/* Chart card */}
+              <div style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '14px 18px' }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
+                  14-Day Win-Rate Forecast
+                </div>
+                <ForecastChart points={forecast.forecast} />
+              </div>
+
+              {/* Changepoints */}
+              {forecast.changepoints.length > 0 && (
+                <div style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '14px 18px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                    Detected Trend Shifts
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {forecast.changepoints.map((cp, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                        <span style={{ fontSize: 18, color: cp.direction === 'upward' ? '#34D399' : '#FB7185', lineHeight: 1 }}>{cp.direction === 'upward' ? '↑' : '↓'}</span>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{cp.date}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{cp.direction} · magnitude {cp.magnitude.toFixed(3)}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </motion.div>
-
-                {/* Chart */}
-                <motion.div variants={fadeUp} style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '16px 18px' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>
-                    14-Day Win-Rate Forecast
-                  </div>
-                  {data.forecast.length > 0 ? (
-                    <ForecastChart points={data.forecast} />
-                  ) : (
-                    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, background: 'var(--bg-elevated)', borderRadius: 8 }}>
-                      Forecast unavailable — install Prophet: <code style={{ color: ACCENT }}>pip install prophet</code>
-                    </div>
-                  )}
-                </motion.div>
-
-                {/* Changepoints */}
-                {data.changepoints.length > 0 && (
-                  <motion.div variants={fadeUp} style={{ background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', padding: '14px 18px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
-                      Detected Trend Changes
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {data.changepoints.map((cp, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
-                          <span style={{ fontSize: 16, color: cp.direction === 'upward' ? '#34D399' : '#FB7185' }}>
-                            {cp.direction === 'upward' ? '↑' : '↓'}
-                          </span>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{cp.date}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{cp.direction} · magnitude {cp.magnitude.toFixed(3)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
-          </div>
-        </div>
+                </div>
+              )}
+            </div>
+          )}
+        </motion.div>
       )}
     </div>
   )
