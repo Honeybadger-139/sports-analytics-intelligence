@@ -243,6 +243,7 @@ export default function Forecast() {
   const trend = forecast ? TREND[forecast.momentum.trend] : null
 
   return (
+    <div className="page-shell">
     <div style={{ maxWidth: 'var(--content-w, 1140px)', margin: '0 auto', padding: '24px 20px' }}>
 
       {/* ── Header ── */}
@@ -412,6 +413,7 @@ export default function Forecast() {
           )}
         </motion.div>
       )}
+    </div>
     </div>
   )
 }

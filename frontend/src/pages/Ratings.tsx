@@ -111,6 +111,7 @@ export default function Ratings() {
   const maxStr = rankings.length ? Math.max(...rankings.map(r => Math.abs(r.strength))) : 1
 
   return (
+    <div className="page-shell">
     <div style={{ maxWidth: 'var(--content-w, 1140px)', margin: '0 auto', padding: '24px 20px' }}>
 
       {/* ── Header ── */}
@@ -250,6 +251,7 @@ export default function Ratings() {
           )}
         </>
       )}
+    </div>
     </div>
   )
 }
