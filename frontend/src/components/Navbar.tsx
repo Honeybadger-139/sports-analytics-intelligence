@@ -77,6 +77,18 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Draft Help',    path: '/chatbot/draft-help',    description: 'Compare player valuations' },
     ],
   },
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    path: '/forecast',
+    description: 'Advanced stats & forecasting',
+    color: 'var(--accent-lab)',
+    badge: 'NEW',
+    subItems: [
+      { label: 'Forecast',      path: '/forecast', description: '14-day Prophet + ARIMA win-rate forecast' },
+      { label: 'Team Ratings',  path: '/ratings',  description: 'Bradley-Terry schedule-adjusted rankings' },
+    ],
+  },
 ]
 
 interface NavbarProps {

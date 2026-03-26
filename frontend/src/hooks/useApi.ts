@@ -354,4 +354,45 @@ export function useTeamsList() {
   return { data: query.data ?? null, loading: query.isLoading }
 }
 
+// ── Phase 6.4 Statistics API ──────────────────────────────────────────────────
+
+export function useTeamRatings(season = '2025-26', topN = 30) {
+  return useRefreshableQuery<import('../types').TeamRatingsResponse>({
+    queryKey: ['team-ratings', season, topN],
+    path: `/stats/team-ratings?season=${encodeURIComponent(season)}&top_n=${topN}`,
+    staleTime: 300_000,  // 5 min — ratings don't change after every game
+    errorMessage: 'Failed to load team ratings',
+  })
+}
+
+export function useHomeCourtEffect() {
+  return useRefreshableQuery<import('../types').HomeCourtEffectResponse>({
+    queryKey: ['home-court-effect'],
+    path: '/stats/home-court-effect',
+    staleTime: 3_600_000, // 1 hour — historical analysis, rarely changes
+    errorMessage: 'Failed to load home court effect',
+  })
+}
+
+// ── Phase 6.5 Time-Series Forecast API ────────────────────────────────────────
+
+export function useTeamForecast(teamName: string | null, season = '2025-26') {
+  return useRefreshableQuery<import('../types').TeamForecastResponse>({
+    queryKey: ['team-forecast', teamName, season],
+    path: `/forecast/${encodeURIComponent(teamName ?? '')}?season=${encodeURIComponent(season)}`,
+    enabled: Boolean(teamName),
+    staleTime: 300_000,
+    errorMessage: `Failed to load forecast for ${teamName}`,
+  })
+}
+
+export function useLeagueMomentum(season = '2025-26') {
+  return useRefreshableQuery<import('../types').LeagueMomentumResponse>({
+    queryKey: ['league-momentum', season],
+    path: `/forecast/league/momentum?season=${encodeURIComponent(season)}`,
+    staleTime: 300_000,
+    errorMessage: 'Failed to load league momentum',
+  })
+}
+
 export { fetchJSON }

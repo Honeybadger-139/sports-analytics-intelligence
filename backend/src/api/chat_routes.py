@@ -147,6 +147,68 @@ def _extract_service_metadata(service, fallback_intent: str, fallback_reply: str
     return metadata
 
 
+class AgentChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    sport: Optional[str] = Field(default="nba")
+
+
+class AgentChatResponse(BaseModel):
+    reply: str
+    engine: str = "multi_agent"
+    agents_used: Optional[List[str]] = None
+    confidence: Optional[float] = None
+    tool_path: Optional[str] = None
+
+
+@router.post("/chat/agents", response_model=AgentChatResponse)
+@limit(config.CHAT_RATE_LIMIT)
+async def chat_agents(
+    request: Request,
+    payload: AgentChatRequest,
+    api_key: str = Depends(_require_chat_api_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Multi-agent chatbot endpoint (Phase 6.3 — SCR-319).
+
+    Routes complex queries through a supervisor + specialist agent architecture:
+      - StatsAgent    → SQLQueryTool + TeamStatsTool
+      - NewsAgent     → RAGRetrieverTool
+      - PredictionAgent → PredictionTool + ExplainabilityTool
+
+    Use this endpoint for multi-faceted queries that span stats + news + predictions.
+    For single-intent queries, the standard /chat endpoint is faster.
+    """
+    try:
+        from src.intelligence.multi_agent_system import MultiAgentOrchestrator
+
+        orchestrator = MultiAgentOrchestrator(db=db, sport=payload.sport or "nba")
+        reply = orchestrator.run(
+            query=payload.message,
+            session_id=payload.session_id,
+        )
+        meta = dict(orchestrator.last_metadata)
+        logger.info(
+            "chat.agents agents=%s confidence=%s tool_path=%s",
+            meta.get("agents_used"),
+            meta.get("confidence"),
+            meta.get("tool_path"),
+        )
+        return AgentChatResponse(
+            reply=reply,
+            engine="multi_agent",
+            agents_used=meta.get("agents_used", []),
+            confidence=meta.get("confidence"),
+            tool_path=meta.get("tool_path"),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Multi-agent chat error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Multi-agent system error. Please try again.")
+
+
 @router.get("/chat/health", response_model=ChatHealthResponse)
 async def chat_health(db: Session = Depends(get_db)):
     """

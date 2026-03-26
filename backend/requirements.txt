@@ -34,6 +34,34 @@ chromadb==0.5.23
 langchain==0.2.16
 langgraph==0.2.28
 
+# === LangChain Enhancements (Phase 6.1 — SCR-317) ===
+langchain-google-genai>=2.0.0    # Gemini integration via LangChain interface
+langchain-community>=0.2.0       # Community tools, SQL loaders, memory helpers
+
+# === PyTorch Neural Networks (Phase 6.2 — SCR-318) ===
+torch>=2.2.0                     # MLP model + entity embeddings + LSTM (Module 6.5)
+tensorboard>=2.16.0              # Training curve visualisation
+
+# === Statistics Module (Phase 6.4 — SCR-320) ===
+statsmodels>=0.14.0              # SPRT p-values, OLS, time-series tests
+# pymc>=5.10.0                   # Full Bayesian (heavy dep — install separately for local use)
+# arviz>=0.17.0                  # Bayesian posterior visualisation (paired with PyMC)
+
+# === Time-Series Forecasting (Phase 6.5 — SCR-324) ===
+prophet>=1.1.5                   # Additive time-series model with changepoint detection
+ruptures>=1.1.0                  # Offline changepoint detection (Pelt, Binseg algorithms)
+
+# === LLM Fine-tuning (Phase 6.6 — SCR-325) ===
+# Install manually for local fine-tuning (heavy deps, not needed for serving):
+# pip install peft>=0.9.0 trl>=0.7.0 bitsandbytes>=0.42.0 accelerate>=0.27.0 evaluate>=0.4.0 transformers>=4.38.0 datasets>=2.18.0
+# peft>=0.9.0              # LoRA/PEFT adapter training
+# trl>=0.7.0               # SFTTrainer for supervised fine-tuning
+# bitsandbytes>=0.42.0     # 4-bit quantisation (QLoRA)
+# accelerate>=0.27.0       # Multi-GPU + mixed precision training
+# evaluate>=0.4.0          # ROUGE, accuracy metrics
+# transformers>=4.38.0     # HuggingFace model loading (Phi-3-mini)
+# datasets>=2.18.0         # HuggingFace dataset format
+
 # === Scheduler ===
 apscheduler>=3.10.0
 

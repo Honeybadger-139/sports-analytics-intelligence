@@ -615,3 +615,86 @@ export interface TeamGameLogResponse {
   record: { wins: number; losses: number; games: number }
   games: TeamGameLogEntry[]
 }
+
+// ── Phase 6.4 Statistics ──────────────────────────────────────────────────────
+
+export interface TeamRatingEntry {
+  rank: number
+  team: string
+  strength: number
+  win_vs_average_team: number
+  tier: 'elite' | 'contender' | 'average' | 'rebuilding' | 'lottery'
+}
+
+export interface TeamRatingsResponse {
+  season: string
+  n_teams: number
+  n_games_used: number
+  rankings: TeamRatingEntry[]
+  summary: Record<string, unknown>
+  model: string
+}
+
+export interface HomeCourtEffectResponse {
+  did_estimate: number
+  interpretation: string
+  home_win_pct_with_fans: number
+  home_win_pct_without_fans: number
+  home_change: number
+  away_change: number
+  p_value: number
+  confidence_interval_95: [number, number]
+  is_significant: boolean
+  sample_sizes: Record<string, number>
+  parallel_trends: Record<string, unknown>
+  n_total_games: number
+}
+
+// ── Phase 6.5 Time-Series Forecast ───────────────────────────────────────────
+
+export interface ForecastPoint {
+  date: string
+  prophet_forecast: number | null
+  ci_lower: number | null
+  ci_upper: number | null
+  arima_forecast: number | null
+}
+
+export interface MomentumSummary {
+  momentum_score: number
+  trend: 'hot' | 'cold' | 'neutral'
+  streak_type: 'win' | 'loss' | 'none'
+  streak_length: number
+  recent_win_pct: number
+  n_recent_games: number
+  total_games_analysed: number
+}
+
+export interface TeamForecastResponse {
+  team: string
+  season: string
+  n_games_used: number
+  current_win_rate: number
+  last_10_win_rate: number
+  momentum: MomentumSummary
+  forecast: ForecastPoint[]
+  changepoints: Array<{ date: string; magnitude: number; direction: string }>
+  model: string
+}
+
+export interface LeagueMomentumEntry {
+  rank: number
+  team: string
+  momentum_score: number
+  trend: 'hot' | 'cold' | 'neutral'
+  streak_type: 'win' | 'loss' | 'none'
+  streak_length: number
+  recent_win_pct: number
+  season_win_rate: number
+}
+
+export interface LeagueMomentumResponse {
+  season: string
+  n_teams: number
+  teams: LeagueMomentumEntry[]
+}

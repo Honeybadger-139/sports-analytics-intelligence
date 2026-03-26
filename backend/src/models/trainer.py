@@ -502,6 +502,96 @@ def train_lightgbm(X: pd.DataFrame, y: pd.Series) -> Dict:
     return results
 
 
+def train_pytorch_mlp(X: pd.DataFrame, y: pd.Series) -> Optional[Dict]:
+    """
+    Train PyTorch MLP neural network for NBA game prediction.
+
+    Phase 6.2 (SCR-318) — added to model registry alongside tree-based models.
+
+    WHY A NEURAL NET ALONGSIDE TREES?
+        On tabular data with ~3K samples, trees usually win. But the MLP:
+        1. Documents the comparison (expected result: XGBoost ≥ MLP)
+        2. Adds entity embeddings for team identity (basis for Module 6.5 LSTM)
+        3. Shows interview-level understanding of when to use NNs vs trees
+
+    Returns None if PyTorch is not installed (graceful fallback — the rest
+    of the pipeline continues with tree models only).
+    """
+    try:
+        from src.models.pytorch_trainer import PyTorchTrainer
+    except ImportError:
+        logger.warning("⚠️  PyTorch not available — skipping MLP training.")
+        return None
+
+    logger.info("🔵 Training PyTorch MLP (Phase 6.2)...")
+
+    try:
+        pt_trainer = PyTorchTrainer(
+            n_epochs=100,
+            patience=15,
+            batch_size=64,
+            learning_rate=1e-3,
+            dropout=0.3,
+            n_splits=3,
+        )
+        X_np = X.values.astype(float)
+        y_np = y.values.astype(float)
+
+        metrics = pt_trainer.train(X_np, y_np)
+
+        # Build a sklearn-compatible wrapper for ensemble integration
+        class _PyTorchWrapper:
+            """Thin sklearn-like wrapper around PyTorchTrainer."""
+            def __init__(self, trainer):
+                self._trainer = trainer
+
+            def predict_proba(self, X_df):
+                import numpy as np
+                X_arr = X_df.values.astype(float) if hasattr(X_df, "values") else np.array(X_df)
+                return self._trainer.predict_proba(X_arr)
+
+            def get_params(self, deep=False):
+                return {"n_epochs": self._trainer.n_epochs}
+
+        wrapper = _PyTorchWrapper(pt_trainer)
+
+        results = {
+            "name": "PyTorch_MLP",
+            "model": wrapper,
+            "cv_accuracy": float(metrics.get("accuracy", 0.0)),
+            "cv_accuracy_std": 0.0,
+            "cv_auc": float(metrics.get("cv_auc_mean", 0.5)),
+            "cv_auc_std": float(metrics.get("cv_auc_std", 0.0)),
+            "train_accuracy": float(metrics.get("accuracy", 0.0)),
+            "train_auc": float(metrics.get("auc_roc", 0.5)),
+            "brier_score": float(metrics.get("brier_score", 0.25)),
+            "log_loss": float(metrics.get("log_loss", 0.693)),
+            "_pytorch_trainer": pt_trainer,  # keep for ONNX export
+        }
+
+        logger.info(
+            "   CV AUC-ROC: %.4f ± %.4f | Train Accuracy: %.4f",
+            results["cv_auc"], results["cv_auc_std"], results["train_accuracy"],
+        )
+        logger.info(
+            "   📊 Trees vs NN: XGBoost AUC will likely exceed MLP AUC — "
+            "this is expected on tabular data. The NN value comes from embeddings."
+        )
+
+        # Save PyTorch model
+        pt_path = os.path.join(MODEL_DIR, "pytorch_mlp")
+        try:
+            pt_trainer.save(pt_path)
+        except Exception as save_exc:
+            logger.warning("Could not save PyTorch model: %s", save_exc)
+
+        return results
+
+    except Exception as exc:
+        logger.warning("PyTorch MLP training failed (non-fatal): %s", exc)
+        return None
+
+
 def create_ensemble(models: list, X: pd.DataFrame, y: pd.Series) -> Dict:
     """
     Create a weighted ensemble of all models.
@@ -766,8 +856,13 @@ def run_training_pipeline(
     xgb_results = train_xgboost(X, y)
     lgb_results = train_lightgbm(X, y)
 
-    # Step 3: Ensemble
+    # Step 2d: PyTorch MLP (Phase 6.2 — SCR-318)
+    pytorch_results = train_pytorch_mlp(X, y)
+
+    # Step 3: Ensemble (include PyTorch if training succeeded)
     all_models = [lr_results, xgb_results, lgb_results]
+    if pytorch_results is not None:
+        all_models.append(pytorch_results)
     ensemble_results = create_ensemble(all_models, X, y)
     metadata["validation_summary"] = _validation_summary(all_models, ensemble_results, validation_X, validation_y)
 

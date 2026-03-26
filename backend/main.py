@@ -252,6 +252,8 @@ from src.api.chat_routes import router as chat_router
 from src.api.scribble_routes import router as scribble_router
 from src.api.lab_routes import router as lab_router
 from src.api.admin_routes import router as admin_router
+from src.api.stats_routes import router as stats_router        # Phase 6.4 — Statistics (SCR-326)
+from src.api.forecast_routes import router as forecast_router  # Phase 6.5 — Time-Series (SCR-327)
 app.include_router(router)
 app.include_router(intelligence_router)
 app.include_router(mlops_router)
@@ -259,6 +261,8 @@ app.include_router(chat_router)
 app.include_router(scribble_router)
 app.include_router(lab_router)    # Wave 3: dead-letter inspection
 app.include_router(admin_router)  # Wave 3: runtime config management
+app.include_router(stats_router)     # Phase 6.4: Bradley-Terry, DiD, SPRT
+app.include_router(forecast_router)  # Phase 6.5: Prophet+ARIMA forecasts, momentum
 
 # Serve the production build of the React frontend (frontend/dist/)
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
@@ -294,6 +298,13 @@ async def root():
             "bets_summary": "/api/v1/bets/summary",
             "system_status": "/api/v1/system/status",
             "chat": "POST /api/v1/chat",
+            "chat_agents": "POST /api/v1/chat/agents",
+            "stats_team_ratings": "/api/v1/stats/team-ratings?season=2025-26",
+            "stats_home_court_effect": "/api/v1/stats/home-court-effect",
+            "stats_ab_test": "POST /api/v1/stats/ab-test",
+            "forecast_team": "/api/v1/forecast/{team_name}?season=2025-26",
+            "forecast_momentum": "/api/v1/forecast/{team_name}/momentum",
+            "forecast_league": "/api/v1/forecast/league/momentum",
             "docs": "/docs",
         },
     }

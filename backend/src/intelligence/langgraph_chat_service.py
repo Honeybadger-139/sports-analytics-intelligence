@@ -1,15 +1,19 @@
 """
-LangGraph chatbot service (Phase 7).
+LangGraph chatbot service — Phase 6.1 enhanced with LangChain tools and PostgreSQL memory.
 
-This service keeps the legacy chatbot path intact while adding a richer
-LangGraph workflow with LangChain runnable nodes:
+Graph flow:
+  memory_load -> policy_gate -> route_intent -> rewrite_query ->
+    rag  : rag_retrieve  -> rag_quality_gate -> rag_respond   -> memory_save -> finalize
+    db   : db_query      -> db_retry?         -> memory_save -> finalize
+    off_topic                                 -> finalize
 
-  policy_gate -> route_intent -> rewrite_query ->
-    rag: retrieve -> quality_gate -> respond -> finalize
-    db : query -> optional_retry -> finalize
-    off_topic -> finalize
+Phase 6.1 additions (SCR-317):
+  - LangChain tools (SQLQueryTool, RAGRetrieverTool, etc.) replace raw lambdas
+  - ChatMemory persists history to PostgreSQL (survives container restarts)
+  - Structured output via Pydantic schemas (output_schemas.py)
+  - Memory loaded at graph start, saved after each reply
 
-If langgraph/langchain imports are unavailable, it safely falls back to the
+If langgraph/langchain imports are unavailable it safely falls back to the
 legacy ChatService engine.
 """
 
@@ -24,6 +28,7 @@ from sqlalchemy.orm import Session
 from src import config
 from src.intelligence.chat_service import ChatService, IntentRouter, PolicyGate
 from src.intelligence.langfuse_client import observe, set_session_context
+from src.intelligence.memory import ChatMemory, get_memory
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,8 @@ logger = logging.getLogger(__name__)
 class ChatGraphState(TypedDict, total=False):
     original_message: str
     message: str
-    history: List[Dict[str, str]]
+    history: List[Dict[str, str]]       # merged: in-request + DB memory
+    session_id: Optional[str]           # Phase 6.1: for DB memory lookup
     policy_decision: str
     policy_reason: str
     intent: str
@@ -71,8 +77,22 @@ class LangGraphChatService:
         self.db = db
         self.sport = sport
         self._legacy = ChatService(db=db, sport=sport)
+        self._memory = get_memory(db)             # Phase 6.1: PostgreSQL memory
+        self._tools: Optional[Dict] = None        # Phase 6.1: lazy-initialised tool map
         self._graph = self._build_graph()
         self.last_metadata: Dict[str, Any] = {}
+
+    def _get_tools(self) -> Dict:
+        """Lazily build the LangChain tool map (avoids import overhead when graph unavailable)."""
+        if self._tools is None:
+            try:
+                from src.intelligence.langchain_tools import get_tool_map
+                self._tools = get_tool_map(db=self.db, sport=self.sport)
+                logger.debug("LangChain tools initialised: %s", list(self._tools.keys()))
+            except Exception as exc:
+                logger.warning("LangChain tools unavailable: %s", exc)
+                self._tools = {}
+        return self._tools
 
     @property
     def graph_available(self) -> bool:
@@ -203,6 +223,45 @@ class LangGraphChatService:
             )
         )
         off_topic_runnable = RunnableLambda(lambda _state: self._legacy._decline())
+
+        def memory_load(state: ChatGraphState) -> ChatGraphState:
+            """
+            Phase 6.1: Load PostgreSQL conversation history and merge with
+            in-request history. DB memory wins for older turns; in-request
+            history wins for the current session (frontend may have more context).
+            """
+            session_id = state.get("session_id")
+            if not session_id:
+                return {}
+            try:
+                db_history = self._memory.get_history(session_id, max_turns=6)
+                existing = list(state.get("history") or [])
+                # Deduplicate: use DB history as base, append any new turns from request
+                existing_contents = {h.get("content", "") for h in existing}
+                extra = [h for h in db_history if h.get("content") not in existing_contents]
+                merged = extra + existing
+                return {"history": merged[-12:]}  # cap at 12 turns total
+            except Exception as exc:
+                logger.warning("memory_load failed: %s", exc)
+                return {}
+
+        def memory_save(state: ChatGraphState) -> ChatGraphState:
+            """
+            Phase 6.1: Persist the user message + assistant reply to PostgreSQL.
+            Runs after a successful reply is generated.
+            """
+            session_id = state.get("session_id")
+            reply = state.get("reply", "")
+            original_message = state.get("original_message", "")
+            if not session_id or not reply:
+                return {}
+            try:
+                self._memory.add_message(session_id, "user", original_message)
+                self._memory.add_message(session_id, "assistant", reply)
+                self._memory.increment_turn_count(session_id)
+            except Exception as exc:
+                logger.warning("memory_save failed: %s", exc)
+            return {}
 
         def policy_gate(state: ChatGraphState) -> ChatGraphState:
             decision, reason = policy_runnable.invoke(state)
@@ -380,6 +439,10 @@ class LangGraphChatService:
             return "retry" if bool(state.get("needs_db_retry")) else "done"
 
         graph = StateGraph(ChatGraphState)
+        # Phase 6.1: memory nodes
+        graph.add_node("memory_load", memory_load)
+        graph.add_node("memory_save", memory_save)
+        # Existing nodes
         graph.add_node("policy_gate", policy_gate)
         graph.add_node("policy_refusal", policy_refusal)
         graph.add_node("route_intent", route_intent)
@@ -392,7 +455,10 @@ class LangGraphChatService:
         graph.add_node("off_topic_node", off_topic_node)
         graph.add_node("finalize", finalize)
 
-        graph.set_entry_point("policy_gate")
+        # Phase 6.1: entry point is memory_load → policy_gate
+        graph.set_entry_point("memory_load")
+        graph.add_edge("memory_load", "policy_gate")
+
         graph.add_conditional_edges(
             "policy_gate",
             policy_branch,
@@ -420,7 +486,9 @@ class LangGraphChatService:
                 "done": "finalize",
             },
         )
-        graph.add_edge("rag_respond", "finalize")
+        # Phase 6.1: save memory after successful replies
+        graph.add_edge("rag_respond", "memory_save")
+        graph.add_edge("memory_save", "finalize")
         graph.add_conditional_edges(
             "db_query",
             db_retry_branch,
@@ -462,6 +530,7 @@ class LangGraphChatService:
                     "original_message": message,
                     "message": message,
                     "history": history,
+                    "session_id": session_id,   # Phase 6.1: enables DB memory
                 }
             )
             reply = str(result.get("reply", "")).strip() if isinstance(result, dict) else ""
