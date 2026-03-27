@@ -34,13 +34,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "players",
-        sa.Column(
-            "position",
-            sa.String(5),
-            nullable=True,
-        ),
+    # Use raw SQL with IF NOT EXISTS — the players.position column may have been
+    # added by a prior init.sql or manual migration before Alembic tracked it.
+    op.execute(
+        "ALTER TABLE players ADD COLUMN IF NOT EXISTS position VARCHAR(5)"
     )
 
 
