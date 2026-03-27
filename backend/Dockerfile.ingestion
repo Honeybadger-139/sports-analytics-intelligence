@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements-pipeline.txt .
 RUN pip install --no-cache-dir -r requirements-pipeline.txt
 
+# Ensure src.data.* imports resolve from /app regardless of which
+# pipeline/ sub-script is invoked (Python adds the script dir, not WORKDIR).
+ENV PYTHONPATH=/app
+
 COPY src/ ./src/
 COPY pipeline/ ./pipeline/
 
