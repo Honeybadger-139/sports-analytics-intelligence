@@ -86,12 +86,41 @@ export function useQualityOverview(season = '2025-26') {
 }
 
 export function useMLOpsMonitoring(season = '2025-26') {
-  return useRefreshableQuery<MLOpsMonitoringOverview>({
+  const query = useQuery({
     queryKey: ['mlops-monitoring', season],
-    path: `/mlops/monitoring?season=${encodeURIComponent(season)}`,
+    queryFn: async ({ signal }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw: any = await fetchJSON(`/mlops/monitoring?season=${encodeURIComponent(season)}`, signal)
+      // API returns nested shape; flatten into MLOpsMonitoringOverview
+      const firstAlert = raw.alerts?.[0]
+      return {
+        season:                    raw.season,
+        evaluated_predictions:     raw.metrics?.evaluated_predictions ?? 0,
+        accuracy:                  raw.metrics?.accuracy ?? null,
+        brier_score:               raw.metrics?.brier_score ?? null,
+        accuracy_threshold:        raw.thresholds?.accuracy_min ?? null,
+        brier_threshold:           raw.thresholds?.brier_max ?? null,
+        game_data_freshness_days:  raw.metrics?.game_data_freshness_days ?? null,
+        pipeline_freshness_days:   raw.metrics?.pipeline_freshness_days ?? null,
+        alert_count:               raw.escalation?.total_alerts ?? 0,
+        escalation_level:          raw.escalation?.state ?? 'none',
+        recommended_action:        firstAlert?.recommended_action ?? '',
+        breach_streak:             firstAlert?.breach_streak ?? 0,
+        alerts: (raw.alerts ?? []).map((a: any) => ({
+          type:    a.id ?? 'alert',
+          message: a.message,
+          level:   a.severity === 'high' ? 'error' : a.severity === 'medium' ? 'warning' : 'info',
+        })),
+      } as MLOpsMonitoringOverview
+    },
     staleTime: 15_000,
-    errorMessage: 'Failed to load MLOps monitoring',
   })
+  return {
+    data:    query.data ?? null,
+    loading: query.isLoading,
+    error:   query.isError ? 'Failed to load MLOps monitoring' : null,
+    refresh: () => { void query.refetch() },
+  }
 }
 
 export function useMLOpsMonitoringTrend(season = '2025-26', days = 14) {
