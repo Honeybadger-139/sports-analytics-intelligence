@@ -22,7 +22,6 @@ from src.data.db import get_db
 from src.data.audit_store import is_missing_pipeline_audit_error
 from src.data.bet_store import create_bet, get_bets_summary, list_bets, settle_bet
 from src.data.prediction_store import (
-    ensure_pre_game_columns,
     persist_game_predictions,
     sync_prediction_outcomes,
 )
@@ -1240,13 +1239,9 @@ async def predict_today(
     """
     today = date.today()
 
-    # Keep optional pre-game enrichment columns available in long-lived environments.
-    try:
-        ensure_pre_game_columns(db)
-    except Exception as exc:
-        logger.warning("Could not ensure pre-game prediction columns: %s", exc)
-
     # ── Pass 1: return pre-computed scheduled-game predictions ────────────────
+    # NOTE: is_pre_game / news_context / enriched_at columns are added by
+    # Alembic migration 0006 at API startup — no DDL inside the request.
     try:
         pre_computed = db.execute(
             text("""
