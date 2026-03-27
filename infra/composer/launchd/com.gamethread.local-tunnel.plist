@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gamethread.local-tunnel</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/osascript</string>
+    <string>-e</string>
+    <string>tell application "Terminal" to do script "cd /Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence &amp;&amp; ./infra/composer/start-local-tunnel.sh"</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/logs/launchd-local-tunnel.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/abhishekgupta/Documents/self-learning/sports-analytics-intelligence/logs/launchd-local-tunnel.err.log</string>
+</dict>
+</plist>

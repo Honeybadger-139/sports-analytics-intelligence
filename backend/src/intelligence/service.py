@@ -160,7 +160,9 @@ class IntelligenceService:
                     m.game_id,
                     m.season,
                     m.game_date,
+                    ht.full_name AS home_team_name,
                     ht.abbreviation AS home_team,
+                    at.full_name AS away_team_name,
                     at.abbreviation AS away_team,
                     hf.days_rest AS home_days_rest,
                     af.days_rest AS away_days_rest
@@ -179,6 +181,62 @@ class IntelligenceService:
         if not row:
             raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
         return dict(row._mapping)
+
+    @staticmethod
+    def _fallback_matchup_summary(
+        game: Dict,
+        *,
+        retrieval_stats: Dict,
+        risk_signals: List[Dict],
+        max_age_hours: int,
+        feed_health: List[Dict],
+    ) -> str:
+        """
+        Build a deterministic summary when cited RAG context is insufficient.
+        This keeps Pulse cards informative instead of looking blank.
+        """
+        away_name = game.get("away_team_name") or game.get("away_team") or "Away team"
+        home_name = game.get("home_team_name") or game.get("home_team") or "Home team"
+        away_abbr = game.get("away_team") or ""
+        home_abbr = game.get("home_team") or ""
+        matchup = f"{away_name} ({away_abbr}) @ {home_name} ({home_abbr})".strip()
+
+        home_rest = game.get("home_days_rest")
+        away_rest = game.get("away_days_rest")
+        if home_rest is None or away_rest is None:
+            rest_note = "Rest-day signals are limited for this matchup."
+        else:
+            rest_note = (
+                f"Rest profile: {home_abbr or 'Home'} has {home_rest} day(s), "
+                f"{away_abbr or 'Away'} has {away_rest} day(s)."
+            )
+
+        if risk_signals:
+            top_signal = max(
+                risk_signals,
+                key=lambda item: {"low": 1, "medium": 2, "high": 3}.get(item.get("severity", "low"), 0),
+            )
+            risk_note = f"Current risk flag: {top_signal.get('label', 'Context risk')}."
+        else:
+            risk_note = "No strong deterministic risk flags were triggered."
+
+        docs_used = int(retrieval_stats.get("docs_used", 0) or 0)
+        max_similarity = retrieval_stats.get("max_similarity")
+        similarity_note = (
+            f"Retrieved context: {docs_used} cited source(s), max similarity "
+            f"{max_similarity:.2f} (threshold {config.RAG_MIN_SIMILARITY:.2f})."
+            if isinstance(max_similarity, (int, float))
+            else f"Retrieved context: {docs_used} cited source(s) in the last {max_age_hours}h window."
+        )
+
+        had_feed_errors = any(row.get("status") == "error" for row in (feed_health or []))
+        feed_note = (
+            "Some feeds reported fetch issues recently; refresh may improve coverage."
+            if had_feed_errors
+            else "Feeds are reachable, but recent matchup-specific coverage appears sparse."
+        )
+
+        return f"{matchup}: cited context is currently limited. {rest_note} {risk_note} {similarity_note} {feed_note}"
 
     def _refresh_index_if_needed(self) -> None:
         if self._index_refreshed:
@@ -275,8 +333,12 @@ class IntelligenceService:
         self._refresh_index_if_needed()
 
         matchup = f"{game['away_team']} @ {game['home_team']}"
+        verbose_matchup = (
+            f"{game.get('away_team_name', game['away_team'])} ({game['away_team']}) at "
+            f"{game.get('home_team_name', game['home_team'])} ({game['home_team']})"
+        )
         query_text = (
-            f"NBA matchup {matchup}. injury report, lineup availability, travel fatigue, rest, "
+            f"NBA matchup {verbose_matchup}. injury report, lineup availability, travel fatigue, rest, "
             f"recent team updates, tactical notes."
         )
         docs, retrieval_stats = self.retriever.retrieve(
@@ -287,19 +349,9 @@ class IntelligenceService:
         )
         max_similarity = retrieval_stats.get("max_similarity")
         if max_similarity is not None and max_similarity < config.RAG_MIN_SIMILARITY:
+            docs = []
             retrieval_stats["docs_used"] = 0
             retrieval_stats["source_quality"] = []
-            return {
-                "game_id": str(game["game_id"]),
-                "season": str(game["season"]),
-                "generated_at": datetime.utcnow().isoformat(),
-                "summary": "No relevant context found for this query.",
-                "risk_signals": [],
-                "citations": [],
-                "retrieval": retrieval_stats,
-                "coverage_status": "insufficient",
-                "feed_health": self._feed_health,
-            }
         scored_docs = [_score_doc_quality(doc, max_age_hours) for doc in docs]
         scored_docs.sort(key=lambda row: float(row.get("quality_score") or 0.0), reverse=True)
         docs = [
@@ -322,9 +374,12 @@ class IntelligenceService:
         if citations:
             summary = self.summarizer.summarize(matchup, docs)
         else:
-            summary = (
-                "Insufficient recent cited context for this matchup. "
-                "Use model probabilities as primary signal until context sources refresh."
+            summary = self._fallback_matchup_summary(
+                game,
+                retrieval_stats=retrieval_stats,
+                risk_signals=risk_signals,
+                max_age_hours=max_age_hours,
+                feed_health=self._feed_health,
             )
 
         response = {

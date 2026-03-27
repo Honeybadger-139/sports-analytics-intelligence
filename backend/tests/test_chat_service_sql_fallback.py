@@ -24,10 +24,25 @@ class _FakeDB:
     def execute(self, query):
         sql = str(query)
         self.executed.append(sql)
+        if "previous_win_rate" in sql and "improvement" in sql:
+            return _FakeResult(
+                ["full_name", "abbreviation", "current_win_rate", "previous_win_rate", "improvement", "current_wins", "previous_wins"],
+                [("Oklahoma City Thunder", "OKC", 0.70, 0.54, 0.16, 56, 44)],
+            )
         if "FROM teams" in sql and "win_rate" in sql:
             return _FakeResult(
                 ["full_name", "abbreviation", "wins", "games_played", "win_rate"],
                 [("Los Angeles Lakers", "LAL", 30, 50, 0.6)],
+            )
+        if "assists_per_game" in sql and "player_season_stats" in sql:
+            return _FakeResult(
+                ["full_name", "abbreviation", "position", "games_played", "assists_per_game", "total_assists"],
+                [("Tyrese Haliburton", "IND", "PG", 70, 10.9, 763)],
+            )
+        if "avg_points" in sql and "players_count" in sql:
+            return _FakeResult(
+                ["team_name", "players_count", "avg_points", "avg_rebounds", "avg_assists", "avg_steals", "avg_blocks"],
+                [("Boston Celtics", 14, 11.42, 4.78, 2.63, 0.78, 0.61)],
             )
         return _FakeResult([], [])
 
@@ -60,6 +75,42 @@ def test_rule_based_sql_generates_leaderboard_for_generic_win_rate_question():
     assert "LIMIT 10" in sql
 
 
+def test_rule_based_sql_generates_record_query_for_specific_team():
+    sql = ChatService._rule_based_sql("Show me the Lakers' record in 2025-26")
+    assert sql is not None
+    assert "SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins" in sql
+    assert "SUM(CASE WHEN m.winner_team_id IS NOT NULL AND m.winner_team_id <> t.team_id THEN 1 ELSE 0 END) AS losses" in sql
+    assert "m.season = '2025-26'" in sql
+    assert "lakers" in sql.lower()
+
+
+def test_rule_based_sql_generates_season_over_season_improvement_query():
+    sql = ChatService._rule_based_sql("Which teams have improved the most from last season?")
+    assert sql is not None
+    assert "season_team_results" in sql
+    assert "improvement" in sql
+    assert "('2025-26', '2024-25')" in sql
+    assert "ORDER BY improvement DESC" in sql
+    assert "LIMIT 10" in sql
+
+
+def test_rule_based_sql_generates_top_point_guards_assist_comparison():
+    sql = ChatService._rule_based_sql("Compare assists per game for the top 5 point guards")
+    assert sql is not None
+    assert "assists_per_game" in sql
+    assert "p.position" in sql
+    assert "LIMIT 5" in sql
+
+
+def test_rule_based_sql_generates_team_average_player_stats_query():
+    sql = ChatService._rule_based_sql("What are the average player stats for the Celtics this season?")
+    assert sql is not None
+    assert "AVG(pss.points)" in sql
+    assert "AVG(pss.rebounds)" in sql
+    assert "AVG(pss.assists)" in sql
+    assert "celtics" in sql.lower()
+
+
 def test_db_reply_uses_deterministic_sql_when_llm_is_unavailable():
     fake_db = _FakeDB()
     service = _build_service_with_fake_db(fake_db)
@@ -68,6 +119,16 @@ def test_db_reply_uses_deterministic_sql_when_llm_is_unavailable():
 
     assert "Los Angeles Lakers" in reply
     assert any("FROM teams" in sql for sql in fake_db.executed)
+
+
+def test_db_reply_uses_deterministic_sql_for_improvement_question_when_llm_unavailable():
+    fake_db = _FakeDB()
+    service = _build_service_with_fake_db(fake_db)
+
+    reply = service._db_reply("Which teams have improved the most from last season?", history=[])
+
+    assert "Oklahoma City Thunder" in reply
+    assert any("improvement" in sql.lower() for sql in fake_db.executed)
 
 
 def test_reply_blocks_runtime_web_search_requests():

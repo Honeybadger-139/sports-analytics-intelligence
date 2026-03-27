@@ -458,6 +458,46 @@ class ChatService:
             return candidate
         return None
 
+    @staticmethod
+    def _previous_season(season: str) -> str:
+        """
+        Convert a season key like 2025-26 -> 2024-25.
+        Falls back to 2024-25 if parsing fails.
+        """
+        match = re.match(r"^(20\d{2})-(\d{2})$", (season or "").strip())
+        if not match:
+            return "2024-25"
+        start_year = int(match.group(1))
+        end_suffix = int(match.group(2))
+        prev_start = start_year - 1
+        prev_end = (end_suffix - 1) % 100
+        return f"{prev_start}-{prev_end:02d}"
+
+    @staticmethod
+    def _extract_team_phrase(message: str) -> Optional[str]:
+        lower = (message or "").lower()
+        patterns = [
+            r"\bfor\s+(?:the\s+)?([a-z0-9\s\-'’]+?)\b(?:\s+this\s+season|\s+in\s+20\d{2}-\d{2}|\?|$)",
+            r"\bof\s+(?:the\s+)?([a-z0-9\s\-'’]+?)\b(?:\s+this\s+season|\s+in\s+20\d{2}-\d{2}|\?|$)",
+            r"\b([a-z0-9\s\-'’]+?)['’]?\s+record\b",
+            r"\b([a-z0-9\s\-'’]+?)['’]?\s+stats\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, lower)
+            if not match:
+                continue
+            candidate = re.sub(r"[^a-z0-9\s-]", " ", match.group(1)).strip()
+            candidate = re.sub(r"\s+", " ", candidate)
+            if not candidate:
+                continue
+            if candidate in {"team", "teams", "player", "players", "season", "this season"}:
+                continue
+            words = candidate.split()
+            if len(words) > 5:
+                candidate = " ".join(words[-5:])
+            return candidate
+        return None
+
     @classmethod
     def _rule_based_sql(cls, message: str) -> Optional[str]:
         """
@@ -468,6 +508,7 @@ class ChatService:
         """
         lower = message.lower()
         season = cls._extract_season(message)
+        prev_season = cls._previous_season(season)
 
         # Team win-rate questions (e.g. "Show me the Lakers' win rate in 2025-26")
         if "win rate" in lower or "win%" in lower or "win %" in lower or "win percentage" in lower:
@@ -553,6 +594,117 @@ class ChatService:
                 "ORDER BY pss.points DESC\n"
                 "LIMIT 10"
             )
+
+        # Team record (wins-losses) for a specific team this season
+        if "record" in lower or "wins and losses" in lower or "w-l" in lower:
+            team_phrase = cls._extract_team_phrase(message)
+            if team_phrase:
+                escaped_team = team_phrase.replace("'", "''")
+                return (
+                    "SELECT\n"
+                    "  t.full_name,\n"
+                    "  t.abbreviation,\n"
+                    "  SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,\n"
+                    "  SUM(CASE WHEN m.winner_team_id IS NOT NULL AND m.winner_team_id <> t.team_id THEN 1 ELSE 0 END) AS losses,\n"
+                    "  COUNT(m.game_id) AS games_played,\n"
+                    "  ROUND(\n"
+                    "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::numeric\n"
+                    "    / NULLIF(COUNT(m.game_id), 0),\n"
+                    "    4\n"
+                    "  ) AS win_rate\n"
+                    "FROM teams t\n"
+                    "JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id\n"
+                    f"WHERE m.season = '{season}'\n"
+                    "  AND m.is_completed = TRUE\n"
+                    f"  AND (t.full_name ILIKE '%{escaped_team}%' OR t.abbreviation ILIKE '{escaped_team}')\n"
+                    "GROUP BY t.full_name, t.abbreviation\n"
+                    "ORDER BY games_played DESC\n"
+                    "LIMIT 1"
+                )
+
+        # Season-over-season improvement leaderboard
+        if (
+            ("improved" in lower or "improvement" in lower)
+            and ("last season" in lower or "previous season" in lower or "from" in lower)
+        ):
+            return (
+                "WITH season_team_results AS (\n"
+                "  SELECT\n"
+                "    t.team_id,\n"
+                "    t.full_name,\n"
+                "    t.abbreviation,\n"
+                "    m.season,\n"
+                "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) AS wins,\n"
+                "    COUNT(m.game_id) AS games_played,\n"
+                "    SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END)::numeric\n"
+                "      / NULLIF(COUNT(m.game_id), 0) AS win_rate\n"
+                "  FROM teams t\n"
+                "  JOIN matches m ON m.home_team_id = t.team_id OR m.away_team_id = t.team_id\n"
+                f"  WHERE m.is_completed = TRUE AND m.season IN ('{season}', '{prev_season}')\n"
+                "  GROUP BY t.team_id, t.full_name, t.abbreviation, m.season\n"
+                ")\n"
+                "SELECT\n"
+                "  cur.full_name,\n"
+                "  cur.abbreviation,\n"
+                "  ROUND(cur.win_rate, 4) AS current_win_rate,\n"
+                "  ROUND(prev.win_rate, 4) AS previous_win_rate,\n"
+                "  ROUND(cur.win_rate - prev.win_rate, 4) AS improvement,\n"
+                "  cur.wins AS current_wins,\n"
+                "  prev.wins AS previous_wins\n"
+                "FROM season_team_results cur\n"
+                "JOIN season_team_results prev\n"
+                "  ON cur.team_id = prev.team_id\n"
+                f"WHERE cur.season = '{season}'\n"
+                f"  AND prev.season = '{prev_season}'\n"
+                "ORDER BY improvement DESC\n"
+                "LIMIT 10"
+            )
+
+        # Top point guards by assists per game
+        if (
+            "assist" in lower
+            and ("point guard" in lower or "pg" in lower)
+            and ("top" in lower or "compare" in lower or "highest" in lower)
+        ):
+            return (
+                "SELECT\n"
+                "  p.full_name,\n"
+                "  t.abbreviation,\n"
+                "  p.position,\n"
+                "  pss.games_played,\n"
+                "  ROUND(pss.assists::numeric / NULLIF(pss.games_played, 0), 2) AS assists_per_game,\n"
+                "  pss.assists AS total_assists\n"
+                "FROM player_season_stats pss\n"
+                "JOIN players p ON p.player_id = pss.player_id\n"
+                "JOIN teams t ON t.team_id = pss.team_id\n"
+                f"WHERE pss.season = '{season}'\n"
+                "  AND (p.position ILIKE 'PG%' OR p.position ILIKE '%PG%' OR p.position ILIKE 'G%')\n"
+                "  AND pss.games_played > 0\n"
+                "ORDER BY assists_per_game DESC\n"
+                "LIMIT 5"
+            )
+
+        # Team-specific average player stats (e.g. Celtics this season)
+        if ("average player stats" in lower or "avg player stats" in lower) and "season" in lower:
+            team_phrase = cls._extract_team_phrase(message)
+            if team_phrase:
+                escaped_team = team_phrase.replace("'", "''")
+                return (
+                    "SELECT\n"
+                    "  t.full_name AS team_name,\n"
+                    "  COUNT(pss.player_id) AS players_count,\n"
+                    "  ROUND(AVG(pss.points)::numeric, 2) AS avg_points,\n"
+                    "  ROUND(AVG(pss.rebounds)::numeric, 2) AS avg_rebounds,\n"
+                    "  ROUND(AVG(pss.assists)::numeric, 2) AS avg_assists,\n"
+                    "  ROUND(AVG(pss.steals)::numeric, 2) AS avg_steals,\n"
+                    "  ROUND(AVG(pss.blocks)::numeric, 2) AS avg_blocks\n"
+                    "FROM player_season_stats pss\n"
+                    "JOIN teams t ON t.team_id = pss.team_id\n"
+                    f"WHERE pss.season = '{season}'\n"
+                    f"  AND (t.full_name ILIKE '%{escaped_team}%' OR t.abbreviation ILIKE '{escaped_team}')\n"
+                    "GROUP BY t.full_name\n"
+                    "LIMIT 1"
+                )
 
         return None
 

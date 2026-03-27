@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import requests
@@ -128,6 +128,45 @@ def _request(
     return response.json() if response.content else {}
 
 
+def _parse_iso_utc(value: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO timestamp into a timezone-aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _pipeline_completed_since(triggered_at_utc: datetime) -> Dict[str, Any]:
+    """
+    Fallback completion check when async in-memory job state is unavailable.
+
+    This happens when /admin/pipeline/trigger and /admin/pipeline/status/{job_id}
+    land on different backend workers that do not share process memory.
+    """
+    payload = _request("GET", "/api/v1/system/status", timeout=60)
+    pipeline = payload.get("pipeline") or {}
+    last_status = str(pipeline.get("last_status") or "").lower()
+    last_sync_raw = pipeline.get("last_sync")
+    last_sync_dt = _parse_iso_utc(last_sync_raw)
+    healthy_statuses = {"success", "completed", "skipped_no_new_data"}
+    completed = (
+        bool(last_sync_dt)
+        and last_sync_dt >= triggered_at_utc
+        and last_status in healthy_statuses
+    )
+    return {
+        "completed": completed,
+        "system_status": payload.get("status", "unknown"),
+        "pipeline_last_status": last_status or "unknown",
+        "pipeline_last_sync": last_sync_raw,
+    }
+
+
 # ── Task callables ────────────────────────────────────────────────────────────
 
 def check_api_health(**context) -> Dict[str, Any]:
@@ -173,6 +212,7 @@ def trigger_pipeline_run(**context) -> Dict[str, Any]:
 
     POLL_INTERVAL_SECONDS = 60
     max_wait = API_TIMEOUT  # honour the same overall ceiling
+    triggered_at_utc = datetime.now(timezone.utc)
 
     log.info("Triggering async pipeline (include_rag=False)...")
     trigger_payload = _request(
@@ -200,11 +240,44 @@ def trigger_pipeline_run(**context) -> Dict[str, Any]:
         _time.sleep(POLL_INTERVAL_SECONDS)
         attempt += 1
 
-        status_payload = _request(
-            "GET",
-            poll_url,
-            timeout=30,
-        )
+        try:
+            status_payload = _request(
+                "GET",
+                poll_url,
+                timeout=30,
+            )
+        except Exception as exc:
+            message = str(exc)
+            # Fallback for local/ngrok topologies where in-memory async status
+            # can be lost across workers/process restarts.
+            if "404" in message and "not found" in message.lower():
+                fallback = _pipeline_completed_since(triggered_at_utc)
+                if fallback["completed"]:
+                    synthetic = {
+                        "job_id": job_id,
+                        "status": "completed",
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                        "elapsed_seconds": round(elapsed_wall, 2),
+                        "completion_source": "system_status_fallback",
+                        "pipeline_last_status": fallback["pipeline_last_status"],
+                        "pipeline_last_sync": fallback["pipeline_last_sync"],
+                    }
+                    log.info(
+                        "✅ Pipeline completion inferred from /system/status "
+                        "(job registry unavailable): %s",
+                        json.dumps(synthetic, indent=2),
+                    )
+                    context["ti"].xcom_push(key="pipeline_result", value=synthetic)
+                    return synthetic
+                log.warning(
+                    "Async job status endpoint returned 404 (attempt=%d, job_id=%s). "
+                    "Falling back to /system/status polling: %s",
+                    attempt,
+                    job_id,
+                    json.dumps(fallback, indent=2),
+                )
+                continue
+            raise
 
         job_status = status_payload.get("status", "unknown")
         elapsed_job = status_payload.get("elapsed_seconds", "?")
