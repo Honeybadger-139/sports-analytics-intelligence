@@ -50,15 +50,28 @@ def ensure_predictions_table(db: Session) -> None:
     db.commit()
 
 
+def ensure_pre_game_columns(db: Session) -> None:
+    """Idempotently add pre-game prediction and RAG enrichment columns (SCR-331)."""
+    for stmt in [
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_pre_game BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS news_context JSONB",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMP",
+    ]:
+        db.execute(text(stmt))
+    db.commit()
+
+
 def persist_game_predictions(
     db: Session,
     game_id: str,
     predictions: Dict[str, Dict],
     shap_factors_by_model: Optional[Dict[str, list]] = None,
     predicted_at: Optional[datetime] = None,
+    is_pre_game: bool = False,
 ) -> int:
     """
     Persist per-model predictions for one game using idempotent upsert.
+    Pass is_pre_game=True for upcoming scheduled games predicted before tip-off.
     """
     if not predictions:
         return 0
@@ -73,17 +86,20 @@ def persist_game_predictions(
                     text(
                         """
                         INSERT INTO predictions (
-                            game_id, model_name, home_win_prob, away_win_prob, confidence, shap_factors, predicted_at
+                            game_id, model_name, home_win_prob, away_win_prob,
+                            confidence, shap_factors, predicted_at, is_pre_game
                         )
                         VALUES (
-                            :game_id, :model_name, :home_win_prob, :away_win_prob, :confidence, CAST(:shap_factors AS JSONB), :predicted_at
+                            :game_id, :model_name, :home_win_prob, :away_win_prob,
+                            :confidence, CAST(:shap_factors AS JSONB), :predicted_at, :is_pre_game
                         )
                         ON CONFLICT (game_id, model_name) DO UPDATE SET
                             home_win_prob = EXCLUDED.home_win_prob,
                             away_win_prob = EXCLUDED.away_win_prob,
                             confidence = EXCLUDED.confidence,
                             shap_factors = EXCLUDED.shap_factors,
-                            predicted_at = EXCLUDED.predicted_at
+                            predicted_at = EXCLUDED.predicted_at,
+                            is_pre_game = EXCLUDED.is_pre_game
                         """
                     ),
                     {
@@ -94,6 +110,7 @@ def persist_game_predictions(
                         "confidence": payload.get("confidence"),
                         "shap_factors": json.dumps((shap_factors_by_model or {}).get(model_name) or []),
                         "predicted_at": predicted_at,
+                        "is_pre_game": is_pre_game,
                     },
                 )
             db.commit()
@@ -107,6 +124,43 @@ def persist_game_predictions(
             raise
 
     return 0
+
+
+def persist_news_enrichment(
+    db: Session,
+    game_id: str,
+    model_name: str,
+    news_context: dict,
+    home_win_prob_adjusted: Optional[float] = None,
+) -> None:
+    """
+    Store RAG-derived news context and optional probability adjustment
+    against an existing prediction row. Called from prediction_enricher.py.
+    """
+    from datetime import datetime as dt
+    updates: dict = {
+        "game_id": game_id,
+        "model_name": model_name,
+        "news_context": json.dumps(news_context),
+        "enriched_at": dt.utcnow(),
+    }
+    set_clause = "news_context = CAST(:news_context AS JSONB), enriched_at = :enriched_at"
+
+    if home_win_prob_adjusted is not None:
+        away = round(1.0 - home_win_prob_adjusted, 4)
+        set_clause += ", home_win_prob = :home_adj, away_win_prob = :away_adj, confidence = :home_adj"
+        updates["home_adj"] = round(home_win_prob_adjusted, 4)
+        updates["away_adj"] = away
+
+    db.execute(
+        text(f"""
+            UPDATE predictions
+            SET {set_clause}
+            WHERE game_id = :game_id AND model_name = :model_name
+        """),
+        updates,
+    )
+    db.commit()
 
 
 def sync_prediction_outcomes(

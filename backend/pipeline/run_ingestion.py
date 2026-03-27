@@ -208,6 +208,25 @@ def _run() -> int:
 
         ingestion_module.run_full_ingestion(seasons=config.seasons)
 
+        # ── SCR-331: fetch upcoming schedule + run base predictions ──────────
+        try:
+            from src.data.schedule_fetcher import fetch_and_predict_upcoming
+            from src import config as app_config
+            upcoming_summary = fetch_and_predict_upcoming(
+                engine,
+                season=app_config.CURRENT_SEASON,
+                days_ahead=1,
+            )
+            log_event("upcoming_schedule_fetched", run_id=run_id, **upcoming_summary)
+        except Exception as sched_exc:
+            log_event(
+                "upcoming_schedule_fetch_failed",
+                level="WARNING",
+                run_id=run_id,
+                error=str(sched_exc),
+            )
+        # ─────────────────────────────────────────────────────────────────────
+
         snapshot_date = started_at.date()
         storage_client = storage.Client(project=config.project_id)
         snapshot_prefix = f"{snapshot_date:%Y/%m/%d}"

@@ -268,6 +268,23 @@ def main() -> int:
             gcs_uri=gcs_uri,
             **details,
         )
+
+        # ── SCR-331: enrich upcoming-game predictions with fresh news ────────
+        database_url = os.getenv("DATABASE_URL") or runtime_env.get("DATABASE_URL")
+        if database_url:
+            try:
+                from sqlalchemy import create_engine
+                from src.intelligence.prediction_enricher import enrich_predictions_with_news
+                enrich_engine = create_engine(database_url)
+                enriched = enrich_predictions_with_news(enrich_engine)
+                emit(logging.INFO, "prediction_enrichment_complete", games_enriched=enriched)
+                enrich_engine.dispose()
+            except Exception as enrich_exc:
+                emit(logging.WARNING, "prediction_enrichment_failed", error=str(enrich_exc))
+        else:
+            emit(logging.WARNING, "prediction_enrichment_skipped", reason="DATABASE_URL not set")
+        # ─────────────────────────────────────────────────────────────────────
+
         return 0
     except Exception as exc:
         emit(logging.ERROR, "rag_refresh_failed", error=str(exc))

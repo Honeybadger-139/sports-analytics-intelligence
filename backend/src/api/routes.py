@@ -1115,7 +1115,83 @@ async def predict_today(
 ):
     """
     Get predictions for all games scheduled today.
+
+    SCR-331: Two-pass strategy —
+      Pass 1: Query pre-computed predictions for games already in the DB
+              (populated by schedule_fetcher during the 06:30 ingestion job).
+      Pass 2: Fallback — if nothing pre-computed, run the predictor live
+              (original behaviour, kept for compatibility).
+
+    Each game entry includes:
+      - is_pre_game: True if predicted before tip-off
+      - news_context: RAG-derived confidence adjustments (if enriched)
+      - enriched_at: when the RAG enrichment was last applied
     """
+    today = date.today()
+
+    # ── Pass 1: return pre-computed scheduled-game predictions ────────────────
+    pre_computed = db.execute(
+        text("""
+            SELECT
+                m.game_id,
+                ht.abbreviation  AS home_team,
+                ht.full_name     AS home_team_name,
+                at.abbreviation  AS away_team,
+                at.full_name     AS away_team_name,
+                m.game_date,
+                json_object_agg(
+                    p.model_name,
+                    json_build_object(
+                        'home_win_prob', p.home_win_prob,
+                        'away_win_prob', p.away_win_prob,
+                        'confidence',    p.confidence,
+                        'prediction',    CASE WHEN p.home_win_prob >= 0.5 THEN 'home' ELSE 'away' END
+                    )
+                ) AS predictions,
+                bool_or(p.is_pre_game)    AS is_pre_game,
+                MAX(p.enriched_at)        AS enriched_at,
+                -- Return the ensemble news_context if present
+                (SELECT p2.news_context FROM predictions p2
+                 WHERE p2.game_id = m.game_id AND p2.model_name = 'ensemble'
+                 LIMIT 1) AS news_context
+            FROM matches m
+            JOIN teams ht ON m.home_team_id = ht.id
+            JOIN teams at ON m.away_team_id = at.id
+            JOIN predictions p ON p.game_id = m.game_id
+            WHERE m.game_date = :today
+              AND m.is_completed = FALSE
+            GROUP BY m.game_id, ht.abbreviation, ht.full_name,
+                     at.abbreviation, at.full_name, m.game_date
+            ORDER BY m.game_id
+        """),
+        {"today": today},
+    ).fetchall()
+
+    if pre_computed:
+        games_out = []
+        for row in pre_computed:
+            r = dict(row._mapping)
+            games_out.append({
+                "game_id":        r["game_id"],
+                "home_team":      r["home_team"],
+                "home_team_name": r["home_team_name"],
+                "away_team":      r["away_team"],
+                "away_team_name": r["away_team_name"],
+                "game_date":      r["game_date"].isoformat() if r["game_date"] else None,
+                "predictions":    r["predictions"] or {},
+                "is_pre_game":    bool(r["is_pre_game"]),
+                "enriched_at":    r["enriched_at"].isoformat() if r["enriched_at"] else None,
+                "news_context":   r["news_context"] or {},
+            })
+        return {
+            "date":           today.isoformat(),
+            "count":          len(games_out),
+            "source":         "pre_computed",
+            "persisted_rows": 0,
+            "games":          games_out,
+        }
+
+    # ── Pass 2: live prediction fallback (original behaviour) ─────────────────
     predictor = get_predictor()
     engine = db.get_bind()
     games = predictor.predict_today(engine)
@@ -1125,10 +1201,11 @@ async def predict_today(
         persisted_rows = _persist_predictions_for_games(db, games)
 
     return {
-        "date": date.today().isoformat(),
-        "count": len(games),
+        "date":           today.isoformat(),
+        "count":          len(games),
+        "source":         "live",
         "persisted_rows": persisted_rows,
-        "games": games,
+        "games":          games,
     }
 
 
