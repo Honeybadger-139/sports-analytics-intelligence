@@ -30,23 +30,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Use server_default so existing rows get FALSE, not NULL
-    op.add_column(
-        "predictions",
-        sa.Column(
-            "is_pre_game",
-            sa.Boolean(),
-            nullable=True,
-            server_default=sa.text("FALSE"),
-        ),
+    # Use raw SQL with IF NOT EXISTS so this migration is safe to re-run if the
+    # columns were already added manually by ensure_pre_game_columns() before
+    # Alembic tracked them. op.add_column() has no IF NOT EXISTS equivalent and
+    # raises DuplicateColumn on an already-existing column.
+    op.execute(
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS "
+        "is_pre_game BOOLEAN DEFAULT FALSE"
     )
-    op.add_column(
-        "predictions",
-        sa.Column("news_context", sa.JSON(), nullable=True),
+    op.execute(
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS news_context JSONB"
     )
-    op.add_column(
-        "predictions",
-        sa.Column("enriched_at", sa.DateTime(), nullable=True),
+    op.execute(
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMP"
     )
 
 
