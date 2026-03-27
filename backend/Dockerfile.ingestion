@@ -11,6 +11,9 @@ COPY requirements-pipeline.txt .
 RUN pip install --no-cache-dir -r requirements-pipeline.txt
 
 COPY src/ ./src/
-COPY pipeline/run_ingestion.py .
+COPY pipeline/ ./pipeline/
 
-CMD ["python", "run_ingestion.py"]
+# Default: incremental ESPN sync (safe daily Cloud Scheduler run).
+# Override with --mode flush for first-time full 3-season load,
+# or --mode backfill for idempotent re-run without truncation.
+CMD ["python", "pipeline/run_espn_ingestion.py", "--mode", "incremental"]
