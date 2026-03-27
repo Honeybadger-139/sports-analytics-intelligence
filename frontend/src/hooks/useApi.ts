@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { getApiBase } from '../config/api'
 import type {
   SystemStatus,
   BankrollSummary,
@@ -20,7 +21,7 @@ import type {
   TeamGameLogResponse,
 } from '../types'
 
-const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
+const API_BASE = getApiBase()
 
 async function fetchJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { signal })

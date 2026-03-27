@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { getApiBase } from '../config/api'
 import type {
   TableListResponse,
   TableRowsResponse,
@@ -9,7 +10,7 @@ import type {
   ViewCreateRequest,
 } from '../types'
 
-const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
+const API_BASE = getApiBase()
 
 /** Key used by the legacy localStorage implementation — kept for one-time migration only. */
 const _LEGACY_NOTEBOOKS_KEY = 'sai_scribble_notebooks'

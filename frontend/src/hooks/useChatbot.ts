@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
+import { getApiBase } from '../config/api'
 import type { ChatMessage, ChatRequest, ChatResponse } from '../types'
 
-const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
+const API_BASE = getApiBase()
 const CHAT_API_KEY = import.meta.env.VITE_CHAT_API_KEY ?? ''
 
 /** Stable per-browser session ID — persisted in localStorage for Langfuse trace grouping. */
@@ -221,7 +222,7 @@ export function useChatbot() {
             id: crypto.randomUUID(),
             role: 'error',
             content: isNetworkError
-              ? 'Could not reach the backend. Make sure the FastAPI server is running (`uvicorn main:app --reload` inside `backend/`).'
+              ? 'Could not reach the backend API. If you are running locally, start FastAPI. If this is production, verify the `/api` rewrite and backend CORS allowlist.'
               : `Something went wrong: ${(err as Error).message || 'Unknown error'}. Please try again.`,
             timestamp: new Date().toISOString(),
           }

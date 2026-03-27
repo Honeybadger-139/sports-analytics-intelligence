@@ -39,7 +39,10 @@ from src.rate_limit import (
 configure_logging()
 
 logger = logging.getLogger(__name__)
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5174,http://localhost:3000")
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5174,http://localhost:3000,https://sports-analytics-intelligence.vercel.app",
+)
 ALLOWED_ORIGINS = [origin.strip() for origin in _raw_origins.split(",") if origin.strip()]
 EMBEDDED_SCHEDULER_ENABLED = os.getenv("EMBEDDED_SCHEDULER_ENABLED", "false").strip().lower() in {
     "1",
