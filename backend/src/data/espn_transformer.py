@@ -583,13 +583,14 @@ def transform_players(raw_roster: list[dict], espn_team_id: str) -> list[dict]:
         raw_pos = (athlete.get("position") or {}).get("name") or (
             athlete.get("position") or {}).get("abbreviation")
         position = _normalize_position(raw_pos)
-        # ESPN marks active athletes with ``active=True`` or ``status.type.name=="Active"``
-        is_active: bool = bool(athlete.get("active", True))
-        status_name = (
-            (athlete.get("status") or {}).get("type") or {}
-        ).get("name", "")
-        if status_name and status_name.lower() == "inactive":
-            is_active = False
+        # ESPN marks active/inactive via status.name (e.g. "Active", "Injured",
+        # "Out"). status.type is a string ("active"), not a nested dict.
+        status_obj = athlete.get("status") or {}
+        status_name: str = ""
+        if isinstance(status_obj, dict):
+            # Use the human-readable "name" field on the status object
+            status_name = (status_obj.get("name") or "").strip().lower()
+        is_active: bool = status_name in ("active", "") or status_name == "active"
 
         rows.append(
             {

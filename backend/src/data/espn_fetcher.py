@@ -179,11 +179,19 @@ class EspnFetcher:
         logger.info("[espn_fetcher] fetch_team_roster(team=%s) → %s", espn_team_id, url)
         data = self._get(url)
         try:
-            # ESPN nests athletes under positional groups
+            # ESPN roster endpoint returns a flat list of athlete objects directly
+            # under the "athletes" key (not grouped by position with "items").
+            raw_athletes = data.get("athletes", [])
             athletes: list[dict] = []
-            for group in data.get("athletes", []):
-                for athlete in group.get("items", []):
-                    athletes.append(athlete)
+            for entry in raw_athletes:
+                if isinstance(entry, dict):
+                    # Flat athlete object (current ESPN shape)
+                    if "id" in entry:
+                        athletes.append(entry)
+                    else:
+                        # Legacy grouped shape: {"position": "guards", "items": [...]}
+                        for item in entry.get("items", []):
+                            athletes.append(item)
             logger.info(
                 "[espn_fetcher] fetch_team_roster(team=%s): %d player(s)",
                 espn_team_id,

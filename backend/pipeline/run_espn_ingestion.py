@@ -451,6 +451,17 @@ def ingest_season(
         """
     )
 
+    # Stub player upsert: ensures the players FK is satisfied even when the
+    # roster pipeline hasn't yet populated positions/names for historic players.
+    # On conflict, only updates if full_name is still the placeholder.
+    player_stub_upsert = text(
+        """
+        INSERT INTO players (player_id, full_name, team_id, is_active)
+        VALUES (:player_id, :full_name, :team_id, FALSE)
+        ON CONFLICT (player_id) DO NOTHING
+        """
+    )
+
     has_team_game_stats = _table_exists(engine, "team_game_stats")
     games_ingested = 0
     player_rows_ingested = 0
@@ -489,6 +500,18 @@ def ingest_season(
 
                 player_rows = transform_player_game_stats(raw_summary, game_id)
                 if player_rows:
+                    # Upsert stub player rows first to satisfy the FK constraint.
+                    # The full roster pipeline (ingest_rosters) fills positions/names;
+                    # DO NOTHING on conflict preserves any richer data already present.
+                    stubs = [
+                        {
+                            "player_id": row["player_id"],
+                            "full_name": f"Player {row['player_id']}",
+                            "team_id": row["team_id"],
+                        }
+                        for row in player_rows
+                    ]
+                    conn.execute(player_stub_upsert, stubs)
                     conn.execute(player_game_upsert, player_rows)
                     player_rows_ingested += len(player_rows)
 
@@ -700,6 +723,15 @@ def _ingest_events(
         """
     )
 
+    # Stub player upsert — same as in ingest_season, ensures FK is satisfied.
+    player_stub_upsert = text(
+        """
+        INSERT INTO players (player_id, full_name, team_id, is_active)
+        VALUES (:player_id, :full_name, :team_id, FALSE)
+        ON CONFLICT (player_id) DO NOTHING
+        """
+    )
+
     has_team_game_stats = _table_exists(engine, "team_game_stats")
     games_ingested = 0
     player_rows_ingested = 0
@@ -736,6 +768,15 @@ def _ingest_events(
 
                 player_rows = transform_player_game_stats(raw_summary, game_id)
                 if player_rows:
+                    stubs = [
+                        {
+                            "player_id": row["player_id"],
+                            "full_name": f"Player {row['player_id']}",
+                            "team_id": row["team_id"],
+                        }
+                        for row in player_rows
+                    ]
+                    conn.execute(player_stub_upsert, stubs)
                     conn.execute(player_game_upsert, player_rows)
                     player_rows_ingested += len(player_rows)
 
