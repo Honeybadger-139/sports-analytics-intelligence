@@ -443,7 +443,11 @@ class TeamPerformanceForecaster:
                 FROM matches m
                 JOIN teams t ON (m.home_team_id = t.team_id OR m.away_team_id = t.team_id)
                 WHERE m.is_completed = TRUE
-                  AND LOWER(t.team_name) LIKE LOWER(:team)
+                  AND (
+                    LOWER(t.full_name) LIKE LOWER(:team)
+                    OR LOWER(t.abbreviation) LIKE LOWER(:team)
+                    OR LOWER(t.city) LIKE LOWER(:team)
+                  )
                   AND (:season IS NULL OR m.season = :season)
                 ORDER BY m.game_date ASC
                 """

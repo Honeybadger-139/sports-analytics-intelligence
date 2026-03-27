@@ -185,7 +185,7 @@ export default function Ratings() {
         <div style={{ padding: '28px 24px', background: 'var(--bg-panel)', borderRadius: 10, border: '1px solid var(--bg-elevated)', textAlign: 'center' }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Ratings unavailable</div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-            The backend is still deploying — this usually takes 10–15 minutes. Try refreshing in a moment.
+            {error}
           </div>
         </div>
       )}

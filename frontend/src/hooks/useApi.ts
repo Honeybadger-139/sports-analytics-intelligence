@@ -25,7 +25,22 @@ const API_BASE = getApiBase()
 
 async function fetchJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const payload = await res.json()
+      if (typeof payload?.detail === 'string') detail = payload.detail
+      else if (payload?.detail != null) detail = JSON.stringify(payload.detail)
+      else detail = JSON.stringify(payload)
+    } catch {
+      try {
+        detail = (await res.text()).trim()
+      } catch {
+        detail = ''
+      }
+    }
+    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
+  }
   return res.json()
 }
 
@@ -48,7 +63,13 @@ function useRefreshableQuery<T>(options: {
   return {
     data: (query.data ?? null) as T | null,
     loading: query.isLoading,
-    error: query.isError ? (options.errorMessage ?? 'Request failed') : null,
+    error: query.isError
+      ? (() => {
+        const base = options.errorMessage ?? 'Request failed'
+        const detail = query.error instanceof Error ? query.error.message : ''
+        return detail ? `${base} (${detail})` : base
+      })()
+      : null,
     refresh: () => {
       void query.refetch()
     },

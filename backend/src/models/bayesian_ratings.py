@@ -247,8 +247,8 @@ def load_ratings_from_db(db_session: Any, season: str = "2025-26") -> BradleyTer
             text(
                 """
                 SELECT
-                    home_t.team_name AS home_team,
-                    away_t.team_name AS away_team,
+                    home_t.full_name AS home_team,
+                    away_t.full_name AS away_team,
                     (m.winner_team_id = m.home_team_id) AS home_won
                 FROM matches m
                 JOIN teams home_t ON m.home_team_id = home_t.team_id

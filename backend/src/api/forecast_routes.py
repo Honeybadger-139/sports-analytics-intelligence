@@ -120,14 +120,14 @@ async def get_league_momentum(
             text(
                 """
                 SELECT
-                    t.team_name,
+                    t.full_name,
                     m.game_date,
                     (m.winner_team_id = t.team_id) AS won
                 FROM matches m
                 JOIN teams t ON (m.home_team_id = t.team_id OR m.away_team_id = t.team_id)
                 WHERE m.is_completed = TRUE
                   AND m.season = :season
-                ORDER BY t.team_name, m.game_date ASC
+                ORDER BY t.full_name, m.game_date ASC
                 """
             ),
             {"season": season},
