@@ -22,6 +22,7 @@ from src.data.db import get_db
 from src.data.audit_store import is_missing_pipeline_audit_error
 from src.data.bet_store import create_bet, get_bets_summary, list_bets, settle_bet
 from src.data.prediction_store import (
+    ensure_pre_game_columns,
     persist_game_predictions,
     sync_prediction_outcomes,
 )
@@ -240,6 +241,50 @@ def _normalize_json_field(value):
     return value
 
 
+def _normalize_probability(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        prob = float(value)
+    except (TypeError, ValueError):
+        return None
+    if prob > 1.0 and prob <= 100.0:
+        prob = prob / 100.0
+    return max(0.0, min(1.0, prob))
+
+
+def _normalize_prediction_payload(payload) -> Dict[str, Dict]:
+    parsed = _normalize_json_field(payload)
+    if not isinstance(parsed, dict):
+        return {}
+
+    normalized: Dict[str, Dict] = {}
+    for model_name, pred in parsed.items():
+        if not isinstance(pred, dict):
+            continue
+
+        home_prob = _normalize_probability(pred.get("home_win_prob"))
+        away_prob = _normalize_probability(pred.get("away_win_prob"))
+        if home_prob is None and away_prob is None:
+            continue
+        if home_prob is None and away_prob is not None:
+            home_prob = round(1.0 - away_prob, 4)
+        if away_prob is None and home_prob is not None:
+            away_prob = round(1.0 - home_prob, 4)
+        if home_prob is None or away_prob is None:
+            continue
+
+        # Confidence is defined as the stronger side's probability.
+        confidence = max(home_prob, away_prob)
+        normalized[model_name] = {
+            "home_win_prob": round(home_prob, 4),
+            "away_win_prob": round(away_prob, 4),
+            "prediction": "home" if home_prob >= away_prob else "away",
+            "confidence": round(confidence, 4),
+        }
+    return normalized
+
+
 def _as_dict_rows(rows):
     return [dict(row._mapping) for row in rows]
 
@@ -287,6 +332,32 @@ def _load_persisted_shap_factors(db: Session, game_id: str) -> Dict[str, list]:
         factors = _normalize_json_field(row.shap_factors)
         payload[row.model_name] = factors if isinstance(factors, list) else []
     return payload
+
+
+def _load_persisted_predictions(db: Session, game_id: str) -> Dict[str, Dict]:
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT model_name, home_win_prob, away_win_prob, confidence
+                FROM predictions
+                WHERE game_id = :game_id
+                """
+            ),
+            {"game_id": game_id},
+        ).fetchall()
+    except Exception:
+        return {}
+
+    payload = {
+        row.model_name: {
+            "home_win_prob": row.home_win_prob,
+            "away_win_prob": row.away_win_prob,
+            "confidence": row.confidence,
+        }
+        for row in rows
+    }
+    return _normalize_prediction_payload(payload)
 
 
 def _db_health_payload(db: Session) -> Dict:
@@ -1042,8 +1113,6 @@ async def get_matches_by_date(
 @router.get("/predictions/game/{game_id}")
 async def predict_game(game_id: str, db: Session = Depends(get_db)):
     """Get AI prediction for a specific game with SHAP explanations."""
-    predictor = get_predictor()
-
     # Load features for this game
     query = text("""
         SELECT 
@@ -1075,27 +1144,69 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
         WHERE m.game_id = :game_id
     """)
     
-    result = db.execute(query, {"game_id": game_id})
-    row = result.fetchone()
-    
+    try:
+        result = db.execute(query, {"game_id": game_id})
+        row = result.fetchone()
+    except Exception as exc:
+        logger.warning(
+            "Rich feature query failed for game_id=%s; retrying with base matchup fields: %s",
+            game_id,
+            exc,
+        )
+        row = None
+
+    if not row:
+        fallback_query = text(
+            """
+            SELECT
+                m.game_id,
+                ht.abbreviation as home_team, ht.full_name as home_team_name,
+                at.abbreviation as away_team, at.full_name as away_team_name
+            FROM matches m
+            JOIN teams ht ON m.home_team_id = ht.team_id
+            JOIN teams at ON m.away_team_id = at.team_id
+            WHERE m.game_id = :game_id
+            """
+        )
+        fallback_result = db.execute(fallback_query, {"game_id": game_id})
+        row = fallback_result.fetchone()
+
     if not row:
         raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
-    
+
     row_dict = dict(row._mapping)
-    feature_cols = predictor.feature_columns
-    features = pd.DataFrame([{col: float(row_dict.get(col, 0) or 0) for col in feature_cols}])
-    
-    predictions = predictor.predict_game(features)
-    shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
-    if not shap_factors_by_model:
-        shap_factors_by_model = predictor.explain_game(features, top_n=5)
-        persist_game_predictions(
-            db,
-            game_id=game_id,
-            predictions=predictions,
-            shap_factors_by_model=shap_factors_by_model,
+    persisted_predictions = _load_persisted_predictions(db, game_id)
+
+    predictor = None
+    features = None
+    live_predictions: Dict[str, Dict] = {}
+    try:
+        predictor = get_predictor()
+        feature_cols = predictor.feature_columns
+        features = pd.DataFrame([{col: float(row_dict.get(col, 0) or 0) for col in feature_cols}])
+        live_predictions = _normalize_prediction_payload(predictor.predict_game(features))
+    except Exception as exc:
+        logger.warning(
+            "Live inference unavailable for game_id=%s; using persisted predictions if present: %s",
+            game_id,
+            exc,
         )
-        shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
+
+    predictions = _normalize_prediction_payload({**persisted_predictions, **live_predictions})
+    shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
+    if not shap_factors_by_model and predictor is not None and features is not None and live_predictions:
+        try:
+            shap_factors_by_model = predictor.explain_game(features, top_n=5)
+            persist_game_predictions(
+                db,
+                game_id=game_id,
+                predictions=live_predictions,
+                shap_factors_by_model=shap_factors_by_model,
+            )
+            shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
+        except Exception as exc:
+            logger.warning("Could not generate SHAP factors for game_id=%s: %s", game_id, exc)
+            shap_factors_by_model = {}
 
     return {
         "game_id": game_id,
@@ -1129,43 +1240,53 @@ async def predict_today(
     """
     today = date.today()
 
+    # Keep optional pre-game enrichment columns available in long-lived environments.
+    try:
+        ensure_pre_game_columns(db)
+    except Exception as exc:
+        logger.warning("Could not ensure pre-game prediction columns: %s", exc)
+
     # ── Pass 1: return pre-computed scheduled-game predictions ────────────────
-    pre_computed = db.execute(
-        text("""
-            SELECT
-                m.game_id,
-                ht.abbreviation  AS home_team,
-                ht.full_name     AS home_team_name,
-                at.abbreviation  AS away_team,
-                at.full_name     AS away_team_name,
-                m.game_date,
-                json_object_agg(
-                    p.model_name,
-                    json_build_object(
-                        'home_win_prob', p.home_win_prob,
-                        'away_win_prob', p.away_win_prob,
-                        'confidence',    p.confidence,
-                        'prediction',    CASE WHEN p.home_win_prob >= 0.5 THEN 'home' ELSE 'away' END
-                    )
-                ) AS predictions,
-                bool_or(p.is_pre_game)    AS is_pre_game,
-                MAX(p.enriched_at)        AS enriched_at,
-                -- Return the ensemble news_context if present
-                (SELECT p2.news_context FROM predictions p2
-                 WHERE p2.game_id = m.game_id AND p2.model_name = 'ensemble'
-                 LIMIT 1) AS news_context
-            FROM matches m
-            JOIN teams ht ON m.home_team_id = ht.id
-            JOIN teams at ON m.away_team_id = at.id
-            JOIN predictions p ON p.game_id = m.game_id
-            WHERE m.game_date = :today
-              AND m.is_completed = FALSE
-            GROUP BY m.game_id, ht.abbreviation, ht.full_name,
-                     at.abbreviation, at.full_name, m.game_date
-            ORDER BY m.game_id
-        """),
-        {"today": today},
-    ).fetchall()
+    try:
+        pre_computed = db.execute(
+            text("""
+                SELECT
+                    m.game_id,
+                    ht.abbreviation  AS home_team,
+                    ht.full_name     AS home_team_name,
+                    at.abbreviation  AS away_team,
+                    at.full_name     AS away_team_name,
+                    m.game_date,
+                    json_object_agg(
+                        p.model_name,
+                        json_build_object(
+                            'home_win_prob', p.home_win_prob,
+                            'away_win_prob', p.away_win_prob,
+                            'confidence',    p.confidence,
+                            'prediction',    CASE WHEN p.home_win_prob >= 0.5 THEN 'home' ELSE 'away' END
+                        )
+                    ) AS predictions,
+                    bool_or(p.is_pre_game)    AS is_pre_game,
+                    MAX(p.enriched_at)        AS enriched_at,
+                    -- Return the ensemble news_context if present
+                    (SELECT p2.news_context FROM predictions p2
+                     WHERE p2.game_id = m.game_id AND p2.model_name = 'ensemble'
+                     LIMIT 1) AS news_context
+                FROM matches m
+                JOIN teams ht ON m.home_team_id = ht.team_id
+                JOIN teams at ON m.away_team_id = at.team_id
+                JOIN predictions p ON p.game_id = m.game_id
+                WHERE m.game_date = :today
+                  AND m.is_completed = FALSE
+                GROUP BY m.game_id, ht.abbreviation, ht.full_name,
+                         at.abbreviation, at.full_name, m.game_date
+                ORDER BY m.game_id
+            """),
+            {"today": today},
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("Pre-computed predictions query failed for %s: %s", today.isoformat(), exc)
+        pre_computed = []
 
     if pre_computed:
         games_out = []
@@ -1178,7 +1299,7 @@ async def predict_today(
                 "away_team":      r["away_team"],
                 "away_team_name": r["away_team_name"],
                 "game_date":      r["game_date"].isoformat() if r["game_date"] else None,
-                "predictions":    r["predictions"] or {},
+                "predictions":    _normalize_prediction_payload(r["predictions"]),
                 "is_pre_game":    bool(r["is_pre_game"]),
                 "enriched_at":    r["enriched_at"].isoformat() if r["enriched_at"] else None,
                 "news_context":   r["news_context"] or {},
@@ -1192,9 +1313,15 @@ async def predict_today(
         }
 
     # ── Pass 2: live prediction fallback (original behaviour) ─────────────────
-    predictor = get_predictor()
-    engine = db.get_bind()
-    games = predictor.predict_today(engine)
+    try:
+        predictor = get_predictor()
+        engine = db.get_bind()
+        games = predictor.predict_today(engine)
+        for game in games:
+            game["predictions"] = _normalize_prediction_payload(game.get("predictions"))
+    except Exception as exc:
+        logger.warning("Live predictions unavailable for %s: %s", today.isoformat(), exc)
+        games = []
 
     persisted_rows = 0
     if persist and games:

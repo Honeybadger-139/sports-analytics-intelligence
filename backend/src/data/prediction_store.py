@@ -148,7 +148,8 @@ def persist_news_enrichment(
 
     if home_win_prob_adjusted is not None:
         away = round(1.0 - home_win_prob_adjusted, 4)
-        set_clause += ", home_win_prob = :home_adj, away_win_prob = :away_adj, confidence = :home_adj"
+        # Confidence should reflect the stronger side probability, not always home.
+        set_clause += ", home_win_prob = :home_adj, away_win_prob = :away_adj, confidence = GREATEST(:home_adj, :away_adj)"
         updates["home_adj"] = round(home_win_prob_adjusted, 4)
         updates["away_adj"] = away
 

@@ -69,6 +69,26 @@ def test_sync_prediction_outcomes_returns_rowcount():
     assert rows == 3
 
 
+def test_persist_news_enrichment_uses_stronger_side_for_confidence():
+    db = _FakeSession()
+
+    prediction_store.persist_news_enrichment(
+        db,
+        game_id="001",
+        model_name="ensemble",
+        news_context={"signals": ["injury"]},
+        home_win_prob_adjusted=0.31,
+    )
+
+    update_queries = [q for q in db.queries if "UPDATE predictions" in q and "news_context" in q]
+    assert update_queries
+    assert "confidence = GREATEST(:home_adj, :away_adj)" in update_queries[-1]
+
+    update_params = [p for q, p in zip(db.queries, db.params) if "UPDATE predictions" in q and p][-1]
+    assert update_params["home_adj"] == 0.31
+    assert update_params["away_adj"] == 0.69
+
+
 def test_missing_predictions_table_detector():
     err = RuntimeError('psycopg2.errors.UndefinedTable: relation "predictions" does not exist')
     assert prediction_store.is_missing_predictions_table_error(err) is True
