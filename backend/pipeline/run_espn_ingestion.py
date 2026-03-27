@@ -202,28 +202,35 @@ def ingest_teams(fetcher: Any, engine: Engine) -> int:
 
     Upsert strategy:
         ON CONFLICT (team_id) DO UPDATE — safe for repeated runs.
-        team_id is ESPN's numeric team id stored as a VARCHAR string.
+        team_id is ESPN's numeric team id stored as an INTEGER.
 
     Returns:
         Number of teams upserted.
     """
+    from src.data.espn_transformer import transform_teams
+
     log_event("ingest_teams_start")
 
-    teams = fetcher.fetch_teams()
-    if not teams:
+    raw_teams = fetcher.fetch_teams()
+    if not raw_teams:
         log_event("ingest_teams_no_data", level="WARNING")
+        return 0
+
+    teams = transform_teams(raw_teams)
+    if not teams:
+        log_event("ingest_teams_transform_empty", level="WARNING")
         return 0
 
     upsert_sql = text(
         """
         INSERT INTO teams (
-            team_id, team_name, abbreviation, city, conference, division
+            team_id, full_name, abbreviation, city, conference, division
         )
         VALUES (
-            :team_id, :team_name, :abbreviation, :city, :conference, :division
+            :team_id, :full_name, :abbreviation, :city, :conference, :division
         )
         ON CONFLICT (team_id) DO UPDATE SET
-            team_name    = EXCLUDED.team_name,
+            full_name    = EXCLUDED.full_name,
             abbreviation = EXCLUDED.abbreviation,
             city         = EXCLUDED.city,
             conference   = EXCLUDED.conference,
@@ -250,36 +257,42 @@ def ingest_rosters(fetcher: Any, engine: Engine) -> int:
     Returns:
         Total number of player rows upserted across all teams.
     """
+    from src.data.espn_transformer import transform_players
+
     log_event("ingest_rosters_start")
 
-    teams = fetcher.fetch_teams()
-    if not teams:
+    raw_teams = fetcher.fetch_teams()
+    if not raw_teams:
         log_event("ingest_rosters_no_teams", level="WARNING")
         return 0
 
     upsert_sql = text(
         """
         INSERT INTO players (
-            player_id, team_id, full_name, first_name, last_name, position, jersey_number
+            player_id, full_name, team_id, position, is_active
         )
         VALUES (
-            :player_id, :team_id, :full_name, :first_name, :last_name, :position, :jersey_number
+            :player_id, :full_name, :team_id, :position, :is_active
         )
         ON CONFLICT (player_id) DO UPDATE SET
-            team_id       = EXCLUDED.team_id,
-            full_name     = EXCLUDED.full_name,
-            first_name    = EXCLUDED.first_name,
-            last_name     = EXCLUDED.last_name,
-            position      = EXCLUDED.position,
-            jersey_number = EXCLUDED.jersey_number
+            full_name = EXCLUDED.full_name,
+            team_id   = EXCLUDED.team_id,
+            position  = EXCLUDED.position,
+            is_active = EXCLUDED.is_active
         """
     )
 
     total = 0
-    for team in teams:
-        team_id = team["team_id"]
+    for team in raw_teams:
+        # raw_teams are raw ESPN dicts — use "id" key (not "team_id")
+        team_id = str(team.get("id", ""))
+        if not team_id:
+            continue
         try:
-            players = fetcher.fetch_roster(team_id)
+            raw_players = fetcher.fetch_team_roster(team_id)
+            if not raw_players:
+                continue
+            players = transform_players(raw_players, team_id)
             if not players:
                 continue
             with engine.begin() as conn:
@@ -332,109 +345,109 @@ def ingest_season(
 
     log_event("season_ingest_start", season=season_label, season_year=season_year)
 
-    game_ids = fetcher.fetch_season_games(season_year)
-    total_games = len(game_ids)
+    # fetch_season_games returns a list of raw ESPN event dicts (from team schedule
+    # endpoint), each with an "id" field.  We use transform_game on the event dict
+    # (which has competitions at the root), then separately call fetch_game_summary
+    # to get the boxscore for team/player stat transformers.
+    events = fetcher.fetch_season_games(season_year)
+    total_games = len(events)
     log_event("season_games_fetched", season=season_label, total_games=total_games)
 
     match_upsert = text(
         """
         INSERT INTO matches (
-            game_id, season, game_date, home_team_id, away_team_id,
-            home_score, away_score, status, venue
+            game_id, game_date, season, home_team_id, away_team_id,
+            home_score, away_score, winner_team_id, is_completed
         )
         VALUES (
-            :game_id, :season, :game_date, :home_team_id, :away_team_id,
-            :home_score, :away_score, :status, :venue
+            :game_id, :game_date, :season, :home_team_id, :away_team_id,
+            :home_score, :away_score, :winner_team_id, :is_completed
         )
         ON CONFLICT (game_id) DO UPDATE SET
-            season       = EXCLUDED.season,
-            game_date    = EXCLUDED.game_date,
-            home_team_id = EXCLUDED.home_team_id,
-            away_team_id = EXCLUDED.away_team_id,
-            home_score   = EXCLUDED.home_score,
-            away_score   = EXCLUDED.away_score,
-            status       = EXCLUDED.status,
-            venue        = EXCLUDED.venue
+            game_date      = EXCLUDED.game_date,
+            season         = EXCLUDED.season,
+            home_team_id   = EXCLUDED.home_team_id,
+            away_team_id   = EXCLUDED.away_team_id,
+            home_score     = EXCLUDED.home_score,
+            away_score     = EXCLUDED.away_score,
+            winner_team_id = EXCLUDED.winner_team_id,
+            is_completed   = EXCLUDED.is_completed
         """
     )
 
     team_game_upsert = text(
         """
         INSERT INTO team_game_stats (
-            game_id, team_id, season,
-            pts, reb, ast, stl, blk, tov, fg_pct, fg3_pct, ft_pct,
-            fgm, fga, fg3m, fg3a, ftm, fta,
-            off_reb, def_reb, pf, plus_minus
+            game_id, team_id,
+            points, rebounds, assists, steals, blocks, turnovers,
+            field_goal_pct, three_point_pct, free_throw_pct,
+            offensive_rating, defensive_rating, pace,
+            effective_fg_pct, true_shooting_pct
         )
         VALUES (
-            :game_id, :team_id, :season,
-            :pts, :reb, :ast, :stl, :blk, :tov, :fg_pct, :fg3_pct, :ft_pct,
-            :fgm, :fga, :fg3m, :fg3a, :ftm, :fta,
-            :off_reb, :def_reb, :pf, :plus_minus
+            :game_id, :team_id,
+            :points, :rebounds, :assists, :steals, :blocks, :turnovers,
+            :field_goal_pct, :three_point_pct, :free_throw_pct,
+            :offensive_rating, :defensive_rating, :pace,
+            :effective_fg_pct, :true_shooting_pct
         )
         ON CONFLICT (game_id, team_id) DO UPDATE SET
-            pts        = EXCLUDED.pts,
-            reb        = EXCLUDED.reb,
-            ast        = EXCLUDED.ast,
-            stl        = EXCLUDED.stl,
-            blk        = EXCLUDED.blk,
-            tov        = EXCLUDED.tov,
-            fg_pct     = EXCLUDED.fg_pct,
-            fg3_pct    = EXCLUDED.fg3_pct,
-            ft_pct     = EXCLUDED.ft_pct,
-            fgm        = EXCLUDED.fgm,
-            fga        = EXCLUDED.fga,
-            fg3m       = EXCLUDED.fg3m,
-            fg3a       = EXCLUDED.fg3a,
-            ftm        = EXCLUDED.ftm,
-            fta        = EXCLUDED.fta,
-            off_reb    = EXCLUDED.off_reb,
-            def_reb    = EXCLUDED.def_reb,
-            pf         = EXCLUDED.pf,
-            plus_minus = EXCLUDED.plus_minus
+            points           = EXCLUDED.points,
+            rebounds         = EXCLUDED.rebounds,
+            assists          = EXCLUDED.assists,
+            steals           = EXCLUDED.steals,
+            blocks           = EXCLUDED.blocks,
+            turnovers        = EXCLUDED.turnovers,
+            field_goal_pct   = EXCLUDED.field_goal_pct,
+            three_point_pct  = EXCLUDED.three_point_pct,
+            free_throw_pct   = EXCLUDED.free_throw_pct,
+            offensive_rating = EXCLUDED.offensive_rating,
+            defensive_rating = EXCLUDED.defensive_rating,
+            pace             = EXCLUDED.pace,
+            effective_fg_pct = EXCLUDED.effective_fg_pct,
+            true_shooting_pct = EXCLUDED.true_shooting_pct
         """
     )
 
     player_game_upsert = text(
         """
         INSERT INTO player_game_stats (
-            game_id, player_id, team_id, season,
-            pts, reb, ast, stl, blk, tov, min,
-            fg_pct, fg3_pct, ft_pct,
-            fgm, fga, fg3m, fg3a, ftm, fta,
-            off_reb, def_reb, pf, plus_minus, starter
+            game_id, player_id, team_id,
+            minutes, points, rebounds, assists, steals, blocks, turnovers,
+            personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
+            three_points_made, three_points_attempted, three_point_pct,
+            free_throws_made, free_throws_attempted, free_throw_pct,
+            plus_minus, fantasy_points
         )
         VALUES (
-            :game_id, :player_id, :team_id, :season,
-            :pts, :reb, :ast, :stl, :blk, :tov, :min,
-            :fg_pct, :fg3_pct, :ft_pct,
-            :fgm, :fga, :fg3m, :fg3a, :ftm, :fta,
-            :off_reb, :def_reb, :pf, :plus_minus, :starter
+            :game_id, :player_id, :team_id,
+            :minutes, :points, :rebounds, :assists, :steals, :blocks, :turnovers,
+            :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
+            :three_points_made, :three_points_attempted, :three_point_pct,
+            :free_throws_made, :free_throws_attempted, :free_throw_pct,
+            :plus_minus, :fantasy_points
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
-            team_id    = EXCLUDED.team_id,
-            season     = EXCLUDED.season,
-            pts        = EXCLUDED.pts,
-            reb        = EXCLUDED.reb,
-            ast        = EXCLUDED.ast,
-            stl        = EXCLUDED.stl,
-            blk        = EXCLUDED.blk,
-            tov        = EXCLUDED.tov,
-            min        = EXCLUDED.min,
-            fg_pct     = EXCLUDED.fg_pct,
-            fg3_pct    = EXCLUDED.fg3_pct,
-            ft_pct     = EXCLUDED.ft_pct,
-            fgm        = EXCLUDED.fgm,
-            fga        = EXCLUDED.fga,
-            fg3m       = EXCLUDED.fg3m,
-            fg3a       = EXCLUDED.fg3a,
-            ftm        = EXCLUDED.ftm,
-            fta        = EXCLUDED.fta,
-            off_reb    = EXCLUDED.off_reb,
-            def_reb    = EXCLUDED.def_reb,
-            pf         = EXCLUDED.pf,
-            plus_minus = EXCLUDED.plus_minus,
-            starter    = EXCLUDED.starter
+            team_id                  = EXCLUDED.team_id,
+            minutes                  = EXCLUDED.minutes,
+            points                   = EXCLUDED.points,
+            rebounds                 = EXCLUDED.rebounds,
+            assists                  = EXCLUDED.assists,
+            steals                   = EXCLUDED.steals,
+            blocks                   = EXCLUDED.blocks,
+            turnovers                = EXCLUDED.turnovers,
+            personal_fouls           = EXCLUDED.personal_fouls,
+            field_goals_made         = EXCLUDED.field_goals_made,
+            field_goals_attempted    = EXCLUDED.field_goals_attempted,
+            field_goal_pct           = EXCLUDED.field_goal_pct,
+            three_points_made        = EXCLUDED.three_points_made,
+            three_points_attempted   = EXCLUDED.three_points_attempted,
+            three_point_pct          = EXCLUDED.three_point_pct,
+            free_throws_made         = EXCLUDED.free_throws_made,
+            free_throws_attempted    = EXCLUDED.free_throws_attempted,
+            free_throw_pct           = EXCLUDED.free_throw_pct,
+            plus_minus               = EXCLUDED.plus_minus,
+            fantasy_points           = EXCLUDED.fantasy_points
         """
     )
 
@@ -442,7 +455,11 @@ def ingest_season(
     games_ingested = 0
     player_rows_ingested = 0
 
-    for idx, game_id in enumerate(game_ids, start=1):
+    for idx, event in enumerate(events, start=1):
+        game_id = str(event.get("id", "")).strip()
+        if not game_id:
+            continue
+
         if idx % 50 == 0 or idx == 1:
             log_event(
                 "season_ingest_progress",
@@ -453,23 +470,24 @@ def ingest_season(
             )
 
         try:
-            raw = fetcher.fetch_game_summary(game_id)
-
-            # Only ingest completed games — skip future/in-progress events
-            game_row = transform_game(raw, season_label)
+            # transform_game expects a raw schedule event dict (competitions at root)
+            game_row = transform_game(event)
             if game_row is None:
-                # transform_game returns None for non-final games
+                # Non-final game (future/in-progress) or All-Star event — skip
                 continue
 
             with engine.begin() as conn:
                 conn.execute(match_upsert, game_row)
 
+                # Fetch box score for detailed team + player stats
+                raw_summary = fetcher.fetch_game_summary(game_id)
+
                 if has_team_game_stats:
-                    team_rows = transform_team_game_stats(raw, season_label)
+                    team_rows = transform_team_game_stats(raw_summary, game_id)
                     if team_rows:
                         conn.execute(team_game_upsert, team_rows)
 
-                player_rows = transform_player_game_stats(raw, season_label)
+                player_rows = transform_player_game_stats(raw_summary, game_id)
                 if player_rows:
                     conn.execute(player_game_upsert, player_rows)
                     player_rows_ingested += len(player_rows)
@@ -518,12 +536,6 @@ def ingest_incremental(fetcher: Any, engine: Engine) -> dict[str, int]:
     Returns:
         {"games": int, "player_rows": int}
     """
-    from src.data.espn_transformer import (
-        transform_game,
-        transform_player_game_stats,
-        transform_team_game_stats,
-    )
-
     today = date.today()
     date_from = today - timedelta(days=1)
     date_to = today + timedelta(days=1)
@@ -536,38 +548,53 @@ def ingest_incremental(fetcher: Any, engine: Engine) -> dict[str, int]:
 
     # Determine the active season label (latest season in SEASONS list)
     current_season = SEASONS[-1]["label"]
-    current_year = SEASONS[-1]["year"]
 
-    game_ids = fetcher.fetch_games_in_range(
-        season_year=current_year,
-        date_from=date_from,
-        date_to=date_to,
-    )
-    log_event("incremental_games_found", count=len(game_ids))
+    # fetch_games_in_range doesn't exist — use fetch_scoreboard per day and deduplicate
+    seen_ids: set[str] = set()
+    events: list[dict] = []
+    check_date = date_from
+    while check_date <= date_to:
+        try:
+            day_events = fetcher.fetch_scoreboard(check_date)
+            for ev in day_events:
+                eid = str(ev.get("id", "")).strip()
+                if eid and eid not in seen_ids:
+                    seen_ids.add(eid)
+                    events.append(ev)
+        except Exception as exc:
+            log_event(
+                "incremental_scoreboard_failed",
+                level="WARNING",
+                date=check_date.isoformat(),
+                error=str(exc),
+            )
+        check_date += timedelta(days=1)
 
-    if not game_ids:
+    log_event("incremental_games_found", count=len(events))
+
+    if not events:
         log_event("incremental_no_games")
         return {"games": 0, "player_rows": 0}
 
     # Reuse the same upsert SQL as ingest_season (DRY via a helper)
-    total = _ingest_game_ids(fetcher, engine, game_ids, current_season, context="incremental")
+    total = _ingest_events(fetcher, engine, events, current_season, context="incremental")
     log_event("incremental_ingest_complete", **total)
     return total
 
 
-def _ingest_game_ids(
+def _ingest_events(
     fetcher: Any,
     engine: Engine,
-    game_ids: list[str],
+    events: list[dict],
     season_label: str,
     context: str = "batch",
 ) -> dict[str, int]:
-    """Shared inner loop: fetch + upsert a list of game_ids.
+    """Shared inner loop: upsert a list of raw ESPN event dicts.
 
-    Extracted from ingest_season so that ingest_incremental does not
-    duplicate the upsert SQL. Both callers pass the same transformer
-    functions and the same upsert statements — the only difference is
-    the source list of game_ids.
+    Extracted so that ingest_incremental does not duplicate the upsert SQL.
+    Each event is a raw ESPN event dict (competitions at root, as returned by
+    fetch_scoreboard or fetch_season_games). We call transform_game on the
+    event, then fetch_game_summary for the boxscore stats.
     """
     from src.data.espn_transformer import (
         transform_game,
@@ -578,111 +605,111 @@ def _ingest_game_ids(
     match_upsert = text(
         """
         INSERT INTO matches (
-            game_id, season, game_date, home_team_id, away_team_id,
-            home_score, away_score, status, venue
+            game_id, game_date, season, home_team_id, away_team_id,
+            home_score, away_score, winner_team_id, is_completed
         )
         VALUES (
-            :game_id, :season, :game_date, :home_team_id, :away_team_id,
-            :home_score, :away_score, :status, :venue
+            :game_id, :game_date, :season, :home_team_id, :away_team_id,
+            :home_score, :away_score, :winner_team_id, :is_completed
         )
         ON CONFLICT (game_id) DO UPDATE SET
-            season       = EXCLUDED.season,
-            game_date    = EXCLUDED.game_date,
-            home_team_id = EXCLUDED.home_team_id,
-            away_team_id = EXCLUDED.away_team_id,
-            home_score   = EXCLUDED.home_score,
-            away_score   = EXCLUDED.away_score,
-            status       = EXCLUDED.status,
-            venue        = EXCLUDED.venue
+            game_date      = EXCLUDED.game_date,
+            season         = EXCLUDED.season,
+            home_team_id   = EXCLUDED.home_team_id,
+            away_team_id   = EXCLUDED.away_team_id,
+            home_score     = EXCLUDED.home_score,
+            away_score     = EXCLUDED.away_score,
+            winner_team_id = EXCLUDED.winner_team_id,
+            is_completed   = EXCLUDED.is_completed
         """
     )
 
     team_game_upsert = text(
         """
         INSERT INTO team_game_stats (
-            game_id, team_id, season,
-            pts, reb, ast, stl, blk, tov, fg_pct, fg3_pct, ft_pct,
-            fgm, fga, fg3m, fg3a, ftm, fta,
-            off_reb, def_reb, pf, plus_minus
+            game_id, team_id,
+            points, rebounds, assists, steals, blocks, turnovers,
+            field_goal_pct, three_point_pct, free_throw_pct,
+            offensive_rating, defensive_rating, pace,
+            effective_fg_pct, true_shooting_pct
         )
         VALUES (
-            :game_id, :team_id, :season,
-            :pts, :reb, :ast, :stl, :blk, :tov, :fg_pct, :fg3_pct, :ft_pct,
-            :fgm, :fga, :fg3m, :fg3a, :ftm, :fta,
-            :off_reb, :def_reb, :pf, :plus_minus
+            :game_id, :team_id,
+            :points, :rebounds, :assists, :steals, :blocks, :turnovers,
+            :field_goal_pct, :three_point_pct, :free_throw_pct,
+            :offensive_rating, :defensive_rating, :pace,
+            :effective_fg_pct, :true_shooting_pct
         )
         ON CONFLICT (game_id, team_id) DO UPDATE SET
-            pts        = EXCLUDED.pts,
-            reb        = EXCLUDED.reb,
-            ast        = EXCLUDED.ast,
-            stl        = EXCLUDED.stl,
-            blk        = EXCLUDED.blk,
-            tov        = EXCLUDED.tov,
-            fg_pct     = EXCLUDED.fg_pct,
-            fg3_pct    = EXCLUDED.fg3_pct,
-            ft_pct     = EXCLUDED.ft_pct,
-            fgm        = EXCLUDED.fgm,
-            fga        = EXCLUDED.fga,
-            fg3m       = EXCLUDED.fg3m,
-            fg3a       = EXCLUDED.fg3a,
-            ftm        = EXCLUDED.ftm,
-            fta        = EXCLUDED.fta,
-            off_reb    = EXCLUDED.off_reb,
-            def_reb    = EXCLUDED.def_reb,
-            pf         = EXCLUDED.pf,
-            plus_minus = EXCLUDED.plus_minus
+            points           = EXCLUDED.points,
+            rebounds         = EXCLUDED.rebounds,
+            assists          = EXCLUDED.assists,
+            steals           = EXCLUDED.steals,
+            blocks           = EXCLUDED.blocks,
+            turnovers        = EXCLUDED.turnovers,
+            field_goal_pct   = EXCLUDED.field_goal_pct,
+            three_point_pct  = EXCLUDED.three_point_pct,
+            free_throw_pct   = EXCLUDED.free_throw_pct,
+            offensive_rating = EXCLUDED.offensive_rating,
+            defensive_rating = EXCLUDED.defensive_rating,
+            pace             = EXCLUDED.pace,
+            effective_fg_pct = EXCLUDED.effective_fg_pct,
+            true_shooting_pct = EXCLUDED.true_shooting_pct
         """
     )
 
     player_game_upsert = text(
         """
         INSERT INTO player_game_stats (
-            game_id, player_id, team_id, season,
-            pts, reb, ast, stl, blk, tov, min,
-            fg_pct, fg3_pct, ft_pct,
-            fgm, fga, fg3m, fg3a, ftm, fta,
-            off_reb, def_reb, pf, plus_minus, starter
+            game_id, player_id, team_id,
+            minutes, points, rebounds, assists, steals, blocks, turnovers,
+            personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
+            three_points_made, three_points_attempted, three_point_pct,
+            free_throws_made, free_throws_attempted, free_throw_pct,
+            plus_minus, fantasy_points
         )
         VALUES (
-            :game_id, :player_id, :team_id, :season,
-            :pts, :reb, :ast, :stl, :blk, :tov, :min,
-            :fg_pct, :fg3_pct, :ft_pct,
-            :fgm, :fga, :fg3m, :fg3a, :ftm, :fta,
-            :off_reb, :def_reb, :pf, :plus_minus, :starter
+            :game_id, :player_id, :team_id,
+            :minutes, :points, :rebounds, :assists, :steals, :blocks, :turnovers,
+            :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
+            :three_points_made, :three_points_attempted, :three_point_pct,
+            :free_throws_made, :free_throws_attempted, :free_throw_pct,
+            :plus_minus, :fantasy_points
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
-            team_id    = EXCLUDED.team_id,
-            season     = EXCLUDED.season,
-            pts        = EXCLUDED.pts,
-            reb        = EXCLUDED.reb,
-            ast        = EXCLUDED.ast,
-            stl        = EXCLUDED.stl,
-            blk        = EXCLUDED.blk,
-            tov        = EXCLUDED.tov,
-            min        = EXCLUDED.min,
-            fg_pct     = EXCLUDED.fg_pct,
-            fg3_pct    = EXCLUDED.fg3_pct,
-            ft_pct     = EXCLUDED.ft_pct,
-            fgm        = EXCLUDED.fgm,
-            fga        = EXCLUDED.fga,
-            fg3m       = EXCLUDED.fg3m,
-            fg3a       = EXCLUDED.fg3a,
-            ftm        = EXCLUDED.ftm,
-            fta        = EXCLUDED.fta,
-            off_reb    = EXCLUDED.off_reb,
-            def_reb    = EXCLUDED.def_reb,
-            pf         = EXCLUDED.pf,
-            plus_minus = EXCLUDED.plus_minus,
-            starter    = EXCLUDED.starter
+            team_id                  = EXCLUDED.team_id,
+            minutes                  = EXCLUDED.minutes,
+            points                   = EXCLUDED.points,
+            rebounds                 = EXCLUDED.rebounds,
+            assists                  = EXCLUDED.assists,
+            steals                   = EXCLUDED.steals,
+            blocks                   = EXCLUDED.blocks,
+            turnovers                = EXCLUDED.turnovers,
+            personal_fouls           = EXCLUDED.personal_fouls,
+            field_goals_made         = EXCLUDED.field_goals_made,
+            field_goals_attempted    = EXCLUDED.field_goals_attempted,
+            field_goal_pct           = EXCLUDED.field_goal_pct,
+            three_points_made        = EXCLUDED.three_points_made,
+            three_points_attempted   = EXCLUDED.three_points_attempted,
+            three_point_pct          = EXCLUDED.three_point_pct,
+            free_throws_made         = EXCLUDED.free_throws_made,
+            free_throws_attempted    = EXCLUDED.free_throws_attempted,
+            free_throw_pct           = EXCLUDED.free_throw_pct,
+            plus_minus               = EXCLUDED.plus_minus,
+            fantasy_points           = EXCLUDED.fantasy_points
         """
     )
 
     has_team_game_stats = _table_exists(engine, "team_game_stats")
     games_ingested = 0
     player_rows_ingested = 0
-    total = len(game_ids)
+    total = len(events)
 
-    for idx, game_id in enumerate(game_ids, start=1):
+    for idx, event in enumerate(events, start=1):
+        game_id = str(event.get("id", "")).strip()
+        if not game_id:
+            continue
+
         log_event(
             "game_ingest_start",
             context=context,
@@ -690,22 +717,24 @@ def _ingest_game_ids(
             game_id=game_id,
         )
         try:
-            raw = fetcher.fetch_game_summary(game_id)
-
-            game_row = transform_game(raw, season_label)
+            # transform_game expects a raw schedule/scoreboard event dict
+            game_row = transform_game(event)
             if game_row is None:
                 log_event("game_skip_not_final", game_id=game_id, context=context)
                 continue
+
+            # Fetch full boxscore for team + player stats
+            raw_summary = fetcher.fetch_game_summary(game_id)
 
             with engine.begin() as conn:
                 conn.execute(match_upsert, game_row)
 
                 if has_team_game_stats:
-                    team_rows = transform_team_game_stats(raw, season_label)
+                    team_rows = transform_team_game_stats(raw_summary, game_id)
                     if team_rows:
                         conn.execute(team_game_upsert, team_rows)
 
-                player_rows = transform_player_game_stats(raw, season_label)
+                player_rows = transform_player_game_stats(raw_summary, game_id)
                 if player_rows:
                     conn.execute(player_game_upsert, player_rows)
                     player_rows_ingested += len(player_rows)
@@ -751,29 +780,39 @@ def _upsert_player_season_stats(engine: Engine, season_rows: list[dict]) -> int:
     upsert_sql = text(
         """
         INSERT INTO player_season_stats (
-            player_id, season,
-            games_played, pts_per_game, reb_per_game, ast_per_game,
-            stl_per_game, blk_per_game, tov_per_game, min_per_game,
-            fg_pct, fg3_pct, ft_pct
+            player_id, season, team_id,
+            games_played, wins, losses, win_pct,
+            minutes, points, rebounds, assists,
+            steals, blocks, turnovers,
+            field_goal_pct, three_point_pct, free_throw_pct,
+            plus_minus, fantasy_points
         )
         VALUES (
-            :player_id, :season,
-            :games_played, :pts_per_game, :reb_per_game, :ast_per_game,
-            :stl_per_game, :blk_per_game, :tov_per_game, :min_per_game,
-            :fg_pct, :fg3_pct, :ft_pct
+            :player_id, :season, :team_id,
+            :games_played, :wins, :losses, :win_pct,
+            :minutes, :points, :rebounds, :assists,
+            :steals, :blocks, :turnovers,
+            :field_goal_pct, :three_point_pct, :free_throw_pct,
+            :plus_minus, :fantasy_points
         )
         ON CONFLICT (player_id, season) DO UPDATE SET
-            games_played  = EXCLUDED.games_played,
-            pts_per_game  = EXCLUDED.pts_per_game,
-            reb_per_game  = EXCLUDED.reb_per_game,
-            ast_per_game  = EXCLUDED.ast_per_game,
-            stl_per_game  = EXCLUDED.stl_per_game,
-            blk_per_game  = EXCLUDED.blk_per_game,
-            tov_per_game  = EXCLUDED.tov_per_game,
-            min_per_game  = EXCLUDED.min_per_game,
-            fg_pct        = EXCLUDED.fg_pct,
-            fg3_pct       = EXCLUDED.fg3_pct,
-            ft_pct        = EXCLUDED.ft_pct
+            team_id         = EXCLUDED.team_id,
+            games_played    = EXCLUDED.games_played,
+            wins            = EXCLUDED.wins,
+            losses          = EXCLUDED.losses,
+            win_pct         = EXCLUDED.win_pct,
+            minutes         = EXCLUDED.minutes,
+            points          = EXCLUDED.points,
+            rebounds        = EXCLUDED.rebounds,
+            assists         = EXCLUDED.assists,
+            steals          = EXCLUDED.steals,
+            blocks          = EXCLUDED.blocks,
+            turnovers       = EXCLUDED.turnovers,
+            field_goal_pct  = EXCLUDED.field_goal_pct,
+            three_point_pct = EXCLUDED.three_point_pct,
+            free_throw_pct  = EXCLUDED.free_throw_pct,
+            plus_minus      = EXCLUDED.plus_minus,
+            fantasy_points  = EXCLUDED.fantasy_points
         """
     )
 
@@ -893,12 +932,16 @@ def _run_full_load(fetcher: Any, engine: Engine, run_id: str) -> None:
         total_player_rows=total_player_rows,
     )
 
-    # Materialise season averages from raw game stats
+    # Materialise season averages from raw game stats (one pass per season)
     try:
         from src.data.espn_transformer import compute_player_season_stats
 
-        season_rows = compute_player_season_stats(engine)
-        upserted = _upsert_player_season_stats(engine, season_rows)
+        all_season_rows: list[dict] = []
+        with engine.connect() as conn:
+            for season in SEASONS:
+                rows = compute_player_season_stats(season["label"], conn)
+                all_season_rows.extend(rows)
+        upserted = _upsert_player_season_stats(engine, all_season_rows)
         log_event("player_season_stats_upserted", run_id=run_id, rows=upserted)
     except Exception as exc:
         log_event(
