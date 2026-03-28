@@ -893,6 +893,7 @@ async def get_quality_overview(
                 """
                 SELECT run_time AS sync_time, module, status, records_processed, errors, details
                 FROM intelligence_audit
+                WHERE module = 'rag_scheduler'
                 ORDER BY run_time DESC
                 LIMIT :recent_limit
                 """
