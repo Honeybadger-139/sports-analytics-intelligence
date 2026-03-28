@@ -20,6 +20,11 @@ ROWS DELETED:
     - matches            WHERE is_completed = false
 """
 
+revision = "0008"
+down_revision = "0007"
+branch_labels = None
+depends_on = None
+
 from alembic import op
 
 
