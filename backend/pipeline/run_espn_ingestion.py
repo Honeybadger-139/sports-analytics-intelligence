@@ -544,15 +544,15 @@ def ingest_season(
 # ── Incremental ingestion ──────────────────────────────────────────────────────
 
 def ingest_incremental(fetcher: Any, engine: Engine) -> dict[str, int]:
-    """Ingest games from yesterday through tomorrow (window = 3 days).
+    """Ingest completed games from yesterday and today only.
 
-    WHY a 3-day window:
-        - Yesterday: catches any late-finishing games that may have landed
-          after the previous nightly run.
-        - Today: handles games completing during the current day's job.
-        - Tomorrow: pre-populates the matches table with scheduled games so
-          the pre-game prediction pipeline (schedule_fetcher) has rows to
-          attach predictions to.
+    WHY a 2-day window:
+        - Yesterday: catches any late-finishing games that landed after
+          the previous nightly run.
+        - Today: handles games that completed during the current day's job.
+
+    Future / scheduled games are never written to the DB — only rows
+    where is_completed=True are persisted (enforced in _ingest_events).
 
     Uses the current season label from the most recent SEASONS entry for
     the 'season' column on new rows.
@@ -562,7 +562,7 @@ def ingest_incremental(fetcher: Any, engine: Engine) -> dict[str, int]:
     """
     today = date.today()
     date_from = today - timedelta(days=1)
-    date_to = today + timedelta(days=1)
+    date_to = today
 
     log_event(
         "incremental_ingest_start",
@@ -755,6 +755,11 @@ def _ingest_events(
             game_row = transform_game(event)
             if game_row is None:
                 log_event("game_skip_not_final", game_id=game_id, context=context)
+                continue
+
+            # Only persist completed games — skip scheduled / in-progress
+            if not game_row.get("is_completed"):
+                log_event("game_skip_not_completed", game_id=game_id, context=context)
                 continue
 
             # Fetch full boxscore for team + player stats
