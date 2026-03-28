@@ -1094,6 +1094,10 @@ async def get_matches_by_date(
     team: Optional[str] = Query(default=None, description="Exact team abbreviation"),
     team_search: Optional[str] = Query(default=None, description="Team name/city search"),
     limit: int = Query(default=20, le=100),
+    completed_only: bool = Query(
+        default=False,
+        description="When true, return only completed games (final results).",
+    ),
     date: Optional[str] = Query(default=None, description="Exact date YYYY-MM-DD"),
     date_from: Optional[str] = Query(default=None, description="Start date YYYY-MM-DD"),
     date_to: Optional[str] = Query(default=None, description="End date YYYY-MM-DD"),
@@ -1126,6 +1130,8 @@ async def get_matches_by_date(
             at.abbreviation ILIKE :ts OR at.full_name ILIKE :ts OR at.city ILIKE :ts
         )"""
         params["ts"] = f"%{team_search}%"
+    if completed_only:
+        query += " AND (m.is_completed = TRUE OR m.winner_team_id IS NOT NULL)"
     if date:
         query += " AND m.game_date = :date"
         params["date"] = date

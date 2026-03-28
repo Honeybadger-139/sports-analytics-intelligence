@@ -6,7 +6,6 @@ import SkeletonCard from '../components/SkeletonCard'
 
 const DataQuality  = lazy(() => import('../components/Lab/DataQuality'))
 const PipelineRuns = lazy(() => import('../components/Lab/PipelineRuns'))
-const MLOpsMonitor = lazy(() => import('../components/Lab/MLOpsMonitor'))
 
 const ACCENT = '#7C3AED'
 
@@ -31,18 +30,6 @@ const TABS = [
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
         <path d="M2 7.5H13M9 3.5L13 7.5L9 11.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    id: 'mlops',
-    path: '/lab/mlops',
-    label: 'MLOps Monitor',
-    desc: 'Drift alerts, retrain policy and job queue',
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
-        <path d="M2 11L5 7L8 9L11 4L13 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx="13" cy="6" r="1.2" fill="currentColor"/>
       </svg>
     ),
   },
@@ -167,7 +154,6 @@ export default function Lab() {
               <Suspense fallback={<LoadingFallback />}>
                 {activeTab.id === 'quality'  && <DataQuality />}
                 {activeTab.id === 'pipeline' && <PipelineRuns />}
-                {activeTab.id === 'mlops'    && <MLOpsMonitor />}
               </Suspense>
             </ErrorBoundary>
           </motion.div>

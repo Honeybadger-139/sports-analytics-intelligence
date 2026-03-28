@@ -215,15 +215,17 @@ export function useMatches(
   date?: string,
   dateFrom?: string,
   dateTo?: string,
+  completedOnly = false,
 ) {
   const query = useQuery({
-    queryKey: ['matches', season, limit, teamSearch ?? '', date ?? '', dateFrom ?? '', dateTo ?? ''],
+    queryKey: ['matches', season, limit, teamSearch ?? '', date ?? '', dateFrom ?? '', dateTo ?? '', completedOnly],
     queryFn: ({ signal }) => {
       let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
       if (teamSearch) url += `&team_search=${encodeURIComponent(teamSearch)}`
       if (date) url += `&date=${encodeURIComponent(date)}`
       if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
       if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
+      if (completedOnly) url += '&completed_only=true'
       return fetchJSON<MatchesResponse>(url, signal)
     },
     staleTime: 60_000,

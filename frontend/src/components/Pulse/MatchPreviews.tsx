@@ -352,6 +352,7 @@ export default function MatchPreviews() {
     undefined,
     dateFrom,
     dateTo,
+    true,
   )
   const { data: todayData, loading: todayLoading, error: todayError, refresh } = useTodaysPredictions()
 

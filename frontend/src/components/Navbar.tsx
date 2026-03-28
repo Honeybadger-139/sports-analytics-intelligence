@@ -41,7 +41,6 @@ const NAV_ITEMS: NavItem[] = [
     subItems: [
       { label: 'Data Quality',  path: '/lab/quality',  description: 'Row counts, checks and team metrics' },
       { label: 'Pipeline Runs', path: '/lab/pipeline', description: 'Recent ingestion and feature runs' },
-      { label: 'MLOps Monitor', path: '/lab/mlops',    description: 'Drift alerts and retrain policy' },
     ],
   },
   {
