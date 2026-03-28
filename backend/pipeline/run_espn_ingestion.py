@@ -1031,7 +1031,7 @@ def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> None:
             from src.data.espn_transformer import compute_player_season_stats
 
             current_season = SEASONS[-1]["label"]
-            season_rows = compute_player_season_stats(engine, season=current_season)
+            season_rows = compute_player_season_stats(current_season, engine)
             upserted = _upsert_player_season_stats(engine, season_rows)
             log_event(
                 "player_season_stats_incremental_upserted",
