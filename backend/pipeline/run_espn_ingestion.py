@@ -897,31 +897,42 @@ def main() -> None:
     engine = _build_engine(database_url)
 
     exit_code = 0
+    run_result: dict = {}
 
     try:
         from src.data.espn_fetcher import EspnFetcher
+        from src.data.feature_store import record_audit
 
         fetcher = EspnFetcher()
 
         if args.mode == "flush":
             flush_tables(engine)
-            # Fall through to backfill logic
             _run_full_load(fetcher, engine, run_id)
 
         elif args.mode == "backfill":
             _run_full_load(fetcher, engine, run_id)
 
         elif args.mode == "incremental":
-            _run_incremental(fetcher, engine, run_id)
+            run_result = _run_incremental(fetcher, engine, run_id)
 
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
         log_event(
             "espn_pipeline_success",
             run_id=run_id,
             mode=args.mode,
-            duration_seconds=(datetime.now(timezone.utc) - started_at).total_seconds(),
+            duration_seconds=elapsed,
+        )
+        record_audit(
+            engine,
+            module="ingestion",
+            status="success",
+            processed=run_result.get("games", 0),
+            inserted=run_result.get("inserted", run_result.get("games", 0)),
+            details={"mode": args.mode, "elapsed_seconds": round(elapsed, 2), "run_id": run_id},
         )
 
     except Exception as exc:
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
         log_event(
             "espn_pipeline_failed",
             level="ERROR",
@@ -930,6 +941,17 @@ def main() -> None:
             error=str(exc),
             traceback=traceback.format_exc(),
         )
+        try:
+            from src.data.feature_store import record_audit
+            record_audit(
+                engine,
+                module="ingestion",
+                status="failed",
+                errors=str(exc),
+                details={"mode": args.mode, "elapsed_seconds": round(elapsed, 2), "run_id": run_id},
+            )
+        except Exception:
+            pass
         exit_code = 1
 
     finally:
@@ -1012,7 +1034,7 @@ def _run_full_load(fetcher: Any, engine: Engine, run_id: str) -> None:
         )
 
 
-def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> None:
+def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> dict:
     """Execute the daily incremental window (yesterday → tomorrow).
 
     Also refreshes rosters so mid-season position changes, trades, and
@@ -1031,7 +1053,8 @@ def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> None:
             from src.data.espn_transformer import compute_player_season_stats
 
             current_season = SEASONS[-1]["label"]
-            season_rows = compute_player_season_stats(current_season, engine)
+            with engine.connect() as conn:
+                season_rows = compute_player_season_stats(current_season, conn)
             upserted = _upsert_player_season_stats(engine, season_rows)
             log_event(
                 "player_season_stats_incremental_upserted",
@@ -1065,6 +1088,8 @@ def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> None:
             run_id=run_id,
             error=str(sched_exc),
         )
+
+    return result
 
 
 if __name__ == "__main__":
