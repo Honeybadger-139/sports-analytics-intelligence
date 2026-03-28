@@ -54,6 +54,49 @@ logger = logging.getLogger("gamethread.espn_transformer")
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# SCR-342: Hardcoded conference/division map
+# ESPN /teams?limit=40 returns groups=null for all teams; neither the bulk
+# nor the individual team endpoint exposes conference/division name strings.
+# NBA conference and division assignments are stable season-to-season so a
+# static map is the correct solution.
+# Format: espn_team_id -> (conference, division)
+# ---------------------------------------------------------------------------
+_TEAM_CONFERENCE_DIVISION: dict[int, tuple[str, str]] = {
+    # Eastern Conference
+    1:  ("East", "Southeast"),   # Atlanta Hawks
+    2:  ("East", "Atlantic"),    # Boston Celtics
+    17: ("East", "Atlantic"),    # Brooklyn Nets
+    30: ("East", "Southeast"),   # Charlotte Hornets
+    4:  ("East", "Central"),     # Chicago Bulls
+    5:  ("East", "Central"),     # Cleveland Cavaliers
+    8:  ("East", "Central"),     # Detroit Pistons
+    11: ("East", "Central"),     # Indiana Pacers
+    14: ("East", "Southeast"),   # Miami Heat
+    15: ("East", "Central"),     # Milwaukee Bucks
+    18: ("East", "Atlantic"),    # New York Knicks
+    19: ("East", "Southeast"),   # Orlando Magic
+    20: ("East", "Atlantic"),    # Philadelphia 76ers
+    28: ("East", "Atlantic"),    # Toronto Raptors
+    27: ("East", "Southeast"),   # Washington Wizards
+    # Western Conference
+    6:  ("West", "Southwest"),   # Dallas Mavericks
+    7:  ("West", "Northwest"),   # Denver Nuggets
+    9:  ("West", "Pacific"),     # Golden State Warriors
+    10: ("West", "Southwest"),   # Houston Rockets
+    12: ("West", "Pacific"),     # LA Clippers
+    13: ("West", "Pacific"),     # Los Angeles Lakers
+    29: ("West", "Southwest"),   # Memphis Grizzlies
+    16: ("West", "Northwest"),   # Minnesota Timberwolves
+    3:  ("West", "Southwest"),   # New Orleans Pelicans
+    25: ("West", "Northwest"),   # Oklahoma City Thunder
+    21: ("West", "Pacific"),     # Phoenix Suns
+    22: ("West", "Northwest"),   # Portland Trail Blazers
+    23: ("West", "Pacific"),     # Sacramento Kings
+    24: ("West", "Southwest"),   # San Antonio Spurs
+    26: ("West", "Northwest"),   # Utah Jazz
+}
+
 _POSITION_MAP: dict[str, str] = {
     "point guard": "PG",
     "shooting guard": "SG",
@@ -221,22 +264,16 @@ def transform_teams(raw_teams: list[dict]) -> list[dict]:
         display_name = (team.get("displayName") or "").strip() or None
         location = (team.get("location") or "").strip() or None
 
-        # Conference and division are nested under ``groups`` when present
-        conference: str | None = None
-        division: str | None = None
-        groups = team.get("groups") or {}
-        # ESPN sometimes provides a ``parent`` key for the conference group
-        parent = groups.get("parent") or {}
-        if parent:
-            conference = (parent.get("name") or "").strip() or None
-            division = (groups.get("name") or "").strip() or None
-        else:
-            # Flat ``groups`` shape (older endpoints)
-            group_name = (groups.get("name") or "").strip()
-            if "east" in group_name.lower():
-                conference = "East"
-            elif "west" in group_name.lower():
-                conference = "West"
+        # SCR-342: ESPN bulk teams endpoint returns groups=null for all teams;
+        # neither the bulk nor individual endpoint exposes conference/division
+        # name strings. Use the hardcoded static map instead.
+        conf_div = _TEAM_CONFERENCE_DIVISION.get(team_id)
+        conference: str | None = conf_div[0] if conf_div else None
+        division: str | None = conf_div[1] if conf_div else None
+        if conf_div is None:
+            logger.warning(
+                "[espn_transformer] transform_teams: team_id=%d not in conference map", team_id
+            )
 
         rows.append(
             {
@@ -367,6 +404,11 @@ def transform_game(raw_event: dict) -> dict | None:
             winner_team_id = away_team_id
         # Ties should not occur in NBA but leave winner as None if equal
 
+    # SCR-343: Extract venue from competition object.
+    # ESPN scoreboard returns competition.venue.fullName (e.g. "Little Caesars Arena").
+    # The schedule endpoint may omit venue entirely — default to None.
+    venue: str | None = (comp.get("venue") or {}).get("fullName") or None
+
     return {
         "game_id": event_id,
         "game_date": game_date,
@@ -377,6 +419,7 @@ def transform_game(raw_event: dict) -> dict | None:
         "away_score": away_score,
         "winner_team_id": winner_team_id,
         "is_completed": is_completed,
+        "venue": venue,
     }
 
 
@@ -723,6 +766,13 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             # ESPN uses "stats" key for the per-athlete stat array (parallel to labels).
             # The "statistics" key (a list of groups) exists at the team level, not here.
             stat_values: list[str] = athlete_entry.get("stats") or athlete_entry.get("statistics") or []
+
+            # SCR-344: DNP players have stats=[] (empty array). When stat_values is
+            # empty, minutes_raw resolves to None → minutes is None, so the 0.0
+            # guard below never fires and a fully-null row gets inserted.
+            # Skip immediately on empty stats — no data to store.
+            if not stat_values:
+                continue
 
             # DNP check — minutes will be "0:00" or absent
             minutes_raw = _get_stat(stat_values, "min") or _get_stat(stat_values, "MIN")

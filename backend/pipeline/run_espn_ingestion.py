@@ -765,6 +765,16 @@ def _ingest_events(
             # Fetch full boxscore for team + player stats
             raw_summary = fetcher.fetch_game_summary(game_id)
 
+            # Backfill venue from game summary when scoreboard omitted it.
+            # ESPN summary exposes venue under header.competitions[0].venue.fullName
+            if not game_row.get("venue") and raw_summary:
+                try:
+                    comps = (raw_summary.get("header") or {}).get("competitions") or []
+                    if comps:
+                        game_row["venue"] = (comps[0].get("venue") or {}).get("fullName") or None
+                except Exception:
+                    pass
+
             with engine.begin() as conn:
                 conn.execute(match_upsert, game_row)
 
