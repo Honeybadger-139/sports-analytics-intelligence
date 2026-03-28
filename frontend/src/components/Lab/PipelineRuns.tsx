@@ -24,13 +24,17 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
+const RAG_GREEN = '#00D68F'
+
 function ModuleBadge({ module }: { module: string }) {
   const isIngestion = module === 'ingestion'
+  const isRag = module.startsWith('rag')
+  const bg    = isIngestion ? 'rgba(139,92,246,0.12)' : isRag ? 'rgba(0,214,143,0.10)' : 'rgba(6,197,248,0.10)'
+  const color = isIngestion ? ACCENT : isRag ? RAG_GREEN : '#06C5F8'
   return (
     <span style={{
       padding: '2px 8px', borderRadius: 4,
-      background: isIngestion ? 'rgba(139,92,246,0.12)' : 'rgba(6,197,248,0.10)',
-      color: isIngestion ? ACCENT : '#06C5F8',
+      background: bg, color,
       fontSize: '0.72rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
     }}>
       {module}
@@ -41,7 +45,7 @@ function ModuleBadge({ module }: { module: string }) {
 function fmtTime(iso: string): string {
   try {
     const d = new Date(iso)
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
   } catch {
     return iso
   }
@@ -53,6 +57,7 @@ function SummaryBar({ runs }: { runs: PipelineRun[] }) {
   const failed  = runs.filter(r => r.status === 'failed').length
   const ingestionRuns = runs.filter(r => r.module === 'ingestion')
   const featureRuns   = runs.filter(r => r.module === 'feature_store')
+  const ragRuns       = runs.filter(r => r.module.startsWith('rag'))
 
   const cards = [
     { label: 'Total Runs',   value: String(total),   color: 'var(--text-1)' },
@@ -60,6 +65,7 @@ function SummaryBar({ runs }: { runs: PipelineRun[] }) {
     { label: 'Failed',       value: String(failed),   color: failed > 0 ? 'var(--error)' : 'var(--text-2)' },
     { label: 'Ingestion',    value: String(ingestionRuns.length), color: ACCENT },
     { label: 'Feature Store', value: String(featureRuns.length), color: '#06C5F8' },
+    { label: 'RAG Refresh',  value: String(ragRuns.length),      color: RAG_GREEN },
   ]
 
   return (
@@ -79,14 +85,15 @@ function SummaryBar({ runs }: { runs: PipelineRun[] }) {
 
 export default function PipelineRuns() {
   const [season,     setSeason]     = useState('2025-26')
-  const [moduleFilter, setModuleFilter] = useState<'all' | 'ingestion' | 'feature_store'>('all')
+  const [moduleFilter, setModuleFilter] = useState<'all' | 'ingestion' | 'feature_store' | 'rag'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failed'>('all')
 
   const { data, loading, error, refresh } = useQualityOverview(season)
 
   const runs: PipelineRun[] = data?.recent_runs ?? []
   const filtered = runs.filter(r => {
-    if (moduleFilter !== 'all' && r.module !== moduleFilter) return false
+    if (moduleFilter === 'rag' && !r.module.startsWith('rag')) return false
+    if (moduleFilter !== 'all' && moduleFilter !== 'rag' && r.module !== moduleFilter) return false
     if (statusFilter !== 'all' && r.status !== statusFilter) return false
     return true
   })
@@ -107,6 +114,7 @@ export default function PipelineRuns() {
           <option value="all">All modules</option>
           <option value="ingestion">Ingestion</option>
           <option value="feature_store">Feature Store</option>
+          <option value="rag">RAG Refresh</option>
         </select>
 
         <select
@@ -210,7 +218,7 @@ export default function PipelineRuns() {
       </motion.div>
 
       <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 10 }}>
-        Showing last 50 runs from <code style={{ fontFamily: 'var(--font-mono)' }}>pipeline_audit</code>. Use Scribble → SQL Lab for deeper queries.
+        Showing last 50 runs from <code style={{ fontFamily: 'var(--font-mono)' }}>pipeline_audit</code> + <code style={{ fontFamily: 'var(--font-mono)' }}>intelligence_audit</code>, sorted by time. All times in IST (UTC+5:30).
       </p>
     </div>
   )

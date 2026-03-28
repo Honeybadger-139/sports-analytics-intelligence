@@ -886,6 +886,40 @@ async def get_quality_overview(
             }
         )
 
+    # Merge RAG refresh runs from intelligence_audit (separate table, no records_inserted column)
+    try:
+        rag_rows = db.execute(
+            text(
+                """
+                SELECT run_time AS sync_time, module, status, records_processed, errors, details
+                FROM intelligence_audit
+                ORDER BY run_time DESC
+                LIMIT :recent_limit
+                """
+            ),
+            {"recent_limit": recent_limit},
+        ).fetchall()
+        for row in rag_rows:
+            details = _normalize_json_field(row.details)
+            recent_runs.append(
+                {
+                    "sync_time": row.sync_time.isoformat(),
+                    "module": row.module,
+                    "status": row.status,
+                    "records_processed": row.records_processed,
+                    "records_inserted": None,
+                    "errors": row.errors,
+                    "elapsed_seconds": details.get("elapsed_seconds") if isinstance(details, dict) else None,
+                }
+            )
+    except Exception:
+        # intelligence_audit may not exist yet — skip silently
+        pass
+
+    # Sort combined list by time desc, keep most recent 50
+    recent_runs.sort(key=lambda r: r["sync_time"], reverse=True)
+    recent_runs = recent_runs[:recent_limit]
+
     return {
         "season": season,
         "row_counts": row_counts,
