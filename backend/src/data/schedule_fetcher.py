@@ -1,5 +1,6 @@
 """
-schedule_fetcher.py — SCR-331
+schedule_fetcher.py — SCR-331 / SCR-336
+=========================================
 
 Fetches today's + tomorrow's NBA schedule and upserts the games into the
 `matches` table as status='scheduled' (is_completed=False).
@@ -8,11 +9,13 @@ Then immediately runs base ML predictions for each upcoming game so that
 /api/v1/predictions/today can return them even before the games are played.
 
 WHY THIS APPROACH:
-  The existing ingest_season_games() fetches completed game logs via
-  TeamGameLog (one call per team, 30 calls total).  For upcoming games
-  we just need the schedule — ScoreboardV2 returns the full day's slate
-  in a single API call.  We only fall back to LeagueScheduleV2 for
-  tomorrow's games since ScoreboardV2 only covers the current day.
+  The existing ingest_season_games() fetches completed game logs via ESPN
+  box scores.  For upcoming games we use EspnFetcher.fetch_scoreboard(date),
+  which hits site.api.espn.com — GCP-friendly, no API key, no IP blocking.
+
+  Previously this used nba_api.ScoreboardV2 (stats.nba.com) which is
+  IP-blocked from GCP Cloud Run — causing 30s timeout failures on every
+  incremental run.  Replaced as part of SCR-336.
 
 FLOW:
   1. fetch_schedule(date)   → list[ScheduledGame]
@@ -26,7 +29,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger("gamethread.schedule_fetcher")
@@ -45,56 +48,130 @@ class ScheduledGame:
 
 
 # ---------------------------------------------------------------------------
-# Schedule retrieval
+# Schedule retrieval — ESPN-based (replaces nba_api.ScoreboardV2)
 # ---------------------------------------------------------------------------
 
-def _fetch_scoreboard_games(target_date: date, season: str) -> list[ScheduledGame]:
-    """Pull games for target_date using ScoreboardV2 (single API call)."""
-    try:
-        from nba_api.stats.endpoints import scoreboardv2
-        date_str = target_date.strftime("%m/%d/%Y")
-        board = scoreboardv2.ScoreboardV2(game_date=date_str, timeout=30)
-        game_header = board.game_header.get_data_frame()
-        team_map = _build_team_id_map()
+def _parse_espn_event(event: dict, season: str) -> ScheduledGame | None:
+    """
+    Parse a raw ESPN scoreboard event dict into a ScheduledGame.
 
-        games: list[ScheduledGame] = []
-        for _, row in game_header.iterrows():
-            game_id = str(row.get("GAME_ID", "")).strip()
-            if not game_id:
-                continue
-            home_id = int(row.get("HOME_TEAM_ID", 0))
-            away_id = int(row.get("VISITOR_TEAM_ID", 0))
-            home_abbr = team_map.get(home_id, "???")
-            away_abbr = team_map.get(away_id, "???")
-            games.append(ScheduledGame(
-                game_id=game_id,
-                game_date=target_date,
-                home_team_id=home_id,
-                away_team_id=away_id,
-                home_team_abbr=home_abbr,
-                away_team_abbr=away_abbr,
-                season=season,
-                arena=str(row.get("ARENA_NAME", "") or ""),
-            ))
-        return games
+    Returns None if the event is missing required fields or is a non-real
+    game (All-Star, exhibition, pre-season).
+
+    ESPN event structure (key paths used here):
+      event["id"]                                       → ESPN game ID
+      event["competitions"][0]["date"]                  → ISO-8601 start time
+      event["competitions"][0]["type"]["abbreviation"]  → "STD"/"ASG"/etc.
+      event["competitions"][0]["competitors"]           → list of 2 dicts
+        competitor["homeAway"]                          → "home" or "away"
+        competitor["team"]["id"]                        → ESPN integer team ID
+        competitor["team"]["abbreviation"]              → e.g. "LAL"
+      event["competitions"][0]["venue"]["fullName"]     → arena name (optional)
+    """
+    event_id = str(event.get("id") or "").strip()
+    if not event_id:
+        return None
+
+    competitions: list[dict] = event.get("competitions") or []
+    if not competitions:
+        return None
+    comp = competitions[0]
+
+    # Skip non-real games: All-Star, exhibitions, pre-season
+    comp_type_abbr = (
+        (comp.get("type") or {}).get("abbreviation") or ""
+    ).upper()
+    if comp_type_abbr in {"ASG", "ALLSTAR", "ASW", "EXH", "PRE"}:
+        logger.debug(
+            "[schedule_fetcher] skipping non-regular event %s (type=%s)",
+            event_id, comp_type_abbr,
+        )
+        return None
+
+    # Parse date — ESPN returns ISO-8601 with Z or offset
+    raw_date = comp.get("date") or event.get("date") or ""
+    try:
+        normalised = raw_date.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalised)
+        game_date = dt.date()
+    except (ValueError, AttributeError):
+        game_date = date.today()
+
+    # Extract home / away team IDs and abbreviations from competitors list
+    home_team_id: int | None = None
+    away_team_id: int | None = None
+    home_abbr = "???"
+    away_abbr = "???"
+
+    for competitor in comp.get("competitors") or []:
+        home_away = (competitor.get("homeAway") or "").lower()
+        team = competitor.get("team") or {}
+        try:
+            tid = int(team.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if tid == 0:
+            continue
+        abbr = (team.get("abbreviation") or "???").strip()
+        if home_away == "home":
+            home_team_id = tid
+            home_abbr = abbr
+        elif home_away == "away":
+            away_team_id = tid
+            away_abbr = abbr
+
+    if home_team_id is None or away_team_id is None:
+        logger.debug(
+            "[schedule_fetcher] event %s missing home or away team, skipping",
+            event_id,
+        )
+        return None
+
+    arena = ((comp.get("venue") or {}).get("fullName") or "").strip() or None
+
+    return ScheduledGame(
+        game_id=event_id,
+        game_date=game_date,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        home_team_abbr=home_abbr,
+        away_team_abbr=away_abbr,
+        season=season,
+        arena=arena,
+    )
+
+
+def _fetch_scoreboard_games(target_date: date, season: str) -> list[ScheduledGame]:
+    """
+    Pull games for target_date using EspnFetcher.fetch_scoreboard.
+
+    Replaces nba_api.ScoreboardV2 (stats.nba.com — IP-blocked on GCP).
+    ESPN's CDN endpoint (site.api.espn.com) works natively from Cloud Run.
+    """
+    from src.data.espn_fetcher import EspnFetcher
+
+    fetcher = EspnFetcher()
+    try:
+        events = fetcher.fetch_scoreboard(target_date)
     except Exception as exc:
-        logger.warning("[schedule_fetcher] ScoreboardV2 failed for %s: %s", target_date, exc)
+        logger.warning(
+            "[schedule_fetcher] ESPN scoreboard failed for %s: %s",
+            target_date, exc,
+        )
         return []
 
-
-def _build_team_id_map() -> dict[int, str]:
-    """Return {team_id: abbreviation} for all 30 NBA teams."""
-    try:
-        from nba_api.stats.static import teams as nba_teams
-        return {t["id"]: t["abbreviation"] for t in nba_teams.get_teams()}
-    except Exception:
-        return {}
+    games: list[ScheduledGame] = []
+    for event in events:
+        game = _parse_espn_event(event, season)
+        if game is not None:
+            games.append(game)
+    return games
 
 
 def fetch_schedule_for_dates(
     target_dates: list[date],
     season: str,
-    delay_between_calls: float = 1.5,
+    delay_between_calls: float = 1.0,
 ) -> list[ScheduledGame]:
     """Fetch schedule for a list of dates, returning all upcoming games."""
     all_games: list[ScheduledGame] = []
@@ -115,6 +192,9 @@ def upsert_scheduled_games(engine, games: list[ScheduledGame]) -> int:
     """
     Insert upcoming games into `matches` with is_completed=False.
     Uses ON CONFLICT DO NOTHING so completed games are never overwritten.
+
+    Joins to `teams.team_id` (ESPN integer IDs after SCR-332 migration)
+    to resolve the DB surrogate PK used in home_team_id / away_team_id FKs.
     """
     if not games:
         return 0
@@ -242,6 +322,10 @@ def run_base_predictions_for_schedule(engine, games: list[ScheduledGame], season
     and run the Predictor. Persist results with is_pre_game=True.
 
     Returns the number of games predicted.
+
+    Note: ensure_pre_game_columns() is no longer called here.  The
+    is_pre_game / news_context / enriched_at columns are added by Alembic
+    migration 0006 at startup, avoiding DDL-inside-request session corruption.
     """
     if not games:
         return 0
@@ -250,7 +334,7 @@ def run_base_predictions_for_schedule(engine, games: list[ScheduledGame], season
         import pandas as pd
         from sqlalchemy.orm import Session
         from src.models.predictor import Predictor
-        from src.data.prediction_store import persist_game_predictions, ensure_pre_game_columns
+        from src.data.prediction_store import persist_game_predictions
     except ImportError as exc:
         logger.warning("[schedule_fetcher] ML deps not available, skipping predictions: %s", exc)
         return 0
@@ -263,7 +347,6 @@ def run_base_predictions_for_schedule(engine, games: list[ScheduledGame], season
 
     predicted = 0
     with Session(engine) as session:
-        ensure_pre_game_columns(session)
         for game in games:
             try:
                 home_f = _get_latest_team_features(engine, game.home_team_id, season)
@@ -303,7 +386,7 @@ def run_base_predictions_for_schedule(engine, games: list[ScheduledGame], season
 
 def fetch_and_predict_upcoming(engine, season: str, days_ahead: int = 1) -> dict:
     """
-    Convenience function called from run_ingestion.py.
+    Convenience function called from run_espn_ingestion.py.
 
     Fetches today + tomorrow, upserts scheduled games, runs base predictions.
     Returns a summary dict for logging.
