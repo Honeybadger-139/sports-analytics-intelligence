@@ -131,6 +131,23 @@ def _stat_map(statistics: list[dict]) -> dict[str, str]:
     return {entry.get("name", ""): entry.get("displayValue", "") for entry in statistics}
 
 
+def _split_stat(raw: str | None) -> tuple[float, float]:
+    """
+    Parse ESPN compound stat strings like ``"39-85"`` (made-attempted) into
+    ``(made, attempted)`` floats.
+
+    ESPN encodes FG/3PT/FT lines as ``"made-attempted"`` in team box scores.
+    Returns ``(0.0, 0.0)`` when the value is absent or malformed.
+    """
+    if not raw:
+        return 0.0, 0.0
+    s = str(raw).strip()
+    if "-" in s:
+        parts = s.split("-", 1)
+        return _safe_float(parts[0], 0.0), _safe_float(parts[1], 0.0)  # type: ignore[return-value]
+    return _safe_float(s, 0.0), 0.0  # type: ignore[return-value]
+
+
 def _nba_season_from_date(dt: datetime) -> str:
     """
     Derive NBA season string (e.g. ``"2025-26"``) from a datetime.
@@ -320,7 +337,13 @@ def transform_game(raw_event: dict) -> dict | None:
     for competitor in competitors:
         home_away = (competitor.get("homeAway") or "").lower()
         tid = _safe_int((competitor.get("team") or {}).get("id"))
-        score = _safe_int(competitor.get("score"))
+        # ESPN schedule API returns score as dict {'value': 116.0, 'displayValue': '116'};
+        # game summary API returns a plain string '116'.  Handle both.
+        score_raw = competitor.get("score")
+        if isinstance(score_raw, dict):
+            score = _safe_int(score_raw.get("displayValue") or score_raw.get("value"))
+        else:
+            score = _safe_int(score_raw)
         if home_away == "home":
             home_team_id = tid
             home_score = score if is_completed else None
@@ -396,6 +419,19 @@ def transform_team_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
     boxscore = raw_summary.get("boxscore") or {}
     teams_data: list[dict] = boxscore.get("teams") or []
 
+    # Build team_id → points lookup from the game header (competitor scores).
+    # The team boxscore statistics list does NOT include a "points" key;
+    # scores are only available from the header competitions block.
+    header_scores: dict[int, float] = {}
+    header_comps_list = (raw_summary.get("header") or {}).get("competitions") or []
+    if header_comps_list:
+        for _c in (header_comps_list[0].get("competitors") or []):
+            _tid = _safe_int((_c.get("team") or {}).get("id"))
+            # header competitor score is a plain string e.g. '116'
+            _score = _safe_float(_c.get("score"))
+            if _tid is not None and _score is not None:
+                header_scores[_tid] = _score
+
     if len(teams_data) < 2:
         logger.warning(
             "[espn_transformer] transform_team_game_stats: game %s has %d team entries (need 2)",
@@ -430,36 +466,43 @@ def transform_team_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             )
             continue
 
-        # Raw counting stats
-        fgm = _safe_float(sm.get("fieldGoalsMade"), 0.0)
-        fga = _safe_float(sm.get("fieldGoalsAttempted"), 0.0)
-        fg3m = _safe_float(sm.get("threePointFieldGoalsMade"), 0.0)
-        fg3a = _safe_float(sm.get("threePointFieldGoalsAttempted"), 0.0)
-        ftm = _safe_float(sm.get("freeThrowsMade"), 0.0)
-        fta = _safe_float(sm.get("freeThrowsAttempted"), 0.0)
+        # Raw counting stats.
+        # ESPN team boxscore uses compound keys for shooting lines:
+        #   "fieldGoalsMade-fieldGoalsAttempted" → "39-85"
+        #   "threePointFieldGoalsMade-threePointFieldGoalsAttempted" → "16-41"
+        #   "freeThrowsMade-freeThrowsAttempted" → "23-30"
+        # Rebounds use "totalRebounds" (not "rebounds").
+        # Points are NOT in the statistics list — sourced from header competitor scores.
+        fgm, fga = _split_stat(sm.get("fieldGoalsMade-fieldGoalsAttempted"))
+        fg3m, fg3a = _split_stat(sm.get("threePointFieldGoalsMade-threePointFieldGoalsAttempted"))
+        ftm, fta = _split_stat(sm.get("freeThrowsMade-freeThrowsAttempted"))
         oreb = _safe_float(sm.get("offensiveRebounds"), 0.0)
         dreb = _safe_float(sm.get("defensiveRebounds"), 0.0)
-        reb = _safe_float(sm.get("rebounds")) or (oreb + dreb)
+        reb = _safe_float(sm.get("totalRebounds")) or (oreb + dreb)
         ast = _safe_float(sm.get("assists"), 0.0)
         stl = _safe_float(sm.get("steals"), 0.0)
         blk = _safe_float(sm.get("blocks"), 0.0)
         tov = _safe_float(sm.get("turnovers"), 0.0)
-        pts = _safe_float(sm.get("points"), 0.0)
+        # Points from header competitor score lookup (not in statistics list)
+        pts = header_scores.get(team_id, 0.0) if team_id is not None else 0.0
 
-        # Opponent counting stats (for defensive rating)
-        opp_fga = _safe_float(opp_sm.get("fieldGoalsAttempted"), 0.0)
-        opp_fta = _safe_float(opp_sm.get("freeThrowsAttempted"), 0.0)
+        # Opponent counting stats (for defensive rating).
+        # Also uses the ESPN compound stat key format.
+        _, opp_fga = _split_stat(opp_sm.get("fieldGoalsMade-fieldGoalsAttempted"))
+        _, opp_fta = _split_stat(opp_sm.get("freeThrowsMade-freeThrowsAttempted"))
         opp_oreb = _safe_float(opp_sm.get("offensiveRebounds"), 0.0)
         opp_tov = _safe_float(opp_sm.get("turnovers"), 0.0)
-        opp_pts = _safe_float(opp_sm.get("points"), 0.0)
+        opp_pts = header_scores.get(team_ids[j], 0.0) if team_ids[j] is not None else 0.0
 
-        # Percentages (prefer ESPN's computed value; fall back to manual)
+        # Percentages (prefer ESPN's computed value; fall back to manual).
+        # ESPN provides percentages as 0-100 integers (e.g. "45" for 45%).
+        # DB columns are DECIMAL(5,3) storing 0-1 (e.g. 0.450 for 45%), so divide by 100.
         def _pct(made: float | None, attempted: float | None, espn_val: str | None) -> float | None:
             val = _safe_float(espn_val)
             if val is not None:
-                return val
+                return round(val / 100.0, 3)
             if made is not None and attempted and attempted > 0:
-                return made / attempted
+                return round(made / attempted, 3)
             return None
 
         fg_pct = _pct(fgm, fga, sm.get("fieldGoalPct"))
@@ -510,7 +553,7 @@ def transform_team_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             {
                 "game_id": game_id,
                 "team_id": team_id,
-                "points": _safe_int(sm.get("points")),
+                "points": _safe_int(pts),          # from header_scores (not in stat map)
                 "rebounds": _safe_int(reb),
                 "assists": _safe_int(sm.get("assists")),
                 "steals": _safe_int(sm.get("steals")),
@@ -677,7 +720,9 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             if player_id is None:
                 continue
 
-            stat_values: list[str] = athlete_entry.get("statistics") or []
+            # ESPN uses "stats" key for the per-athlete stat array (parallel to labels).
+            # The "statistics" key (a list of groups) exists at the team level, not here.
+            stat_values: list[str] = athlete_entry.get("stats") or athlete_entry.get("statistics") or []
 
             # DNP check — minutes will be "0:00" or absent
             minutes_raw = _get_stat(stat_values, "min") or _get_stat(stat_values, "MIN")
