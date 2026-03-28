@@ -357,11 +357,11 @@ def ingest_season(
         """
         INSERT INTO matches (
             game_id, game_date, season, home_team_id, away_team_id,
-            home_score, away_score, winner_team_id, is_completed
+            home_score, away_score, winner_team_id, is_completed, venue
         )
         VALUES (
             :game_id, :game_date, :season, :home_team_id, :away_team_id,
-            :home_score, :away_score, :winner_team_id, :is_completed
+            :home_score, :away_score, :winner_team_id, :is_completed, :venue
         )
         ON CONFLICT (game_id) DO UPDATE SET
             game_date      = EXCLUDED.game_date,
@@ -371,7 +371,8 @@ def ingest_season(
             home_score     = EXCLUDED.home_score,
             away_score     = EXCLUDED.away_score,
             winner_team_id = EXCLUDED.winner_team_id,
-            is_completed   = EXCLUDED.is_completed
+            is_completed   = EXCLUDED.is_completed,
+            venue          = COALESCE(EXCLUDED.venue, matches.venue)
         """
     )
 
@@ -629,11 +630,11 @@ def _ingest_events(
         """
         INSERT INTO matches (
             game_id, game_date, season, home_team_id, away_team_id,
-            home_score, away_score, winner_team_id, is_completed
+            home_score, away_score, winner_team_id, is_completed, venue
         )
         VALUES (
             :game_id, :game_date, :season, :home_team_id, :away_team_id,
-            :home_score, :away_score, :winner_team_id, :is_completed
+            :home_score, :away_score, :winner_team_id, :is_completed, :venue
         )
         ON CONFLICT (game_id) DO UPDATE SET
             game_date      = EXCLUDED.game_date,
@@ -643,7 +644,8 @@ def _ingest_events(
             home_score     = EXCLUDED.home_score,
             away_score     = EXCLUDED.away_score,
             winner_team_id = EXCLUDED.winner_team_id,
-            is_completed   = EXCLUDED.is_completed
+            is_completed   = EXCLUDED.is_completed,
+            venue          = COALESCE(EXCLUDED.venue, matches.venue)
         """
     )
 
@@ -1037,10 +1039,11 @@ def _run_full_load(fetcher: Any, engine: Engine, run_id: str) -> None:
 def _run_incremental(fetcher: Any, engine: Engine, run_id: str) -> dict:
     """Execute the daily incremental window (yesterday → tomorrow).
 
-    Also refreshes rosters so mid-season position changes, trades, and
-    waiver pickups are reflected in the players table without a full
-    backfill.
+    Also refreshes teams and rosters so conference/division changes, trades,
+    and waiver pickups are reflected without a full backfill.
     """
+    # Always refresh teams dimension (cheap — 30 rows, keeps conference/division current)
+    ingest_teams(fetcher, engine)
     # Refresh rosters to capture any trades / waiver moves since last run
     ingest_rosters(fetcher, engine)
 
