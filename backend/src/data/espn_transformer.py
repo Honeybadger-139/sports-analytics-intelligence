@@ -47,6 +47,24 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
+# ---------------------------------------------------------------------------
+# TIMEZONE CONVENTION (important — read before touching date logic)
+# ---------------------------------------------------------------------------
+# All game_date values are stored in **US/Eastern time** (ET/EDT), which is
+# the NBA's official game-date timezone.  ESPN timestamps are UTC-based
+# ISO-8601 strings; we convert them to Eastern before extracting the date so
+# that a 10 pm ET game on March 29 is stored as 2026-03-29, not 2026-03-30
+# (which would happen if we naively took the UTC date).
+#
+# This matches how ESPN, the NBA app, and every sports reference site groups
+# games: by the local US date the game tips off, not by the UTC calendar day.
+#
+# If you ever change this, you MUST also re-run the ingestion backfill so that
+# existing rows stay consistent with newly ingested rows.
+# ---------------------------------------------------------------------------
+_NBA_TZ = ZoneInfo("America/New_York")
 
 logger = logging.getLogger("gamethread.espn_transformer")
 
@@ -211,10 +229,14 @@ def _nba_season_from_date(dt: datetime) -> str:
 
 def _parse_game_date(raw_date: str) -> datetime | None:
     """
-    Parse an ESPN ISO-8601 date string into a timezone-aware datetime.
+    Parse an ESPN ISO-8601 date string into a timezone-aware UTC datetime.
 
     Handles both ``Z`` suffix and ``+HH:MM`` offset formats.
     Returns ``None`` on parse failure.
+
+    Note: callers must convert to ``_NBA_TZ`` (US/Eastern) before extracting
+    the ``.date()`` component — see the TIMEZONE CONVENTION note at the top of
+    this module.
     """
     if not raw_date:
         return None
@@ -312,7 +334,7 @@ def transform_game(raw_event: dict) -> dict | None:
     Column mapping
     --------------
     ``game_id``        → ESPN event id (string, VARCHAR in DB)
-    ``game_date``      → date portion of competition start time (UTC)
+    ``game_date``      → date portion of competition start time in US/Eastern (NBA official date)
     ``season``         → derived NBA season string (e.g. ``"2025-26"``)
     ``home_team_id``   → ESPN integer team id
     ``away_team_id``   → ESPN integer team id
@@ -361,7 +383,10 @@ def transform_game(raw_event: dict) -> dict | None:
             "[espn_transformer] transform_game: cannot parse date for event %s", event_id
         )
         return None
-    game_date = dt.date()
+    # Convert to US/Eastern before extracting the date — see TIMEZONE CONVENTION
+    # note at the top of this module.  A 10 pm ET game on March 29 must be
+    # stored as 2026-03-29, not 2026-03-30 (the UTC date).
+    game_date = dt.astimezone(_NBA_TZ).date()
     season = _nba_season_from_date(dt)
 
     # Competitors — ESPN guarantees exactly 2 per competition
