@@ -821,28 +821,28 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             fg3m, fg3a = _split_shooting(fg3_raw)
             ftm, fta = _split_shooting(ft_raw)
 
-            # Percentages — compute manually from made/attempted
-            def _shooting_pct(made: int | None, attempted: int | None) -> float | None:
+            # Percentages — compute manually from made/attempted.
+            # Returns 0.0 (not None) when attempted == 0 so ML feature vectors
+            # are never NULL.
+            def _shooting_pct(made: int | None, attempted: int | None) -> float:
                 if made is None or attempted is None or attempted == 0:
-                    return None
+                    return 0.0
                 return round(made / attempted, 3)
 
             fg_pct = _shooting_pct(fgm, fga)
             fg3_pct = _shooting_pct(fg3m, fg3a)
             ft_pct = _shooting_pct(ftm, fta)
 
-            # ESPN fantasy points formula
-            fantasy_points: float | None = None
-            if None not in (pts, reb, ast, blk, stl, tov):
-                fantasy_points = round(
-                    (pts or 0) * 1.0
-                    + (reb or 0) * 1.2
-                    + (ast or 0) * 1.5
-                    + (blk or 0) * 3.0
-                    + (stl or 0) * 3.0
-                    + (tov or 0) * -1.0,
-                    2,
-                )
+            # ESPN fantasy points formula — always compute (stats already defaulted to 0)
+            fantasy_points: float = round(
+                (pts or 0) * 1.0
+                + (reb or 0) * 1.2
+                + (ast or 0) * 1.5
+                + (blk or 0) * 3.0
+                + (stl or 0) * 3.0
+                + (tov or 0) * -1.0,
+                2,
+            )
 
             rows.append(
                 {
