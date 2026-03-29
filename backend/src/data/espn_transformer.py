@@ -404,11 +404,6 @@ def transform_game(raw_event: dict) -> dict | None:
             winner_team_id = away_team_id
         # Ties should not occur in NBA but leave winner as None if equal
 
-    # SCR-343: Extract venue from competition object.
-    # ESPN scoreboard returns competition.venue.fullName (e.g. "Little Caesars Arena").
-    # The schedule endpoint may omit venue entirely — default to None.
-    venue: str | None = (comp.get("venue") or {}).get("fullName") or None
-
     return {
         "game_id": event_id,
         "game_date": game_date,
@@ -419,7 +414,6 @@ def transform_game(raw_event: dict) -> dict | None:
         "away_score": away_score,
         "winner_team_id": winner_team_id,
         "is_completed": is_completed,
-        "venue": venue,
     }
 
 
@@ -843,24 +837,25 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
                     "player_id": player_id,
                     "team_id": team_id,
                     "minutes": minutes,
-                    "points": pts,
-                    "rebounds": reb,
-                    "assists": ast,
-                    "steals": stl,
-                    "blocks": blk,
-                    "turnovers": tov,
-                    "personal_fouls": pf,
-                    "field_goals_made": fgm,
-                    "field_goals_attempted": fga,
+                    "points": pts if pts is not None else 0,
+                    "rebounds": reb if reb is not None else 0,
+                    "assists": ast if ast is not None else 0,
+                    "steals": stl if stl is not None else 0,
+                    "blocks": blk if blk is not None else 0,
+                    "turnovers": tov if tov is not None else 0,
+                    "personal_fouls": pf if pf is not None else 0,
+                    "field_goals_made": fgm if fgm is not None else 0,
+                    "field_goals_attempted": fga if fga is not None else 0,
                     "field_goal_pct": fg_pct,
-                    "three_points_made": fg3m,
-                    "three_points_attempted": fg3a,
+                    "three_points_made": fg3m if fg3m is not None else 0,
+                    "three_points_attempted": fg3a if fg3a is not None else 0,
                     "three_point_pct": fg3_pct,
-                    "free_throws_made": ftm,
-                    "free_throws_attempted": fta,
+                    "free_throws_made": ftm if ftm is not None else 0,
+                    "free_throws_attempted": fta if fta is not None else 0,
                     "free_throw_pct": ft_pct,
                     "plus_minus": plus_minus,
                     "fantasy_points": fantasy_points,
+                    "match_played": minutes is not None and minutes > 0,
                 }
             )
 

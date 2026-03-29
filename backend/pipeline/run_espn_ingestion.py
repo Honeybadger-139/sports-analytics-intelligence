@@ -357,11 +357,11 @@ def ingest_season(
         """
         INSERT INTO matches (
             game_id, game_date, season, home_team_id, away_team_id,
-            home_score, away_score, winner_team_id, is_completed, venue
+            home_score, away_score, winner_team_id, is_completed
         )
         VALUES (
             :game_id, :game_date, :season, :home_team_id, :away_team_id,
-            :home_score, :away_score, :winner_team_id, :is_completed, :venue
+            :home_score, :away_score, :winner_team_id, :is_completed
         )
         ON CONFLICT (game_id) DO UPDATE SET
             game_date      = EXCLUDED.game_date,
@@ -371,9 +371,8 @@ def ingest_season(
             home_score     = EXCLUDED.home_score,
             away_score     = EXCLUDED.away_score,
             winner_team_id = EXCLUDED.winner_team_id,
-            is_completed   = EXCLUDED.is_completed,
-            venue          = COALESCE(EXCLUDED.venue, matches.venue)
-        """
+            is_completed   = EXCLUDED.is_completed
+"""
     )
 
     team_game_upsert = text(
@@ -418,7 +417,7 @@ def ingest_season(
             personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
             three_points_made, three_points_attempted, three_point_pct,
             free_throws_made, free_throws_attempted, free_throw_pct,
-            plus_minus, fantasy_points
+            plus_minus, fantasy_points, match_played
         )
         VALUES (
             :game_id, :player_id, :team_id,
@@ -426,7 +425,7 @@ def ingest_season(
             :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
             :three_points_made, :three_points_attempted, :three_point_pct,
             :free_throws_made, :free_throws_attempted, :free_throw_pct,
-            :plus_minus, :fantasy_points
+            :plus_minus, :fantasy_points, :match_played
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
             team_id                  = EXCLUDED.team_id,
@@ -448,8 +447,9 @@ def ingest_season(
             free_throws_attempted    = EXCLUDED.free_throws_attempted,
             free_throw_pct           = EXCLUDED.free_throw_pct,
             plus_minus               = EXCLUDED.plus_minus,
-            fantasy_points           = EXCLUDED.fantasy_points
-        """
+            fantasy_points           = EXCLUDED.fantasy_points,
+            match_played             = EXCLUDED.match_played
+"""
     )
 
     # Stub player upsert: ensures the players FK is satisfied even when the
@@ -630,11 +630,11 @@ def _ingest_events(
         """
         INSERT INTO matches (
             game_id, game_date, season, home_team_id, away_team_id,
-            home_score, away_score, winner_team_id, is_completed, venue
+            home_score, away_score, winner_team_id, is_completed
         )
         VALUES (
             :game_id, :game_date, :season, :home_team_id, :away_team_id,
-            :home_score, :away_score, :winner_team_id, :is_completed, :venue
+            :home_score, :away_score, :winner_team_id, :is_completed
         )
         ON CONFLICT (game_id) DO UPDATE SET
             game_date      = EXCLUDED.game_date,
@@ -644,9 +644,8 @@ def _ingest_events(
             home_score     = EXCLUDED.home_score,
             away_score     = EXCLUDED.away_score,
             winner_team_id = EXCLUDED.winner_team_id,
-            is_completed   = EXCLUDED.is_completed,
-            venue          = COALESCE(EXCLUDED.venue, matches.venue)
-        """
+            is_completed   = EXCLUDED.is_completed
+"""
     )
 
     team_game_upsert = text(
@@ -691,7 +690,7 @@ def _ingest_events(
             personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
             three_points_made, three_points_attempted, three_point_pct,
             free_throws_made, free_throws_attempted, free_throw_pct,
-            plus_minus, fantasy_points
+            plus_minus, fantasy_points, match_played
         )
         VALUES (
             :game_id, :player_id, :team_id,
@@ -699,7 +698,7 @@ def _ingest_events(
             :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
             :three_points_made, :three_points_attempted, :three_point_pct,
             :free_throws_made, :free_throws_attempted, :free_throw_pct,
-            :plus_minus, :fantasy_points
+            :plus_minus, :fantasy_points, :match_played
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
             team_id                  = EXCLUDED.team_id,
@@ -721,8 +720,9 @@ def _ingest_events(
             free_throws_attempted    = EXCLUDED.free_throws_attempted,
             free_throw_pct           = EXCLUDED.free_throw_pct,
             plus_minus               = EXCLUDED.plus_minus,
-            fantasy_points           = EXCLUDED.fantasy_points
-        """
+            fantasy_points           = EXCLUDED.fantasy_points,
+            match_played             = EXCLUDED.match_played
+"""
     )
 
     # Stub player upsert — same as in ingest_season, ensures FK is satisfied.
@@ -764,16 +764,6 @@ def _ingest_events(
 
             # Fetch full boxscore for team + player stats
             raw_summary = fetcher.fetch_game_summary(game_id)
-
-            # Backfill venue from game summary when scoreboard omitted it.
-            # ESPN summary exposes venue under header.competitions[0].venue.fullName
-            if not game_row.get("venue") and raw_summary:
-                try:
-                    comps = (raw_summary.get("header") or {}).get("competitions") or []
-                    if comps:
-                        game_row["venue"] = (comps[0].get("venue") or {}).get("fullName") or None
-                except Exception:
-                    pass
 
             with engine.begin() as conn:
                 conn.execute(match_upsert, game_row)

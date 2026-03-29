@@ -1003,12 +1003,12 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
                             player_id, season, team_id, games_played, wins, losses, win_pct,
                             minutes, points, rebounds, assists, steals, blocks, turnovers,
                             field_goal_pct, three_point_pct, free_throw_pct, plus_minus,
-                            fantasy_points, updated_at
+                            fantasy_points, has_played, updated_at
                         )
                         VALUES (
                             :player_id, :season, :team_id, :gp, :w, :l, :w_pct, :min, :pts,
                             :reb, :ast, :stl, :blk, :tov, :fg_pct, :fg3_pct, :ft_pct,
-                            :plus_minus, :fantasy_pts, :now
+                            :plus_minus, :fantasy_pts, :has_played, :now
                         )
                         ON CONFLICT (player_id, season) DO UPDATE SET
                             team_id = EXCLUDED.team_id,
@@ -1028,6 +1028,7 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
                             free_throw_pct = EXCLUDED.free_throw_pct,
                             plus_minus = EXCLUDED.plus_minus,
                             fantasy_points = EXCLUDED.fantasy_points,
+                            has_played = EXCLUDED.has_played,
                             updated_at = EXCLUDED.updated_at
                     """),
                     {
@@ -1050,6 +1051,7 @@ def ingest_player_season_stats(engine, season: str = "2025-26") -> int:
                         "ft_pct": float(row["FT_PCT"]) if pd.notna(row.get("FT_PCT")) else 0.0,
                         "plus_minus": float(row["PLUS_MINUS"]) if pd.notna(row.get("PLUS_MINUS")) else 0.0,
                         "fantasy_pts": float(row["NBA_FANTASY_PTS"]) if pd.notna(row.get("NBA_FANTASY_PTS")) else 0.0,
+                        "has_played": (int(row["GP"]) if pd.notna(row.get("GP")) else 0) >= 1,
                         "now": datetime.now()
                     }
                 )
