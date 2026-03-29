@@ -599,6 +599,12 @@ export interface TeamGameLogEntry {
   steals: number
   blocks: number
   turnovers: number
+  field_goals_made: number
+  field_goals_attempted: number
+  three_points_made: number
+  three_points_attempted: number
+  free_throws_made: number
+  free_throws_attempted: number
   field_goal_pct: number | null
   three_point_pct: number | null
   free_throw_pct: number | null

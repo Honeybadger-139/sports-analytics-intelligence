@@ -194,6 +194,7 @@ export default function MatchDeepDive() {
     : 1
 
   const predModels = pred ? Object.keys(pred.predictions ?? {}) : []
+  const hasPredictionCards = predModels.length > 0
 
   function saveCurrentView() {
     if (!pred) return
@@ -518,7 +519,9 @@ export default function MatchDeepDive() {
                 borderRadius: 'var(--r-md)', marginBottom: 24,
               }}>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
-                  No SHAP explanation available for this game. Models may not have been run with SHAP enabled.
+                  {hasPredictionCards
+                    ? 'Win probabilities are available, but explainability factors have not been generated for this game yet. Try refreshing once the backend finishes backfilling SHAP data.'
+                    : 'No SHAP explanation is available for this game yet because the prediction payload is incomplete.'}
                 </p>
               </div>
             )}

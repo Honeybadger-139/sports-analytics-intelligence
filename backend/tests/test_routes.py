@@ -350,6 +350,138 @@ class TestPredictionEndpoints:
         assert payload["predictions"]["xgboost"]["home_win_prob"] == 0.61
         assert payload["explanation"]["xgboost"][0]["feature"] == "win_pct_last_10"
 
+    def test_prediction_game_regenerates_empty_persisted_shap_factors(self, monkeypatch):
+        class _FakePredictor:
+            feature_columns = trainer_module.FEATURE_COLUMNS
+
+            def predict_game(self, _features):
+                return {
+                    "xgboost": {
+                        "home_win_prob": 0.61,
+                        "away_win_prob": 0.39,
+                        "prediction": "home",
+                        "confidence": 0.61,
+                    }
+                }
+
+            def explain_game(self, _features, top_n=5):
+                return {
+                    "xgboost": [
+                        {
+                            "feature": "win_pct_last_10",
+                            "display_name": "10-Game Win %",
+                            "shap_value": 0.12,
+                            "direction": "favors_home",
+                        }
+                    ]
+                }
+
+        class _PredictionRow:
+            def __init__(self):
+                self._mapping = {
+                    "game_id": "001",
+                    "home_team": "LAL",
+                    "home_team_name": "Los Angeles Lakers",
+                    "away_team": "BOS",
+                    "away_team_name": "Boston Celtics",
+                    "win_pct_last_5": 0.6,
+                    "win_pct_last_10": 0.7,
+                    "avg_point_diff_last_5": 5.2,
+                    "avg_point_diff_last_10": 4.8,
+                    "is_home": 1,
+                    "days_rest": 2,
+                    "is_back_to_back": 0,
+                    "avg_off_rating_last_5": 112.5,
+                    "avg_def_rating_last_5": 108.3,
+                    "avg_pace_last_5": 100.2,
+                    "avg_efg_last_5": 0.545,
+                    "h2h_win_pct": 0.6,
+                    "h2h_avg_margin": 3.5,
+                    "current_streak": 3,
+                    "opp_win_pct_last_5": 0.4,
+                    "opp_win_pct_last_10": 0.5,
+                    "opp_avg_point_diff_last_5": -2.1,
+                    "opp_avg_point_diff_last_10": -1.5,
+                    "opp_days_rest": 1,
+                    "opp_is_back_to_back": 1,
+                    "opp_avg_off_rating_last_5": 108.1,
+                    "opp_avg_def_rating_last_5": 112.4,
+                    "opp_avg_pace_last_5": 98.7,
+                    "opp_avg_efg_last_5": 0.49,
+                }
+
+        class _PersistedPredictionRow:
+            model_name = "xgboost"
+            home_win_prob = 0.61
+            away_win_prob = 0.39
+            confidence = 0.61
+
+        class _EmptyShapRow:
+            model_name = "xgboost"
+            shap_factors = []
+
+        class _PersistedShapRow:
+            model_name = "xgboost"
+            shap_factors = [
+                {
+                    "feature": "win_pct_last_10",
+                    "display_name": "10-Game Win %",
+                    "shap_value": 0.12,
+                    "direction": "favors_home",
+                }
+            ]
+
+        class _Result:
+            def __init__(self, *, one=None, many=None):
+                self._one = one
+                self._many = many or []
+
+            def fetchone(self):
+                return self._one
+
+            def fetchall(self):
+                return self._many
+
+        class _FakeDB:
+            def __init__(self):
+                self.shap_backfilled = False
+
+            def execute(self, query, params=None):
+                q = str(query)
+                if "FROM matches m" in q:
+                    return _Result(one=_PredictionRow())
+                if "SELECT model_name, home_win_prob, away_win_prob, confidence" in q:
+                    return _Result(many=[_PersistedPredictionRow()])
+                if "SELECT model_name, shap_factors" in q:
+                    if self.shap_backfilled:
+                        return _Result(many=[_PersistedShapRow()])
+                    return _Result(many=[_EmptyShapRow()])
+                raise AssertionError(f"Unexpected query: {q} {params}")
+
+        fake_db = _FakeDB()
+
+        def _override_get_db():
+            yield fake_db
+
+        def _fake_persist(_db, game_id, predictions, shap_factors_by_model=None, **_kwargs):
+            assert game_id == "001"
+            assert predictions["xgboost"]["home_win_prob"] == 0.61
+            assert shap_factors_by_model["xgboost"][0]["feature"] == "win_pct_last_10"
+            fake_db.shap_backfilled = True
+            return 1
+
+        monkeypatch.setattr(routes_module, "get_predictor", lambda: _FakePredictor())
+        monkeypatch.setattr(routes_module, "persist_game_predictions", _fake_persist)
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/predictions/game/001")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["explanation"]["xgboost"][0]["feature"] == "win_pct_last_10"
+
     def test_prediction_game_falls_back_to_persisted_predictions_when_live_inference_unavailable(self, monkeypatch):
         class _PredictionRow:
             def __init__(self):

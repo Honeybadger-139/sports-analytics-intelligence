@@ -252,6 +252,12 @@ def _normalize_probability(value) -> Optional[float]:
     return max(0.0, min(1.0, prob))
 
 
+def _is_valid_shap_factor(value) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return isinstance(value.get("feature"), str) and isinstance(value.get("shap_value"), (int, float))
+
+
 def _normalize_prediction_payload(payload) -> Dict[str, Dict]:
     parsed = _normalize_json_field(payload)
     if not isinstance(parsed, dict):
@@ -329,7 +335,11 @@ def _load_persisted_shap_factors(db: Session, game_id: str) -> Dict[str, list]:
     payload: Dict[str, list] = {}
     for row in rows:
         factors = _normalize_json_field(row.shap_factors)
-        payload[row.model_name] = factors if isinstance(factors, list) else []
+        if not isinstance(factors, list):
+            continue
+        valid_factors = [factor for factor in factors if _is_valid_shap_factor(factor)]
+        if valid_factors:
+            payload[row.model_name] = valid_factors
     return payload
 
 
@@ -1234,16 +1244,18 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
 
     predictions = _normalize_prediction_payload({**persisted_predictions, **live_predictions})
     shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
-    if not shap_factors_by_model and predictor is not None and features is not None and live_predictions:
+    if not shap_factors_by_model and predictor is not None and features is not None:
         try:
             shap_factors_by_model = predictor.explain_game(features, top_n=5)
-            persist_game_predictions(
-                db,
-                game_id=game_id,
-                predictions=live_predictions,
-                shap_factors_by_model=shap_factors_by_model,
-            )
-            shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
+            predictions_to_persist = live_predictions or predictions
+            if predictions_to_persist:
+                persist_game_predictions(
+                    db,
+                    game_id=game_id,
+                    predictions=predictions_to_persist,
+                    shap_factors_by_model=shap_factors_by_model,
+                )
+                shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
         except Exception as exc:
             logger.warning("Could not generate SHAP factors for game_id=%s: %s", game_id, exc)
             shap_factors_by_model = {}
@@ -1800,6 +1812,9 @@ async def get_team_game_stats(
                     ELSE home_stats.points
                 END AS opponent_points,
                 tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
+                tgs.field_goals_made, tgs.field_goals_attempted,
+                tgs.three_points_made, tgs.three_points_attempted,
+                tgs.free_throws_made, tgs.free_throws_attempted,
                 tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
                 tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
                 tgs.effective_fg_pct, tgs.true_shooting_pct

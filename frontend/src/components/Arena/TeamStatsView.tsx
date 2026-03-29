@@ -24,6 +24,15 @@ function num(v: number | null, decimals = 1): string {
     return v.toFixed(decimals)
 }
 
+function int(v: number | null | undefined): string {
+    if (v == null) return '—'
+    return Math.round(v).toLocaleString('en-US')
+}
+
+function valueOrZero(v: number | null | undefined): number {
+    return typeof v === 'number' ? v : 0
+}
+
 function TeamRow({ team, isSelected, onClick }: {
     team: { team_id: number; abbreviation: string; full_name: string; city: string };
     isSelected: boolean; onClick: () => void;
@@ -72,12 +81,23 @@ function RecordCard({ label, value, sub }: { label: string; value: string | numb
     )
 }
 
+type StatPadMetric = {
+    key: string
+    chipLabel: string
+    tableLabel: string
+    perGame: string
+    totalOrSample: string
+    detail: string
+}
+
 export default function TeamStatsView() {
     const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [selectedAbbr, setSelectedAbbr] = useState<string | null>(null)
     const [opponent, setOpponent] = useState('')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
+    const [showStatPad, setShowStatPad] = useState(false)
+    const [activeMetricKey, setActiveMetricKey] = useState('points')
 
     const { data: teamsData, loading: teamsLoading } = useTeamsList()
     const { data: statsData, loading: statsLoading, error: statsError } = useTeamGameStats(selectedAbbr, selectedSeasons, 200)
@@ -112,6 +132,120 @@ export default function TeamStatsView() {
         const losses = source.filter(g => g.result === 'L').length
         return { wins, losses, games: source.length }
     }, [hasActiveFilters, filteredGames, allGames])
+    const statPadMetrics = useMemo<StatPadMetric[]>(() => {
+        const totals = filteredGames.reduce((acc, game) => {
+            acc.points += valueOrZero(game.points)
+            acc.rebounds += valueOrZero(game.rebounds)
+            acc.turnovers += valueOrZero(game.turnovers)
+            acc.fieldGoalsMade += valueOrZero(game.field_goals_made)
+            acc.fieldGoalsAttempted += valueOrZero(game.field_goals_attempted)
+            acc.threePointsMade += valueOrZero(game.three_points_made)
+            acc.threePointsAttempted += valueOrZero(game.three_points_attempted)
+            acc.freeThrowsMade += valueOrZero(game.free_throws_made)
+            acc.offensiveRating += valueOrZero(game.offensive_rating)
+            acc.pace += valueOrZero(game.pace)
+            return acc
+        }, {
+            points: 0,
+            rebounds: 0,
+            turnovers: 0,
+            fieldGoalsMade: 0,
+            fieldGoalsAttempted: 0,
+            threePointsMade: 0,
+            threePointsAttempted: 0,
+            freeThrowsMade: 0,
+            offensiveRating: 0,
+            pace: 0,
+        })
+
+        const gamesCount = filteredGames.length
+        const avg = (value: number, decimals = 1) => (gamesCount ? (value / gamesCount).toFixed(decimals) : '—')
+        const totalTwoPointMade = Math.max(totals.fieldGoalsMade - totals.threePointsMade, 0)
+
+        return [
+            {
+                key: 'points',
+                chipLabel: 'Avg points',
+                tableLabel: 'Points',
+                perGame: avg(totals.points),
+                totalOrSample: `${int(totals.points)} total`,
+                detail: 'Scoring output across the current season and filter scope.',
+            },
+            {
+                key: 'rebounds',
+                chipLabel: 'Avg rebounds',
+                tableLabel: 'Rebounds',
+                perGame: avg(totals.rebounds),
+                totalOrSample: `${int(totals.rebounds)} total`,
+                detail: 'Total board control, including both ends of the floor.',
+            },
+            {
+                key: 'three-point-attempts',
+                chipLabel: 'Avg 3PA',
+                tableLabel: 'Three-point attempts',
+                perGame: avg(totals.threePointsAttempted),
+                totalOrSample: `${int(totals.threePointsAttempted)} attempts`,
+                detail: 'How often this team is getting up threes per game.',
+            },
+            {
+                key: 'three-point-made',
+                chipLabel: 'Avg 3PM',
+                tableLabel: 'Three-pointers made',
+                perGame: avg(totals.threePointsMade),
+                totalOrSample: `${int(totals.threePointsMade)} made`,
+                detail: 'Made threes per game across the filtered sample.',
+            },
+            {
+                key: 'two-point-made',
+                chipLabel: 'Avg 2PM',
+                tableLabel: 'Two-pointers made',
+                perGame: avg(totalTwoPointMade),
+                totalOrSample: `${int(totalTwoPointMade)} made`,
+                detail: 'Interior and mid-range makes after subtracting made threes.',
+            },
+            {
+                key: 'free-throws-made',
+                chipLabel: 'Avg FTM',
+                tableLabel: 'Free throws made',
+                perGame: avg(totals.freeThrowsMade),
+                totalOrSample: `${int(totals.freeThrowsMade)} made`,
+                detail: 'Free throws converted per game in this sample.',
+            },
+            {
+                key: 'games',
+                chipLabel: 'Total items',
+                tableLabel: 'Games in sample',
+                perGame: '—',
+                totalOrSample: `${gamesCount} games`,
+                detail: 'Total number of team-game records matching the active filters.',
+            },
+            {
+                key: 'turnovers',
+                chipLabel: 'Avg turnovers',
+                tableLabel: 'Turnovers',
+                perGame: avg(totals.turnovers),
+                totalOrSample: `${int(totals.turnovers)} total`,
+                detail: 'Lost possessions per game across the current selection.',
+            },
+            {
+                key: 'offensive-rating',
+                chipLabel: 'Off. rating',
+                tableLabel: 'Offensive rating',
+                perGame: avg(totals.offensiveRating),
+                totalOrSample: `${gamesCount} game sample`,
+                detail: 'Average points scored per 100 possessions.',
+            },
+            {
+                key: 'pace',
+                chipLabel: 'Pace',
+                tableLabel: 'Pace',
+                perGame: avg(totals.pace),
+                totalOrSample: `${gamesCount} game sample`,
+                detail: 'Estimated possessions per 48 minutes.',
+            },
+        ]
+    }, [filteredGames])
+    const activeMetric = statPadMetrics.find(metric => metric.key === activeMetricKey) ?? statPadMetrics[0]
     const allSeasonsSelected = selectedSeasons.length === SEASONS.length
     const seasonLabel = allSeasonsSelected ? 'All seasons' : selectedSeasons.join(', ')
     const hasSeasonScopeFilter = !(selectedSeasons.length === 1 && selectedSeasons[0] === '2025-26')
@@ -175,6 +309,8 @@ export default function TeamStatsView() {
                                 setOpponent('')
                                 setDateFrom('')
                                 setDateTo('')
+                                setShowStatPad(false)
+                                setActiveMetricKey('points')
                             }}
                         />
                     ))}
@@ -454,11 +590,180 @@ export default function TeamStatsView() {
                         <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>
                             {(hasActiveFilters || hasSeasonScopeFilter) ? 'Filtered Record' : 'Season Record'}
                         </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10, marginBottom: 28 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: showStatPad ? 12 : 28 }}>
                             <RecordCard label="Record" value={`${displayedRecord.wins}-${displayedRecord.losses}`} />
                             <RecordCard label="Games" value={displayedRecord.games} />
                             <RecordCard label="Win %" value={displayedRecord.games > 0 ? ((displayedRecord.wins / displayedRecord.games) * 100).toFixed(1) + '%' : '—'} />
+                            <button
+                                onClick={() => setShowStatPad(prev => !prev)}
+                                style={{
+                                    minHeight: 86,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    textAlign: 'left',
+                                    background: showStatPad ? `${ACCENT}14` : 'var(--bg-panel)',
+                                    border: `1px solid ${showStatPad ? ACCENT : 'var(--border)'}`,
+                                    borderRadius: 'var(--r-md)',
+                                    padding: '14px 16px',
+                                    cursor: 'pointer',
+                                    transition: 'border-color 0.15s ease, background 0.15s ease',
+                                }}
+                            >
+                                <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: showStatPad ? ACCENT : 'var(--text-2)' }}>
+                                    Season Stat Pad
+                                </span>
+                                <div>
+                                    <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-1)', margin: '0 0 4px' }}>
+                                        {showStatPad ? 'Hide advanced breakdown' : 'Open advanced breakdown'}
+                                    </p>
+                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', margin: 0 }}>
+                                        10 filter-aware summary metrics in an inline table.
+                                    </p>
+                                </div>
+                            </button>
                         </div>
+
+                        {showStatPad && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.18 }}
+                                style={{
+                                    marginBottom: 28,
+                                    background: 'var(--bg-panel)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--r-md)',
+                                    padding: '14px',
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        justifyContent: 'space-between',
+                                        gap: 12,
+                                        flexWrap: 'wrap',
+                                        marginBottom: 14,
+                                    }}
+                                >
+                                    <div>
+                                        <p style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: ACCENT, marginBottom: 4 }}>
+                                            Inline Stat Pad
+                                        </p>
+                                        <p style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+                                            {activeMetric?.tableLabel ?? 'Season metrics'}
+                                        </p>
+                                        <p style={{ fontSize: '0.78rem', color: 'var(--text-3)', margin: '6px 0 0' }}>
+                                            {activeMetric?.detail ?? 'Extra team metrics update automatically with the active season and game-log filters.'}
+                                        </p>
+                                    </div>
+                                    <div
+                                        style={{
+                                            minWidth: 180,
+                                            padding: '10px 12px',
+                                            borderRadius: 'var(--r-sm)',
+                                            border: `1px solid ${ACCENT}33`,
+                                            background: `${ACCENT}10`,
+                                        }}
+                                    >
+                                        <p style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: ACCENT, marginBottom: 4 }}>
+                                            Selected Readout
+                                        </p>
+                                        <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1rem', color: 'var(--text-1)', margin: 0 }}>
+                                            {activeMetric?.perGame ?? '—'}
+                                            <span style={{ color: 'var(--text-3)', fontSize: '0.72rem', fontWeight: 600, marginLeft: 6 }}>
+                                                {activeMetric?.perGame === '—' ? 'in sample' : 'per game'}
+                                            </span>
+                                        </p>
+                                        <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', margin: '4px 0 0' }}>
+                                            {activeMetric?.totalOrSample ?? '—'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                                    {statPadMetrics.map(metric => {
+                                        const isActive = metric.key === activeMetric?.key
+                                        return (
+                                            <button
+                                                key={metric.key}
+                                                onClick={() => setActiveMetricKey(metric.key)}
+                                                style={{
+                                                    padding: '7px 11px',
+                                                    borderRadius: 999,
+                                                    border: `1px solid ${isActive ? ACCENT : 'var(--border)'}`,
+                                                    background: isActive ? `${ACCENT}18` : 'var(--bg-base)',
+                                                    color: isActive ? ACCENT : 'var(--text-2)',
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: 700,
+                                                    fontFamily: 'var(--font-mono)',
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                {metric.chipLabel}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                                {['Metric', 'Per game', 'Total / Sample', 'What it shows'].map(header => (
+                                                    <th
+                                                        key={header}
+                                                        style={{
+                                                            padding: '10px 12px',
+                                                            textAlign: header === 'Metric' || header === 'What it shows' ? 'left' : 'right',
+                                                            fontSize: '0.68rem',
+                                                            fontWeight: 700,
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.07em',
+                                                            color: 'var(--text-2)',
+                                                        }}
+                                                    >
+                                                        {header}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {statPadMetrics.map((metric, index) => {
+                                                const isActive = metric.key === activeMetric?.key
+                                                return (
+                                                    <tr
+                                                        key={metric.key}
+                                                        style={{
+                                                            borderBottom: index < statPadMetrics.length - 1 ? '1px solid var(--border)' : 'none',
+                                                            background: isActive ? `${ACCENT}08` : 'transparent',
+                                                        }}
+                                                    >
+                                                        <td style={{ padding: '10px 12px', fontSize: '0.8rem', fontWeight: 700, color: isActive ? ACCENT : 'var(--text-1)' }}>
+                                                            {metric.tableLabel}
+                                                        </td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--text-1)' }}>
+                                                            {metric.perGame}
+                                                        </td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: 'var(--text-2)' }}>
+                                                            {metric.totalOrSample}
+                                                        </td>
+                                                        <td style={{ padding: '10px 12px', fontSize: '0.76rem', color: 'var(--text-3)' }}>
+                                                            {metric.detail}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', margin: '12px 2px 0' }}>
+                                    Positioning note: keeping the stat pad directly under the core record cards makes the extra metrics feel attached to the season summary without pushing the game log too far down.
+                                </p>
+                            </motion.div>
+                        )}
 
                         {/* Game log table */}
                         <p className="section-label" style={{ color: ACCENT, marginBottom: 12 }}>

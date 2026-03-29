@@ -84,50 +84,191 @@ function DisabledState() {
 }
 
 function BriefCard({ item, index }: { item: BriefItem; index: number }) {
-  const [expanded, setExpanded] = useState(false)
+  const [fullOpen, setFullOpen] = useState(false)
+  const [canExpand, setCanExpand] = useState(false)
+  const summaryRef = useRef<HTMLParagraphElement | null>(null)
+
+  useEffect(() => {
+    const measure = () => {
+      const el = summaryRef.current
+      if (!el) return
+
+      const width = el.clientWidth
+      if (width <= 0) return
+
+      const clone = document.createElement('p')
+      clone.textContent = item.summary
+      clone.style.position = 'absolute'
+      clone.style.visibility = 'hidden'
+      clone.style.pointerEvents = 'none'
+      clone.style.left = '-99999px'
+      clone.style.top = '0'
+      clone.style.margin = '0'
+      clone.style.width = `${width}px`
+      clone.style.fontSize = '0.85rem'
+      clone.style.lineHeight = '1.65'
+      clone.style.fontFamily = 'var(--font-ui)'
+      document.body.appendChild(clone)
+
+      const fullHeight = clone.getBoundingClientRect().height
+      clone.remove()
+
+      const computed = getComputedStyle(el)
+      const lineHeight = Number.parseFloat(computed.lineHeight) || 22
+      const clampedHeight = lineHeight * 3
+      const overflow = fullHeight > clampedHeight + 1
+      setCanExpand(overflow)
+      if (!overflow) setFullOpen(false)
+    }
+
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [item.summary])
+
+  useEffect(() => {
+    if (!fullOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullOpen(false)
+    }
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [fullOpen])
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: index * 0.05 }}
-      style={{
-        background: 'var(--bg-panel)', border: '1px solid var(--border)',
-        borderRadius: 'var(--r-md)', overflow: 'hidden', transition: 'border-color 0.15s',
-      }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-    >
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1rem', color: ACCENT, letterSpacing: '0.04em' }}>
-          {item.matchup}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <RiskBadge level={item.risk_level} />
-          <span style={{ padding: '3px 9px', borderRadius: 20, background: 'var(--bg-elevated)', color: 'var(--text-2)', fontSize: '0.7rem', fontFamily: 'var(--font-mono)' }}>
-            {item.citation_count} {item.citation_count === 1 ? 'source' : 'sources'}
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, delay: index * 0.05 }}
+        style={{
+          background: 'var(--bg-panel)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-md)', overflow: 'hidden', transition: 'border-color 0.15s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+      >
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1rem', color: ACCENT, letterSpacing: '0.04em' }}>
+            {item.matchup}
           </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <RiskBadge level={item.risk_level} />
+            <span style={{ padding: '3px 9px', borderRadius: 20, background: 'var(--bg-elevated)', color: 'var(--text-2)', fontSize: '0.7rem', fontFamily: 'var(--font-mono)' }}>
+              {item.citation_count} {item.citation_count === 1 ? 'source' : 'sources'}
+            </span>
+          </div>
         </div>
-      </div>
-      <div style={{ padding: '16px 20px' }}>
-        <p style={{
-          fontSize: '0.85rem', color: 'var(--text-1)', lineHeight: 1.65,
-          display: expanded ? 'block' : '-webkit-box',
-          WebkitLineClamp: expanded ? undefined : 3,
-          WebkitBoxOrient: 'vertical' as const,
-          overflow: expanded ? 'visible' : 'hidden',
-        }}>
-          {item.summary}
-        </p>
-        {item.summary.length > 200 && (
-          <button onClick={() => setExpanded(v => !v)} style={{ background: 'none', border: 'none', padding: '6px 0 0', color: ACCENT, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
-            {expanded ? '↑ Show less' : '↓ Show full brief'}
-          </button>
+        <div style={{ padding: '16px 20px' }}>
+          <p
+            ref={summaryRef}
+            style={{
+              fontSize: '0.85rem', color: 'var(--text-1)', lineHeight: 1.65,
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical' as const,
+              overflow: 'hidden',
+            }}
+          >
+            {item.summary}
+          </p>
+          {canExpand && (
+            <button
+              onClick={() => setFullOpen(true)}
+              style={{ background: 'none', border: 'none', padding: '6px 0 0', color: ACCENT, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              ↓ Show full brief
+            </button>
+          )}
+        </div>
+        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+          <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>game_id: {item.game_id}</span>
+        </div>
+      </motion.div>
+
+      <AnimatePresence>
+        {fullOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setFullOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              background: 'rgba(4, 8, 18, 0.78)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.96 }}
+              transition={{ duration: 0.24, ease: 'easeOut' }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                width: 'min(900px, 100%)',
+                maxHeight: '84vh',
+                overflow: 'auto',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-mid)',
+                borderRadius: 'var(--r-lg)',
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.02rem', color: ACCENT, letterSpacing: '0.04em' }}>
+                    {item.matchup}
+                  </span>
+                  <RiskBadge level={item.risk_level} />
+                  <span style={{ padding: '3px 9px', borderRadius: 20, background: 'var(--bg-elevated)', color: 'var(--text-2)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
+                    {item.citation_count} {item.citation_count === 1 ? 'source' : 'sources'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setFullOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    color: 'var(--text-2)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ padding: '20px 22px 16px' }}>
+                <p style={{ fontSize: '0.92rem', color: 'var(--text-1)', lineHeight: 1.75, margin: 0 }}>
+                  {item.summary}
+                </p>
+              </div>
+              <div style={{ padding: '10px 22px 16px', color: 'var(--text-3)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
+                game_id: {item.game_id}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
-      </div>
-      <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-        <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>game_id: {item.game_id}</span>
-      </div>
-    </motion.div>
+      </AnimatePresence>
+    </>
   )
 }
 
