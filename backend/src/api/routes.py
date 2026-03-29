@@ -95,6 +95,7 @@ def _bootstrap_predictions_from_completed_games(
     db: Session,
     season: str,
     max_games: int = 1500,
+    force_refresh: bool = False,
 ) -> Dict[str, int]:
     """
     Backfill prediction rows for completed games when performance history is empty.
@@ -142,15 +143,23 @@ def _bootstrap_predictions_from_completed_games(
         LEFT JOIN match_features af ON m.game_id = af.game_id AND m.away_team_id = af.team_id
         WHERE m.season = :season
           AND m.is_completed = TRUE
-          AND NOT EXISTS (
-              SELECT 1
-              FROM predictions p
-              WHERE p.game_id = m.game_id
-          )
+          {no_existing_filter}
         ORDER BY m.game_date DESC, m.game_id DESC
         LIMIT :max_games
-        """
+        """.format(
+            no_existing_filter="" if force_refresh else """
+          AND NOT EXISTS (
+              SELECT 1 FROM predictions p WHERE p.game_id = m.game_id
+          )"""
+        )
     )
+
+    if force_refresh:
+        db.execute(
+            text("DELETE FROM predictions WHERE game_id IN (SELECT game_id FROM matches WHERE season = :season)"),
+            {"season": season},
+        )
+        db.commit()
 
     with db.get_bind().connect() as conn:
         df = pd.read_sql(query, conn, params={"season": season, "max_games": max_games})
@@ -1475,6 +1484,10 @@ async def get_prediction_performance(
         default=True,
         description="Backfill historical predictions for completed games when summary is empty.",
     ),
+    force_refresh: bool = Query(
+        default=False,
+        description="Delete and regenerate all predictions for the season using currently loaded models.",
+    ),
     bootstrap_limit: int = Query(default=1500, ge=50, le=5000),
     db: Session = Depends(get_db),
 ):
@@ -1550,13 +1563,14 @@ async def get_prediction_performance(
         "persisted_rows": 0,
         "errors": 0,
     }
-    if bootstrap_if_empty and len(rows) == 0:
+    if force_refresh or (bootstrap_if_empty and len(rows) == 0):
         bootstrap["attempted"] = True
         try:
             result = _bootstrap_predictions_from_completed_games(
                 db,
                 season=season,
                 max_games=bootstrap_limit,
+                force_refresh=force_refresh,
             )
             bootstrap.update(result)
             if bootstrap["persisted_rows"] > 0:
