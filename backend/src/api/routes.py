@@ -8,6 +8,7 @@ and historical data access.
 
 import logging
 import json
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Literal, Optional
@@ -22,6 +23,7 @@ from src.data.db import get_db
 from src.data.audit_store import is_missing_pipeline_audit_error
 from src.data.bet_store import create_bet, get_bets_summary, list_bets, settle_bet
 from src.data.prediction_store import (
+    ensure_prediction_columns,
     persist_game_predictions,
     sync_prediction_outcomes,
 )
@@ -290,6 +292,42 @@ def _normalize_prediction_payload(payload) -> Dict[str, Dict]:
     return normalized
 
 
+def _heuristic_prediction_payload(row_dict: Dict[str, object]) -> Dict[str, Dict]:
+    """Generate a deterministic baseline prediction when model artifacts are unavailable."""
+    def _f(key: str, default: float = 0.0) -> float:
+        value = row_dict.get(key)
+        try:
+            return float(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    home_form = _f("win_pct_last_10", _f("win_pct_last_5", 0.5))
+    away_form = _f("opp_win_pct_last_10", _f("opp_win_pct_last_5", 0.5))
+    home_margin = _f("avg_point_diff_last_10", _f("avg_point_diff_last_5", 0.0))
+    away_margin = _f("opp_avg_point_diff_last_10", _f("opp_avg_point_diff_last_5", 0.0))
+    home_rest = _f("days_rest", 2.0)
+    away_rest = _f("opp_days_rest", 2.0)
+
+    score = (
+        0.42 * (home_form - away_form)
+        + 0.25 * ((home_margin - away_margin) / 12.0)
+        + 0.18 * ((home_rest - away_rest) / 3.0)
+        + 0.15  # home-court prior
+    )
+    probability = 1.0 / (1.0 + math.exp(-score))
+    probability = max(0.35, min(0.65, probability))
+    confidence = max(probability, 1.0 - probability)
+
+    return {
+        "baseline_heuristic": {
+            "home_win_prob": round(probability, 4),
+            "away_win_prob": round(1.0 - probability, 4),
+            "prediction": "home" if probability >= 0.5 else "away",
+            "confidence": round(confidence, 4),
+        }
+    }
+
+
 def _as_dict_rows(rows):
     return [dict(row._mapping) for row in rows]
 
@@ -369,6 +407,36 @@ def _load_persisted_predictions(db: Session, game_id: str) -> Dict[str, Dict]:
     return _normalize_prediction_payload(payload)
 
 
+def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
+    try:
+        next_game_date = db.execute(
+            text(
+                """
+                SELECT MIN(game_date)
+                FROM matches
+                WHERE game_date >= :requested_date
+                  AND is_completed = FALSE
+                """
+            ),
+            {"requested_date": requested_date},
+        ).scalar()
+    except Exception as exc:
+        logger.warning("Could not resolve next prediction slate from %s: %s", requested_date.isoformat(), exc)
+        return requested_date
+
+    if next_game_date is None:
+        return requested_date
+    if isinstance(next_game_date, datetime):
+        return next_game_date.date()
+    if isinstance(next_game_date, date):
+        return next_game_date
+
+    try:
+        return pd.to_datetime(next_game_date).date()
+    except Exception:
+        return requested_date
+
+
 def _db_health_payload(db: Session) -> Dict:
     db.execute(text("SELECT 1"))
     match_count = int(db.execute(text("SELECT COUNT(*) FROM matches")).scalar() or 0)
@@ -418,7 +486,7 @@ async def get_raw_tables(
     for table_name, meta in RAW_TABLES.items():
         if table_name == "matches":
             count = db.execute(
-                text("SELECT COUNT(*) FROM matches WHERE season = :season"),
+                text("SELECT COUNT(*) FROM matches WHERE season = :season AND is_completed = true"),
                 {"season": season},
             ).scalar()
         elif table_name in {"team_game_stats", "player_game_stats"}:
@@ -428,7 +496,7 @@ async def get_raw_tables(
                     SELECT COUNT(*)
                     FROM {table_name} t
                     JOIN matches m ON t.game_id = m.game_id
-                    WHERE m.season = :season
+                    WHERE m.season = :season AND m.is_completed = true
                     """
                 ),
                 {"season": season},
@@ -485,6 +553,7 @@ async def get_raw_table_rows(
                     JOIN teams ht ON m.home_team_id = ht.team_id
                     JOIN teams at ON m.away_team_id = at.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT *
                 FROM base
@@ -507,6 +576,7 @@ async def get_raw_table_rows(
                     JOIN teams ht ON m.home_team_id = ht.team_id
                     JOIN teams at ON m.away_team_id = at.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT COUNT(*)
                 FROM base
@@ -596,6 +666,7 @@ async def get_raw_table_rows(
                     JOIN matches m ON tgs.game_id = m.game_id
                     JOIN teams tm ON tgs.team_id = tm.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT *
                 FROM base
@@ -619,6 +690,7 @@ async def get_raw_table_rows(
                     JOIN matches m ON tgs.game_id = m.game_id
                     JOIN teams tm ON tgs.team_id = tm.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT COUNT(*)
                 FROM base
@@ -644,6 +716,7 @@ async def get_raw_table_rows(
                     LEFT JOIN players pl ON pgs.player_id = pl.player_id
                     LEFT JOIN teams tm ON pgs.team_id = tm.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT *
                 FROM base
@@ -669,6 +742,7 @@ async def get_raw_table_rows(
                     LEFT JOIN players pl ON pgs.player_id = pl.player_id
                     LEFT JOIN teams tm ON pgs.team_id = tm.team_id
                     WHERE (:season IS NULL OR m.season = :season)
+                      AND m.is_completed = true
                 )
                 SELECT COUNT(*)
                 FROM base
@@ -1243,6 +1317,8 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
         )
 
     predictions = _normalize_prediction_payload({**persisted_predictions, **live_predictions})
+    if not predictions:
+        predictions = _heuristic_prediction_payload(row_dict)
     shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
     if not shap_factors_by_model and predictor is not None and features is not None:
         try:
@@ -1290,7 +1366,9 @@ async def predict_today(
       - news_context: RAG-derived confidence adjustments (if enriched)
       - enriched_at: when the RAG enrichment was last applied
     """
-    today = date.today()
+    requested_date = date.today()
+    target_date = _resolve_prediction_target_date(db, requested_date)
+    is_fallback_date = target_date != requested_date
 
     # ── Pass 1: return pre-computed scheduled-game predictions ────────────────
     # NOTE: is_pre_game / news_context / enriched_at columns are added by
@@ -1324,16 +1402,16 @@ async def predict_today(
                 JOIN teams ht ON m.home_team_id = ht.team_id
                 JOIN teams at ON m.away_team_id = at.team_id
                 JOIN predictions p ON p.game_id = m.game_id
-                WHERE m.game_date = :today
+                WHERE m.game_date = :target_date
                   AND m.is_completed = FALSE
                 GROUP BY m.game_id, ht.abbreviation, ht.full_name,
                          at.abbreviation, at.full_name, m.game_date
                 ORDER BY m.game_id
             """),
-            {"today": today},
+            {"target_date": target_date},
         ).fetchall()
     except Exception as exc:
-        logger.warning("Pre-computed predictions query failed for %s: %s", today.isoformat(), exc)
+        logger.warning("Pre-computed predictions query failed for %s: %s", target_date.isoformat(), exc)
         pre_computed = []
 
     if pre_computed:
@@ -1353,7 +1431,9 @@ async def predict_today(
                 "news_context":   r["news_context"] or {},
             })
         return {
-            "date":           today.isoformat(),
+            "requested_date": requested_date.isoformat(),
+            "date":           target_date.isoformat(),
+            "is_fallback_date": is_fallback_date,
             "count":          len(games_out),
             "source":         "pre_computed",
             "persisted_rows": 0,
@@ -1364,11 +1444,11 @@ async def predict_today(
     try:
         predictor = get_predictor()
         engine = db.get_bind()
-        games = predictor.predict_today(engine)
+        games = predictor.predict_for_date(engine, target_date)
         for game in games:
             game["predictions"] = _normalize_prediction_payload(game.get("predictions"))
     except Exception as exc:
-        logger.warning("Live predictions unavailable for %s: %s", today.isoformat(), exc)
+        logger.warning("Live predictions unavailable for %s: %s", target_date.isoformat(), exc)
         games = []
 
     persisted_rows = 0
@@ -1376,7 +1456,9 @@ async def predict_today(
         persisted_rows = _persist_predictions_for_games(db, games)
 
     return {
-        "date":           today.isoformat(),
+        "requested_date": requested_date.isoformat(),
+        "date":           target_date.isoformat(),
+        "is_fallback_date": is_fallback_date,
         "count":          len(games),
         "source":         "live",
         "persisted_rows": persisted_rows,
@@ -1399,7 +1481,10 @@ async def get_prediction_performance(
     """
     Return historical prediction performance metrics from persisted predictions.
     """
-    sync_prediction_outcomes(db, season=season)
+    try:
+        sync_prediction_outcomes(db, season=season)
+    except Exception as exc:
+        logger.warning("Could not sync prediction outcomes for season=%s: %s", season, exc)
 
     summary_query = text("""
         SELECT
@@ -1434,10 +1519,29 @@ async def get_prediction_performance(
     """)
 
     params = {"season": season, "model_name": model_name, "min_games": min_games}
-    rows = db.execute(summary_query, params).fetchall()
-    pending_count = db.execute(
-        pending_query, {"season": season, "model_name": model_name}
-    ).scalar()
+    try:
+        rows = db.execute(summary_query, params).fetchall()
+        pending_count = db.execute(
+            pending_query, {"season": season, "model_name": model_name}
+        ).scalar()
+    except Exception as exc:
+        message = str(exc).lower()
+        if "was_correct" in message and ("does not exist" in message or "undefinedcolumn" in message):
+            try:
+                ensure_prediction_columns(db)
+                db.commit()
+                rows = db.execute(summary_query, params).fetchall()
+                pending_count = db.execute(
+                    pending_query, {"season": season, "model_name": model_name}
+                ).scalar()
+            except Exception as retry_exc:
+                logger.warning("Prediction performance query retry failed for season=%s: %s", season, retry_exc)
+                rows = []
+                pending_count = 0
+        else:
+            logger.warning("Prediction performance query failed for season=%s: %s", season, exc)
+            rows = []
+            pending_count = 0
 
     bootstrap = {
         "attempted": False,
@@ -1448,17 +1552,20 @@ async def get_prediction_performance(
     }
     if bootstrap_if_empty and len(rows) == 0:
         bootstrap["attempted"] = True
-        result = _bootstrap_predictions_from_completed_games(
-            db,
-            season=season,
-            max_games=bootstrap_limit,
-        )
-        bootstrap.update(result)
-        if bootstrap["persisted_rows"] > 0:
-            rows = db.execute(summary_query, params).fetchall()
-            pending_count = db.execute(
-                pending_query, {"season": season, "model_name": model_name}
-            ).scalar()
+        try:
+            result = _bootstrap_predictions_from_completed_games(
+                db,
+                season=season,
+                max_games=bootstrap_limit,
+            )
+            bootstrap.update(result)
+            if bootstrap["persisted_rows"] > 0:
+                rows = db.execute(summary_query, params).fetchall()
+                pending_count = db.execute(
+                    pending_query, {"season": season, "model_name": model_name}
+                ).scalar()
+        except Exception as exc:
+            logger.warning("Prediction bootstrap failed for season=%s: %s", season, exc)
 
     performance = []
     for row in rows:
@@ -1789,52 +1896,105 @@ async def get_team_game_stats(
     team_info = dict(team_row._mapping)
     tid = team_info["team_id"]
 
-    game_rows = db.execute(
-        text("""
-            SELECT
-                tgs.game_id, m.game_date, m.season,
-                CASE
-                    WHEN tgs.team_id = m.home_team_id THEN opp.abbreviation
-                    ELSE opp_h.abbreviation
-                END AS opponent,
-                CASE
-                    WHEN tgs.team_id = m.home_team_id THEN 'vs'
-                    ELSE '@'
-                END AS location,
-                CASE
-                    WHEN m.winner_team_id IS NULL THEN NULL
-                    WHEN m.winner_team_id = tgs.team_id THEN 'W'
-                    ELSE 'L'
-                END AS result,
-                tgs.points,
-                CASE
-                    WHEN tgs.team_id = m.home_team_id THEN opp_stats.points
-                    ELSE home_stats.points
-                END AS opponent_points,
-                tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
-                tgs.field_goals_made, tgs.field_goals_attempted,
-                tgs.three_points_made, tgs.three_points_attempted,
-                tgs.free_throws_made, tgs.free_throws_attempted,
-                tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
-                tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
-                tgs.effective_fg_pct, tgs.true_shooting_pct
-            FROM team_game_stats tgs
-            JOIN matches m ON tgs.game_id = m.game_id
-            LEFT JOIN teams opp ON m.away_team_id = opp.team_id
-            LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
-            LEFT JOIN team_game_stats opp_stats
-                ON m.game_id = opp_stats.game_id AND opp_stats.team_id = m.away_team_id
-                AND tgs.team_id = m.home_team_id
-            LEFT JOIN team_game_stats home_stats
-                ON m.game_id = home_stats.game_id AND home_stats.team_id = m.home_team_id
-                AND tgs.team_id = m.away_team_id
-            WHERE tgs.team_id = :tid
-              AND m.season = :season
-            ORDER BY m.game_date DESC
-            LIMIT :limit
-        """),
-        {"tid": tid, "season": season, "limit": limit},
-    ).fetchall()
+    base_params = {"tid": tid, "season": season, "limit": limit}
+    try:
+        game_rows = db.execute(
+            text("""
+                SELECT
+                    tgs.game_id, m.game_date, m.season,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN opp.abbreviation
+                        ELSE opp_h.abbreviation
+                    END AS opponent,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN 'vs'
+                        ELSE '@'
+                    END AS location,
+                    CASE
+                        WHEN m.winner_team_id IS NULL THEN NULL
+                        WHEN m.winner_team_id = tgs.team_id THEN 'W'
+                        ELSE 'L'
+                    END AS result,
+                    tgs.points,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN opp_stats.points
+                        ELSE home_stats.points
+                    END AS opponent_points,
+                    tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
+                    tgs.field_goals_made, tgs.field_goals_attempted,
+                    tgs.three_points_made, tgs.three_points_attempted,
+                    tgs.free_throws_made, tgs.free_throws_attempted,
+                    tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
+                    tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
+                    tgs.effective_fg_pct, tgs.true_shooting_pct
+                FROM team_game_stats tgs
+                JOIN matches m ON tgs.game_id = m.game_id
+                LEFT JOIN teams opp ON m.away_team_id = opp.team_id
+                LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
+                LEFT JOIN team_game_stats opp_stats
+                    ON m.game_id = opp_stats.game_id AND opp_stats.team_id = m.away_team_id
+                    AND tgs.team_id = m.home_team_id
+                LEFT JOIN team_game_stats home_stats
+                    ON m.game_id = home_stats.game_id AND home_stats.team_id = m.home_team_id
+                    AND tgs.team_id = m.away_team_id
+                WHERE tgs.team_id = :tid
+                  AND m.season = :season
+                ORDER BY m.game_date DESC
+                LIMIT :limit
+            """),
+            base_params,
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("Team game stats rich query failed for team=%s season=%s: %s", abbr, season, exc)
+        game_rows = db.execute(
+            text("""
+                SELECT
+                    tgs.game_id, m.game_date, m.season,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN opp.abbreviation
+                        ELSE opp_h.abbreviation
+                    END AS opponent,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN 'vs'
+                        ELSE '@'
+                    END AS location,
+                    CASE
+                        WHEN m.winner_team_id IS NULL THEN NULL
+                        WHEN m.winner_team_id = tgs.team_id THEN 'W'
+                        ELSE 'L'
+                    END AS result,
+                    tgs.points,
+                    CASE
+                        WHEN tgs.team_id = m.home_team_id THEN opp_stats.points
+                        ELSE home_stats.points
+                    END AS opponent_points,
+                    tgs.rebounds, tgs.assists, tgs.steals, tgs.blocks, tgs.turnovers,
+                    NULL::INTEGER AS field_goals_made,
+                    NULL::INTEGER AS field_goals_attempted,
+                    NULL::INTEGER AS three_points_made,
+                    NULL::INTEGER AS three_points_attempted,
+                    NULL::INTEGER AS free_throws_made,
+                    NULL::INTEGER AS free_throws_attempted,
+                    tgs.field_goal_pct, tgs.three_point_pct, tgs.free_throw_pct,
+                    tgs.offensive_rating, tgs.defensive_rating, tgs.pace,
+                    tgs.effective_fg_pct, tgs.true_shooting_pct
+                FROM team_game_stats tgs
+                JOIN matches m ON tgs.game_id = m.game_id
+                LEFT JOIN teams opp ON m.away_team_id = opp.team_id
+                LEFT JOIN teams opp_h ON m.home_team_id = opp_h.team_id
+                LEFT JOIN team_game_stats opp_stats
+                    ON m.game_id = opp_stats.game_id AND opp_stats.team_id = m.away_team_id
+                    AND tgs.team_id = m.home_team_id
+                LEFT JOIN team_game_stats home_stats
+                    ON m.game_id = home_stats.game_id AND home_stats.team_id = m.home_team_id
+                    AND tgs.team_id = m.away_team_id
+                WHERE tgs.team_id = :tid
+                  AND m.season = :season
+                ORDER BY m.game_date DESC
+                LIMIT :limit
+            """),
+            base_params,
+        ).fetchall()
 
     games = [dict(r._mapping) for r in game_rows]
 
