@@ -378,20 +378,21 @@ def ingest_season(
     team_game_upsert = text(
         """
         INSERT INTO team_game_stats (
-            game_id, team_id,
+            game_id, team_id, opponent_team_id,
             points, rebounds, assists, steals, blocks, turnovers,
             field_goal_pct, three_point_pct, free_throw_pct,
             offensive_rating, defensive_rating, pace,
             effective_fg_pct, true_shooting_pct
         )
         VALUES (
-            :game_id, :team_id,
+            :game_id, :team_id, :opponent_team_id,
             :points, :rebounds, :assists, :steals, :blocks, :turnovers,
             :field_goal_pct, :three_point_pct, :free_throw_pct,
             :offensive_rating, :defensive_rating, :pace,
             :effective_fg_pct, :true_shooting_pct
         )
         ON CONFLICT (game_id, team_id) DO UPDATE SET
+            opponent_team_id  = EXCLUDED.opponent_team_id,
             points           = EXCLUDED.points,
             rebounds         = EXCLUDED.rebounds,
             assists          = EXCLUDED.assists,
@@ -406,13 +407,13 @@ def ingest_season(
             pace             = EXCLUDED.pace,
             effective_fg_pct = EXCLUDED.effective_fg_pct,
             true_shooting_pct = EXCLUDED.true_shooting_pct
-        """
+"""
     )
 
     player_game_upsert = text(
         """
         INSERT INTO player_game_stats (
-            game_id, player_id, team_id,
+            game_id, player_id, team_id, opponent_team_id,
             minutes, points, rebounds, assists, steals, blocks, turnovers,
             personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
             three_points_made, three_points_attempted, three_point_pct,
@@ -420,7 +421,7 @@ def ingest_season(
             plus_minus, fantasy_points, match_played
         )
         VALUES (
-            :game_id, :player_id, :team_id,
+            :game_id, :player_id, :team_id, :opponent_team_id,
             :minutes, :points, :rebounds, :assists, :steals, :blocks, :turnovers,
             :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
             :three_points_made, :three_points_attempted, :three_point_pct,
@@ -429,6 +430,7 @@ def ingest_season(
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
             team_id                  = EXCLUDED.team_id,
+            opponent_team_id         = EXCLUDED.opponent_team_id,
             minutes                  = EXCLUDED.minutes,
             points                   = EXCLUDED.points,
             rebounds                 = EXCLUDED.rebounds,
@@ -651,20 +653,21 @@ def _ingest_events(
     team_game_upsert = text(
         """
         INSERT INTO team_game_stats (
-            game_id, team_id,
+            game_id, team_id, opponent_team_id,
             points, rebounds, assists, steals, blocks, turnovers,
             field_goal_pct, three_point_pct, free_throw_pct,
             offensive_rating, defensive_rating, pace,
             effective_fg_pct, true_shooting_pct
         )
         VALUES (
-            :game_id, :team_id,
+            :game_id, :team_id, :opponent_team_id,
             :points, :rebounds, :assists, :steals, :blocks, :turnovers,
             :field_goal_pct, :three_point_pct, :free_throw_pct,
             :offensive_rating, :defensive_rating, :pace,
             :effective_fg_pct, :true_shooting_pct
         )
         ON CONFLICT (game_id, team_id) DO UPDATE SET
+            opponent_team_id  = EXCLUDED.opponent_team_id,
             points           = EXCLUDED.points,
             rebounds         = EXCLUDED.rebounds,
             assists          = EXCLUDED.assists,
@@ -679,13 +682,13 @@ def _ingest_events(
             pace             = EXCLUDED.pace,
             effective_fg_pct = EXCLUDED.effective_fg_pct,
             true_shooting_pct = EXCLUDED.true_shooting_pct
-        """
+"""
     )
 
     player_game_upsert = text(
         """
         INSERT INTO player_game_stats (
-            game_id, player_id, team_id,
+            game_id, player_id, team_id, opponent_team_id,
             minutes, points, rebounds, assists, steals, blocks, turnovers,
             personal_fouls, field_goals_made, field_goals_attempted, field_goal_pct,
             three_points_made, three_points_attempted, three_point_pct,
@@ -693,7 +696,7 @@ def _ingest_events(
             plus_minus, fantasy_points, match_played
         )
         VALUES (
-            :game_id, :player_id, :team_id,
+            :game_id, :player_id, :team_id, :opponent_team_id,
             :minutes, :points, :rebounds, :assists, :steals, :blocks, :turnovers,
             :personal_fouls, :field_goals_made, :field_goals_attempted, :field_goal_pct,
             :three_points_made, :three_points_attempted, :three_point_pct,
@@ -702,6 +705,7 @@ def _ingest_events(
         )
         ON CONFLICT (game_id, player_id) DO UPDATE SET
             team_id                  = EXCLUDED.team_id,
+            opponent_team_id         = EXCLUDED.opponent_team_id,
             minutes                  = EXCLUDED.minutes,
             points                   = EXCLUDED.points,
             rebounds                 = EXCLUDED.rebounds,

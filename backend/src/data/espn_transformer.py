@@ -590,6 +590,7 @@ def transform_team_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
             {
                 "game_id": game_id,
                 "team_id": team_id,
+                "opponent_team_id": team_ids[j],
                 "points": _safe_int(pts),          # from header_scores (not in stat map)
                 "rebounds": _safe_int(reb),
                 "assists": _safe_int(sm.get("assists")),
@@ -717,6 +718,18 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
     boxscore = raw_summary.get("boxscore") or {}
     players_data: list[dict] = boxscore.get("players") or []
 
+    # Build a team_id → opponent_team_id mapping from the two teams in the boxscore.
+    # ESPN always returns exactly 2 team entries (away, home).
+    _all_team_ids: list[int] = [
+        tid
+        for entry in players_data
+        if (tid := _safe_int((entry.get("team") or {}).get("id"))) is not None
+    ]
+    _opponent_map: dict[int, int | None] = {}
+    if len(_all_team_ids) == 2:
+        _opponent_map[_all_team_ids[0]] = _all_team_ids[1]
+        _opponent_map[_all_team_ids[1]] = _all_team_ids[0]
+
     rows: list[dict] = []
 
     for team_entry in players_data:
@@ -836,6 +849,7 @@ def transform_player_game_stats(raw_summary: dict, game_id: str) -> list[dict]:
                     "game_id": game_id,
                     "player_id": player_id,
                     "team_id": team_id,
+                    "opponent_team_id": _opponent_map.get(team_id) if team_id is not None else None,
                     "minutes": minutes,
                     "points": pts if pts is not None else 0,
                     "rebounds": reb if reb is not None else 0,
