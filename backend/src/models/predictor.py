@@ -22,6 +22,7 @@ import os
 import json
 import logging
 import re
+from datetime import date as calendar_date
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -482,15 +483,14 @@ class Predictor:
             explanations[name] = top_shap_factors(model, features, name, top_n=top_n)
         return explanations
     
-    def predict_today(self, engine) -> List[Dict]:
+    def predict_for_date(self, engine, target_date: Optional[calendar_date] = None) -> List[Dict]:
         """
-        Generate predictions for all games scheduled today.
-        
-        Returns list of dicts with game info + predictions.
+        Generate predictions for all uncompleted games scheduled on a target date.
+
+        Defaults to the current date when no explicit target date is provided.
         """
-        from datetime import date
-        today = date.today()
-        
+        target_date = target_date or calendar_date.today()
+
         query = text("""
             SELECT 
                 m.game_id,
@@ -525,13 +525,13 @@ class Predictor:
             JOIN teams at ON m.away_team_id = at.team_id
             LEFT JOIN match_features hf ON m.game_id = hf.game_id AND m.home_team_id = hf.team_id
             LEFT JOIN match_features af ON m.game_id = af.game_id AND m.away_team_id = af.team_id
-            WHERE m.game_date = :today
+            WHERE m.game_date = :target_date
                 AND m.is_completed = FALSE
             ORDER BY m.game_date
         """)
         
         with engine.connect() as conn:
-            df = pd.read_sql(query, conn, params={"today": today})
+            df = pd.read_sql(query, conn, params={"target_date": target_date})
         
         if df.empty:
             return []
@@ -554,3 +554,7 @@ class Predictor:
             })
         
         return results
+
+    def predict_today(self, engine) -> List[Dict]:
+        """Backward-compatible helper for same-day predictions."""
+        return self.predict_for_date(engine, calendar_date.today())

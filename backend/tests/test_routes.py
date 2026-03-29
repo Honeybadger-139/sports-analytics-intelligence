@@ -5,7 +5,7 @@ These tests verify that endpoints return correct response shapes
 and status codes. They require a running database for full integration
 testing, so some tests are marked to skip when DB is unavailable.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -125,13 +125,16 @@ class TestPredictionEndpoints:
         response = client.get("/api/v1/predictions/bet-sizing")
         assert response.status_code == 422
 
-    def test_predictions_today_returns_games(self, monkeypatch):
+    def test_predictions_today_returns_games_for_next_available_date(self, monkeypatch):
+        next_date = date.today() + timedelta(days=1)
+
         class _FakePredictor:
-            def predict_today(self, _engine):
+            def predict_for_date(self, _engine, target_date):
+                assert target_date == next_date
                 return [
                     {
                         "game_id": "001",
-                        "game_date": "2026-02-28",
+                        "game_date": next_date.isoformat(),
                         "home_team": "LAL",
                         "home_team_name": "Los Angeles Lakers",
                         "away_team": "BOS",
@@ -148,17 +151,23 @@ class TestPredictionEndpoints:
                 ]
 
         class _Result:
-            def __init__(self, many=None):
+            def __init__(self, many=None, scalar_value=None):
                 self._many = many or []
+                self._scalar_value = scalar_value
 
             def fetchall(self):
                 return self._many
+
+            def scalar(self):
+                return self._scalar_value
 
         class _FakeDB:
             def execute(self, query, _params=None):
                 q = str(query)
                 if "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS" in q:
                     return _Result(many=[])
+                if "SELECT MIN(game_date)" in q:
+                    return _Result(scalar_value=next_date)
                 if "json_object_agg" in q and "FROM matches m" in q:
                     return _Result(many=[])
                 raise AssertionError(f"Unexpected query: {q}")
@@ -181,6 +190,9 @@ class TestPredictionEndpoints:
         assert response.status_code == 200
         payload = response.json()
         assert payload["count"] == 1
+        assert payload["date"] == next_date.isoformat()
+        assert payload["requested_date"] == date.today().isoformat()
+        assert payload["is_fallback_date"] is True
         assert payload["persisted_rows"] == 1
         assert payload["games"][0]["game_id"] == "001"
 
@@ -207,17 +219,23 @@ class TestPredictionEndpoints:
                 }
 
         class _Result:
-            def __init__(self, many=None):
+            def __init__(self, many=None, scalar_value=None):
                 self._many = many or []
+                self._scalar_value = scalar_value
 
             def fetchall(self):
                 return self._many
+
+            def scalar(self):
+                return self._scalar_value
 
         class _FakeDB:
             def execute(self, query, _params=None):
                 q = str(query)
                 if "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS" in q:
                     return _Result(many=[])
+                if "SELECT MIN(game_date)" in q:
+                    return _Result(scalar_value=date.today())
                 if "json_object_agg" in q and "FROM matches m" in q:
                     assert "m.home_team_id = ht.team_id" in q
                     assert "m.away_team_id = at.team_id" in q
@@ -245,6 +263,71 @@ class TestPredictionEndpoints:
         assert payload["source"] == "pre_computed"
         assert payload["count"] == 1
         assert payload["games"][0]["predictions"]["ensemble"]["confidence"] == 0.73
+
+    def test_predictions_today_uses_precomputed_rows_for_next_available_date(self, monkeypatch):
+        next_date = date.today() + timedelta(days=1)
+
+        class _PrecomputedRow:
+            def __init__(self):
+                self._mapping = {
+                    "game_id": "pre-002",
+                    "home_team": "NYK",
+                    "home_team_name": "New York Knicks",
+                    "away_team": "CHA",
+                    "away_team_name": "Charlotte Hornets",
+                    "game_date": next_date,
+                    "predictions": {
+                        "ensemble": {
+                            "home_win_prob": 0.27,
+                            "away_win_prob": 0.73,
+                            "confidence": 0.0,
+                        }
+                    },
+                    "is_pre_game": True,
+                    "enriched_at": datetime(2026, 3, 27, 5, 0, 0),
+                    "news_context": {},
+                }
+
+        class _Result:
+            def __init__(self, many=None, scalar_value=None):
+                self._many = many or []
+                self._scalar_value = scalar_value
+
+            def fetchall(self):
+                return self._many
+
+            def scalar(self):
+                return self._scalar_value
+
+        class _FakeDB:
+            def execute(self, query, _params=None):
+                q = str(query)
+                if "SELECT MIN(game_date)" in q:
+                    return _Result(scalar_value=next_date)
+                if "json_object_agg" in q and "FROM matches m" in q:
+                    return _Result(many=[_PrecomputedRow()])
+                raise AssertionError(f"Unexpected query: {q}")
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        def _predictor_should_not_run():
+            raise AssertionError("Live predictor should not be called when precomputed rows exist")
+
+        monkeypatch.setattr(routes_module, "get_predictor", _predictor_should_not_run)
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/predictions/today")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["source"] == "pre_computed"
+        assert payload["date"] == next_date.isoformat()
+        assert payload["requested_date"] == date.today().isoformat()
+        assert payload["is_fallback_date"] is True
+        assert payload["games"][0]["game_id"] == "pre-002"
 
     def test_prediction_game_returns_persisted_shap_factors(self, monkeypatch):
         class _FakePredictor:
@@ -616,6 +699,78 @@ class TestPredictionEndpoints:
         payload = response.json()
         assert payload["home_team"] == "DET"
         assert payload["predictions"]["ensemble"]["home_win_prob"] == 0.55
+
+    def test_prediction_game_returns_baseline_when_no_model_artifacts_or_persisted_rows(self, monkeypatch):
+        class _PredictionRow:
+            def __init__(self):
+                self._mapping = {
+                    "game_id": "001",
+                    "home_team": "LAL",
+                    "home_team_name": "Los Angeles Lakers",
+                    "away_team": "BOS",
+                    "away_team_name": "Boston Celtics",
+                    "win_pct_last_5": 0.6,
+                    "win_pct_last_10": 0.7,
+                    "avg_point_diff_last_5": 5.2,
+                    "avg_point_diff_last_10": 4.8,
+                    "is_home": 1,
+                    "days_rest": 2,
+                    "is_back_to_back": 0,
+                    "avg_off_rating_last_5": 112.5,
+                    "avg_def_rating_last_5": 108.3,
+                    "avg_pace_last_5": 100.2,
+                    "avg_efg_last_5": 0.545,
+                    "h2h_win_pct": 0.6,
+                    "h2h_avg_margin": 3.5,
+                    "current_streak": 3,
+                    "opp_win_pct_last_5": 0.4,
+                    "opp_win_pct_last_10": 0.5,
+                    "opp_avg_point_diff_last_5": -2.1,
+                    "opp_avg_point_diff_last_10": -1.5,
+                    "opp_days_rest": 1,
+                    "opp_is_back_to_back": 1,
+                    "opp_avg_off_rating_last_5": 108.1,
+                    "opp_avg_def_rating_last_5": 112.4,
+                    "opp_avg_pace_last_5": 98.7,
+                    "opp_avg_efg_last_5": 0.49,
+                }
+
+        class _Result:
+            def __init__(self, *, one=None, many=None):
+                self._one = one
+                self._many = many or []
+
+            def fetchone(self):
+                return self._one
+
+            def fetchall(self):
+                return self._many
+
+        class _FakeDB:
+            def execute(self, query, params=None):
+                q = str(query)
+                if "FROM matches m" in q:
+                    return _Result(one=_PredictionRow())
+                if "SELECT model_name, home_win_prob, away_win_prob, confidence" in q:
+                    return _Result(many=[])
+                if "SELECT model_name, shap_factors" in q:
+                    return _Result(many=[])
+                raise AssertionError(f"Unexpected query: {q} {params}")
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        monkeypatch.setattr(routes_module, "get_predictor", lambda: (_ for _ in ()).throw(RuntimeError("models unavailable")))
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/predictions/game/001")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert "baseline_heuristic" in payload["predictions"]
+        assert payload["predictions"]["baseline_heuristic"]["home_win_prob"] > 0
 
     def test_predictions_performance_returns_summary(self, monkeypatch):
         class _Result:
@@ -1143,6 +1298,84 @@ class TestDataOpsAndPlayerSearchEndpoints:
         assert payload["pipeline_timing"]["avg_ingestion_seconds"] == 12.4
         assert payload["top_teams"][0]["abbreviation"] == "BOS"
         assert len(payload["recent_runs"]) == 1
+
+
+class TestTeamStatsEndpoints:
+    def test_team_game_stats_survives_schema_drift_when_shot_count_columns_missing(self):
+        class _Row:
+            def __init__(self, mapping):
+                self._mapping = mapping
+
+        class _Result:
+            def __init__(self, *, one=None, many=None):
+                self._one = one
+                self._many = many or []
+
+            def fetchone(self):
+                return self._one
+
+            def fetchall(self):
+                return self._many
+
+        class _FakeDB:
+            def execute(self, query, params=None):
+                q = str(query)
+                if "FROM teams WHERE abbreviation" in q:
+                    return _Result(one=_Row({
+                        "team_id": 1610612737,
+                        "abbreviation": "ATL",
+                        "full_name": "Atlanta Hawks",
+                        "city": "Atlanta",
+                    }))
+                if "tgs.field_goals_made" in q and "FROM team_game_stats tgs" in q:
+                    raise RuntimeError('psycopg2.errors.UndefinedColumn: column "field_goals_made" does not exist')
+                if "NULL::INTEGER AS field_goals_made" in q:
+                    return _Result(many=[_Row({
+                        "game_id": "0022500859",
+                        "game_date": date(2026, 3, 29),
+                        "season": "2025-26",
+                        "opponent": "BOS",
+                        "location": "vs",
+                        "result": "W",
+                        "points": 112,
+                        "opponent_points": 105,
+                        "rebounds": 44,
+                        "assists": 26,
+                        "steals": 8,
+                        "blocks": 5,
+                        "turnovers": 12,
+                        "field_goals_made": None,
+                        "field_goals_attempted": None,
+                        "three_points_made": None,
+                        "three_points_attempted": None,
+                        "free_throws_made": None,
+                        "free_throws_attempted": None,
+                        "field_goal_pct": 0.47,
+                        "three_point_pct": 0.36,
+                        "free_throw_pct": 0.79,
+                        "offensive_rating": 114.2,
+                        "defensive_rating": 109.7,
+                        "pace": 99.4,
+                        "effective_fg_pct": 0.55,
+                        "true_shooting_pct": 0.59,
+                    })])
+                raise AssertionError(f"Unexpected query: {q} {params}")
+
+        def _override_get_db():
+            yield _FakeDB()
+
+        app.dependency_overrides[get_db] = _override_get_db
+        try:
+            response = client.get("/api/v1/teams/ATL/game-stats?season=2025-26&limit=5")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["team"]["abbreviation"] == "ATL"
+        assert payload["record"]["wins"] == 1
+        assert payload["games"][0]["field_goals_made"] is None
+        assert payload["games"][0]["points"] == 112
 
 
 class TestDocumentation:

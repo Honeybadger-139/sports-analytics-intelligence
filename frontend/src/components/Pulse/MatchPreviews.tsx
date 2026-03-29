@@ -15,6 +15,15 @@ function fmtDate(iso: string): string {
   } catch { return iso }
 }
 
+function fmtLongDate(iso: string | undefined): string {
+  if (!iso) return 'Upcoming slate'
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  } catch {
+    return iso
+  }
+}
+
 // ── Today's prediction card ──────────────────────────────────────────────────
 
 function WinBar({ homeProb, homeTeam, awayTeam }: { homeProb: number; homeTeam: string; awayTeam: string }) {
@@ -55,7 +64,7 @@ function TodayCard({ game, index, onSelect }: { game: TodayGamePrediction; index
     >
       <div style={{ padding: '6px 16px', background: `color-mix(in srgb, ${ACCENT} 7%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${ACCENT} 13%, transparent)` }}>
         <span style={{ fontSize: '0.68rem', fontWeight: 700, color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          Today's Game · Click for box score
+          Match Preview · Click for box score
         </span>
       </div>
 
@@ -357,6 +366,7 @@ export default function MatchPreviews() {
   const { data: todayData, loading: todayLoading, error: todayError, refresh } = useTodaysPredictions()
 
   const todayGames: TodayGamePrediction[] = todayData?.games ?? []
+  const showingFallbackDate = Boolean(todayData?.is_fallback_date)
   const recentMatches: MatchRow[]         = matches?.matches ?? []
 
   return (
@@ -391,9 +401,22 @@ export default function MatchPreviews() {
 
       {/* ── Today's predictions ── */}
       <p className="section-label" style={{ marginBottom: 12, color: ACCENT }}>
-        Today's Games &amp; Predictions
-        {todayData && ` — ${todayData.date}`}
+        {showingFallbackDate ? 'Next Scheduled Games & Predictions' : 'Today\'s Games & Predictions'}
+        {todayData && ` — ${fmtLongDate(todayData.date)}`}
       </p>
+
+      {!todayLoading && !todayError && showingFallbackDate && todayData && (
+        <div style={{
+          padding: '12px 16px', marginBottom: 16,
+          background: 'color-mix(in srgb, var(--bg-panel) 92%, transparent)',
+          border: `1px solid color-mix(in srgb, ${ACCENT} 24%, transparent)`,
+          borderRadius: 'var(--r-md)',
+        }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+            Today&apos;s slate is complete, so this panel rolled forward to the next scheduled games on <span style={{ color: ACCENT, fontWeight: 700 }}>{fmtLongDate(todayData.date)}</span>.
+          </p>
+        </div>
+      )}
 
       {todayLoading && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12, marginBottom: 36 }}>
@@ -415,8 +438,8 @@ export default function MatchPreviews() {
           background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
         }}>
           <p style={{ fontSize: '1.4rem', marginBottom: 8 }}>🏀</p>
-          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>No games scheduled today</p>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Check back later or browse recent match history below.</p>
+          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>No upcoming scheduled games found</p>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Browse recent match history below while the next slate is still being prepared.</p>
         </div>
       )}
 

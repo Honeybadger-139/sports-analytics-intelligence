@@ -10,10 +10,37 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+const compactNumberFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 3,
+})
+
+function formatNumber(value: number): string {
+  const formatted = compactNumberFormatter.format(value)
+  return formatted === '-0' ? '0' : formatted
+}
+
+function formatNumericLikeString(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const looksDecimal = trimmed.includes('.') || /e/i.test(trimmed)
+  if (!looksDecimal) return null
+
+  const normalized = trimmed.replace(/,/g, '')
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return null
+
+  return formatNumber(parsed)
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'number') {
-    return Number.isInteger(value) ? value.toString() : value.toFixed(3).replace(/\.?0+$/, '')
+    return Number.isInteger(value) ? value.toString() : formatNumber(value)
+  }
+  if (typeof value === 'string') {
+    const formatted = formatNumericLikeString(value)
+    return formatted ?? value
   }
   return String(value)
 }

@@ -38,6 +38,7 @@ from src.intelligence.langfuse_client import (
     record_generation,
     set_session_context,
 )
+from src.intelligence.rag_refresh_guard import trigger_guarded_rag_refresh
 from src.intelligence.retriever import ContextRetriever
 from src.intelligence.vector_store import VectorStore
 
@@ -459,6 +460,20 @@ class ChatService:
         return None
 
     @staticmethod
+    def _is_point_guard_assists_query(message: str) -> bool:
+        """
+        Detect point-guard assist ranking requests even when the user uses
+        shorthand or guard-based labels instead of the exact phrase
+        "point guard".
+        """
+        lower = (message or "").lower()
+        if "assist" not in lower:
+            return False
+        if not any(token in lower for token in ("top", "compare", "highest", "best", "ranking", "rank")):
+            return False
+        return bool(re.search(r"\b(point[-\s]?guard(?:s)?|pg|g|guard(?:s)?)\b", lower))
+
+    @staticmethod
     def _previous_season(season: str) -> str:
         """
         Convert a season key like 2025-26 -> 2024-25.
@@ -662,9 +677,7 @@ class ChatService:
 
         # Top point guards by assists per game
         if (
-            "assist" in lower
-            and ("point guard" in lower or "pg" in lower)
-            and ("top" in lower or "compare" in lower or "highest" in lower)
+            cls._is_point_guard_assists_query(message)
         ):
             return (
                 "SELECT\n"
@@ -678,7 +691,9 @@ class ChatService:
                 "JOIN players p ON p.player_id = pss.player_id\n"
                 "JOIN teams t ON t.team_id = pss.team_id\n"
                 f"WHERE pss.season = '{season}'\n"
-                "  AND (p.position ILIKE 'PG%' OR p.position ILIKE '%PG%' OR p.position ILIKE 'G%')\n"
+                "  AND (\n"
+                "    COALESCE(p.position, '') ~* '(^|[^a-z])(pg|g|point guard|guard)([^a-z]|$)'\n"
+                "  )\n"
                 "  AND pss.games_played > 0\n"
                 "ORDER BY assists_per_game DESC\n"
                 "LIMIT 5"
@@ -744,24 +759,13 @@ class ChatService:
             retrieval_meta = {"docs_used": 0}
 
         if not docs:
-            lower_msg = message.lower()
-            is_schedule_q = any(w in lower_msg for w in (
-                "tomorrow", "tonight", "fixture", "schedule", "upcoming", "next game", "this week"
-            ))
-            if is_schedule_q:
-                reply = (
-                    "I don't have today's or tomorrow's schedule indexed yet — the news feeds "
-                    "may not have published the matchup previews. The database only stores "
-                    "completed games, so future fixtures aren't queryable directly. "
-                    "Try checking NBA.com for today's schedule, or ask me about "
-                    "recent results, standings, or player stats."
-                )
-            else:
-                reply = (
-                "I don't have recent news or context documents indexed for that topic. "
-                "The context store may be empty or the RSS feeds haven't been fetched yet. "
-                "Try asking a stats question instead — I can query your live Postgres data directly."
-            )
+            rag_topic = self._rag_no_docs_topic(message)
+            try:
+                trigger_guarded_rag_refresh(reason=f"rag_empty:{rag_topic}")
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                logger.warning("Failed to schedule guarded RAG refresh: %s", exc, exc_info=True)
+
+            reply = self._rag_no_docs_reply(message)
             if return_meta:
                 return reply, meta
             return reply
@@ -815,6 +819,63 @@ class ChatService:
     def _rag_fallback(docs: List[Dict]) -> str:
         titles = "; ".join(d.get("title", "update") for d in docs[:3] if d.get("title"))
         return f"Recent context: {titles}." if titles else "No recent context available."
+
+    @staticmethod
+    def _rag_no_docs_topic(message: str) -> str:
+        lower_msg = (message or "").lower()
+
+        injury_keywords = (
+            "injur", "questionable", "doubtful", "probable", "available",
+            "lineup", "line-up", "out", "playing", "health", "status",
+        )
+        trade_keywords = (
+            "trade", "trading", "rumor", "rumour", "deadline", "free agent",
+            "free-agent", "signing", "move", "moves",
+        )
+        schedule_keywords = (
+            "tomorrow", "tonight", "fixture", "fixtures", "schedule", "scheduled",
+            "upcoming", "next game", "next match", "this week", "weekend",
+        )
+
+        if any(keyword in lower_msg for keyword in injury_keywords):
+            return "injury"
+        if any(keyword in lower_msg for keyword in trade_keywords):
+            return "trade"
+        if any(keyword in lower_msg for keyword in schedule_keywords):
+            return "schedule"
+        return "generic"
+
+    @classmethod
+    def _rag_no_docs_reply(cls, message: str) -> str:
+        topic = cls._rag_no_docs_topic(message)
+
+        if topic == "injury":
+            return (
+                "I don't have injury-report context indexed yet for that question. "
+                "Try asking about completed games, player stats, or team standings, "
+                "or refresh the news feed and try again."
+            )
+
+        if topic == "trade":
+            return (
+                "I don't have trade-rumor context indexed yet for that question. "
+                "Try asking about completed games, player stats, or team standings, "
+                "or refresh the news feed and try again."
+            )
+
+        if topic == "schedule":
+            return (
+                "I don't have upcoming schedule previews indexed yet. "
+                "The database only stores completed games, so future fixtures "
+                "aren't queryable directly. Try asking about recent results, "
+                "player stats, or standings."
+            )
+
+        return (
+            "I don't have recent news or context documents indexed for that topic. "
+            "The context store may be empty or the feeds may not have been fetched yet. "
+            "Try asking about stats, standings, or completed games."
+        )
 
     # ── DB path ───────────────────────────────────────────────────────────
 
@@ -871,9 +932,12 @@ class ChatService:
             )
 
         rule_sql = self._rule_based_sql(message)
+        prefer_rule_sql = bool(rule_sql and self._is_point_guard_assists_query(message))
 
         # ── Step 1: Generate SQL ──────────────────────────────────────────
-        if self.llm.available:
+        if prefer_rule_sql:
+            raw_sql = rule_sql
+        elif self.llm.available:
             sql_prompt = (
                 f"You are a PostgreSQL expert for a sports analytics platform (NBA data).\n"
                 f"Generate ONE valid SELECT query to answer the user's question.\n\n"

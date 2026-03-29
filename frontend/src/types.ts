@@ -399,6 +399,8 @@ export interface TodayGamePrediction {
 
 export interface TodayPredictionsResponse {
   date: string
+  requested_date?: string
+  is_fallback_date?: boolean
   count: number
   persisted_rows: number
   games: TodayGamePrediction[]

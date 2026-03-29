@@ -46,7 +46,7 @@ def ensure_predictions_table(db: Session) -> None:
             """
         )
     )
-    db.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS shap_factors JSONB"))
+    ensure_prediction_columns(db)
     db.commit()
 
 
@@ -59,6 +59,18 @@ def ensure_pre_game_columns(db: Session) -> None:
     ]:
         db.execute(text(stmt))
     db.commit()
+
+
+def ensure_prediction_columns(db: Session) -> None:
+    """Idempotently align legacy predictions schema with current API expectations."""
+    for stmt in [
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS shap_factors JSONB",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS was_correct BOOLEAN",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_pre_game BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS news_context JSONB",
+        "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMP",
+    ]:
+        db.execute(text(stmt))
 
 
 def persist_game_predictions(
@@ -185,22 +197,42 @@ def sync_prediction_outcomes(
 
     where_clause = " AND ".join(filters)
 
-    result = db.execute(
-        text(
-            f"""
-            UPDATE predictions p
-            SET was_correct = CASE
-                WHEN m.winner_team_id = m.home_team_id THEN (p.home_win_prob >= p.away_win_prob)
-                ELSE (p.away_win_prob > p.home_win_prob)
-            END
-            FROM matches m
-            WHERE p.game_id = m.game_id
-              AND {where_clause}
-              AND p.home_win_prob IS NOT NULL
-              AND p.away_win_prob IS NOT NULL
-            """
-        ),
-        params,
-    )
-    db.commit()
-    return int(result.rowcount or 0)
+    attempts = 0
+    while attempts < 2:
+        try:
+            result = db.execute(
+                text(
+                    f"""
+                    UPDATE predictions p
+                    SET was_correct = CASE
+                        WHEN m.winner_team_id = m.home_team_id THEN (p.home_win_prob >= p.away_win_prob)
+                        ELSE (p.away_win_prob > p.home_win_prob)
+                    END
+                    FROM matches m
+                    WHERE p.game_id = m.game_id
+                      AND {where_clause}
+                      AND p.home_win_prob IS NOT NULL
+                      AND p.away_win_prob IS NOT NULL
+                    """
+                ),
+                params,
+            )
+            db.commit()
+            return int(result.rowcount or 0)
+        except Exception as exc:
+            db.rollback()
+            message = str(exc).lower()
+            if attempts == 0 and (
+                is_missing_predictions_table_error(exc)
+                or ("was_correct" in message and ("does not exist" in message or "undefinedcolumn" in message))
+            ):
+                if is_missing_predictions_table_error(exc):
+                    ensure_predictions_table(db)
+                else:
+                    ensure_prediction_columns(db)
+                    db.commit()
+                attempts += 1
+                continue
+            raise
+
+    return 0

@@ -2,6 +2,8 @@
 Tests for deterministic NL->SQL fallback templates in ChatService.
 """
 
+import pytest
+
 from src.intelligence.chat_service import ChatService
 
 
@@ -51,12 +53,37 @@ class _FakeLLMUnavailable:
     available = False
 
 
+class _FakeLLMReturnsBadButValidSQL:
+    available = True
+
+    def generate(self, *args, **kwargs):  # noqa: ARG002 - parity with LLM interface
+        return "SELECT 1 AS value LIMIT 1"
+
+
+class _FakeRetrieverEmpty:
+    def retrieve(self, *args, **kwargs):
+        return [], {"docs_used": 0}
+
+
 def _build_service_with_fake_db(fake_db):
     service = ChatService.__new__(ChatService)
     service.db = fake_db
     service.sport = "nba"
     service.llm = _FakeLLMUnavailable()
     service._schema_context = "matches(game_id, season, home_team_id, away_team_id, winner_team_id)\nteams(team_id, full_name, abbreviation)"
+    return service
+
+
+def _build_service_with_empty_rag():
+    service = ChatService.__new__(ChatService)
+    service._retriever = _FakeRetrieverEmpty()
+    service.llm = _FakeLLMUnavailable()
+    return service
+
+
+def _build_service_with_bad_llm_and_fake_db(fake_db):
+    service = _build_service_with_fake_db(fake_db)
+    service.llm = _FakeLLMReturnsBadButValidSQL()
     return service
 
 
@@ -102,6 +129,21 @@ def test_rule_based_sql_generates_top_point_guards_assist_comparison():
     assert "LIMIT 5" in sql
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Compare assists per game for the top 5 point guards",
+        "Top 5 guards by assists per game this season",
+    ],
+)
+def test_rule_based_sql_recognizes_point_guard_assist_variants(message):
+    sql = ChatService._rule_based_sql(message)
+    assert sql is not None
+    assert "assists_per_game" in sql
+    assert "COALESCE(p.position" in sql
+    assert "LIMIT 5" in sql
+
+
 def test_rule_based_sql_generates_team_average_player_stats_query():
     sql = ChatService._rule_based_sql("What are the average player stats for the Celtics this season?")
     assert sql is not None
@@ -129,6 +171,23 @@ def test_db_reply_uses_deterministic_sql_for_improvement_question_when_llm_unava
 
     assert "Oklahoma City Thunder" in reply
     assert any("improvement" in sql.lower() for sql in fake_db.executed)
+
+
+def test_db_reply_prefers_point_guard_rule_sql_even_with_available_llm():
+    fake_db = _FakeDB()
+    service = _build_service_with_bad_llm_and_fake_db(fake_db)
+
+    reply, meta = service._db_reply(
+        "Compare assists per game for the top 5 point guards",
+        history=[],
+        return_meta=True,
+    )
+
+    assert isinstance(reply, str)
+    assert meta["sql_used"] is not None
+    assert "player_season_stats" in meta["sql_used"]
+    assert "assists_per_game" in meta["sql_used"]
+    assert meta["rows_returned"] == 1
 
 
 def test_reply_blocks_runtime_web_search_requests():
@@ -160,3 +219,36 @@ def test_response_metadata_switches_to_table_mode_for_comparison_questions():
     )
     assert payload["format_mode"] == "table_first"
     assert payload["tool_path"] == "sql_tool->format_tool"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_snippet"),
+    [
+        ("Any injury updates for tonight's games?", "injury-report context indexed yet"),
+        ("What are the latest trade updates for the Lakers?", "trade-rumor context indexed yet"),
+        ("What games are scheduled tomorrow?", "upcoming schedule previews indexed yet"),
+        ("Tell me the latest context on the Celtics.", "recent news or context documents indexed"),
+    ],
+)
+def test_rag_reply_uses_sub_intent_specific_no_docs_fallback(message, expected_snippet):
+    service = _build_service_with_empty_rag()
+
+    reply = service._rag_reply(message, history=[])
+
+    assert expected_snippet in reply
+
+
+def test_rag_reply_triggers_guarded_refresh_on_empty_context(monkeypatch):
+    service = _build_service_with_empty_rag()
+    called = {}
+
+    def _fake_trigger(*, reason):
+        called["reason"] = reason
+        return True
+
+    monkeypatch.setattr("src.intelligence.chat_service.trigger_guarded_rag_refresh", _fake_trigger)
+
+    reply = service._rag_reply("Any injury updates for tonight's games?", history=[])
+
+    assert "injury-report context indexed yet" in reply
+    assert called["reason"] == "rag_empty:injury"

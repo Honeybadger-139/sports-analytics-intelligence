@@ -22,6 +22,15 @@ const MODEL_COLORS: Record<string, string> = {
   logistic_regression: '#FFB100',
 }
 
+function fmtFullDate(iso: string | undefined): string {
+  if (!iso) return 'Upcoming slate'
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  } catch {
+    return iso
+  }
+}
+
 function ProbBar({ homeProb, color = ACCENT }: { homeProb: number; color?: string }) {
   const pct = homeProb * 100
   return (
@@ -187,6 +196,9 @@ export default function TodaysPicks() {
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const games  = data?.games ?? []
+  const showingFallbackDate = Boolean(data?.is_fallback_date)
+  const headerLabel = showingFallbackDate ? 'Next Slate' : 'Today'
+  const headerDate = showingFallbackDate ? fmtFullDate(data?.date) : today
 
   function saveGame(_game: TodayGamePrediction) {
     openGrafanaCreateDashboard()
@@ -197,8 +209,8 @@ export default function TodaysPicks() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-2)', marginBottom: 2 }}>Today</p>
-          <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)' }}>{today}</p>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-2)', marginBottom: 2 }}>{headerLabel}</p>
+          <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)' }}>{headerDate}</p>
         </div>
         {loading && <span style={{ fontSize: '0.78rem', color: 'var(--text-2)', marginLeft: 16 }}>Loading predictions…</span>}
         {error && <span style={{ fontSize: '0.78rem', color: 'var(--error)', marginLeft: 16 }}>{error}</span>}
@@ -223,8 +235,13 @@ export default function TodaysPicks() {
       {data && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           <span style={{ padding: '4px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 20, fontSize: '0.75rem', color: 'var(--text-2)' }}>
-            {games.length} game{games.length !== 1 ? 's' : ''} today
+            {games.length} game{games.length !== 1 ? 's' : ''} {showingFallbackDate ? 'in next slate' : 'today'}
           </span>
+          {showingFallbackDate && (
+            <span style={{ padding: '4px 12px', background: `${ACCENT}10`, border: `1px solid ${ACCENT}30`, borderRadius: 20, fontSize: '0.75rem', color: ACCENT, fontWeight: 600 }}>
+              Today is finished, showing {fmtFullDate(data?.date)}
+            </span>
+          )}
           {data.persisted_rows > 0 && (
             <span style={{ padding: '4px 12px', background: `${ACCENT}10`, border: `1px solid ${ACCENT}30`, borderRadius: 20, fontSize: '0.75rem', color: ACCENT, fontWeight: 600 }}>
               {data.persisted_rows} predictions saved
@@ -247,8 +264,8 @@ export default function TodaysPicks() {
       {!loading && !error && games.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <p style={{ fontSize: '2rem', marginBottom: 10 }}>🏀</p>
-          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 }}>No games scheduled today</p>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>Check back tomorrow or use Match Deep Dive to analyse any past game.</p>
+          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 }}>No upcoming scheduled games found</p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>Use Match Deep Dive to analyse past games while the next slate is still being ingested.</p>
         </div>
       )}
 

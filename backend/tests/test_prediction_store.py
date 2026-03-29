@@ -17,6 +17,7 @@ class _FakeSession:
         self.params = []
         self.commits = 0
         self.rollbacks = 0
+        self.raise_missing_was_correct_once = False
 
     def execute(self, query, _params=None):
         q = str(query)
@@ -30,6 +31,9 @@ class _FakeSession:
             return _Result()
 
         if "UPDATE predictions p" in q:
+            if self.raise_missing_was_correct_once:
+                self.raise_missing_was_correct_once = False
+                raise RuntimeError('psycopg2.errors.UndefinedColumn: column "was_correct" does not exist')
             return _Result(rowcount=3)
 
         return _Result()
@@ -67,6 +71,16 @@ def test_sync_prediction_outcomes_returns_rowcount():
     db = _FakeSession()
     rows = prediction_store.sync_prediction_outcomes(db, season="2025-26")
     assert rows == 3
+
+
+def test_sync_prediction_outcomes_recovers_when_was_correct_missing():
+    db = _FakeSession()
+    db.raise_missing_was_correct_once = True
+
+    rows = prediction_store.sync_prediction_outcomes(db, season="2025-26")
+
+    assert rows == 3
+    assert any("ADD COLUMN IF NOT EXISTS was_correct BOOLEAN" in q for q in db.queries)
 
 
 def test_persist_news_enrichment_uses_stronger_side_for_confidence():

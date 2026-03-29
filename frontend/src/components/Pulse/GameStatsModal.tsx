@@ -234,6 +234,7 @@ function PredictionTab({ gameId, homeTeam, awayTeam }: { gameId: string; homeTea
   if (!data) return null
 
   const ensemble = data.predictions?.ensemble ?? data.predictions?.xgboost ?? Object.values(data.predictions ?? {})[0]
+  const predictionEntries = Object.entries(data.predictions ?? {})
   const shapFactors = normalizeExplanation(data.explanation).slice(0, 6)
 
   return (
@@ -242,32 +243,46 @@ function PredictionTab({ gameId, homeTeam, awayTeam }: { gameId: string; homeTea
       <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 16 }}>
         Model Predictions
       </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
-        {Object.entries(data.predictions ?? {}).map(([modelName, pred]) => (
-          <div key={modelName} style={{
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            borderRadius: 'var(--r-md)', padding: '14px 18px',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'capitalize', color: 'var(--text-2)' }}>{modelName}</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                Confidence: {(pred.confidence * 100).toFixed(1)}%
-              </span>
+      {predictionEntries.length === 0 ? (
+        <div style={{
+          padding: '18px 20px',
+          background: 'var(--bg-panel)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-md)',
+          marginBottom: 28,
+        }}>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-2)' }}>
+            No prediction snapshot is available for this game yet. This usually means the pregame model did not run before tip-off, or the backend still needs to backfill the historical prediction row.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
+          {predictionEntries.map(([modelName, pred]) => (
+            <div key={modelName} style={{
+              background: 'var(--bg-panel)', border: '1px solid var(--border)',
+              borderRadius: 'var(--r-md)', padding: '14px 18px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'capitalize', color: 'var(--text-2)' }}>{modelName}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                  Confidence: {(pred.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: pred.home_win_prob >= 0.5 ? 700 : 400, color: pred.home_win_prob >= 0.5 ? ACCENT : 'var(--text-3)' }}>
+                  {homeTeam} {(pred.home_win_prob * 100).toFixed(0)}%
+                </span>
+                <span style={{ fontSize: '0.78rem', fontWeight: pred.away_win_prob > pred.home_win_prob ? 700 : 400, color: pred.away_win_prob > pred.home_win_prob ? ACCENT : 'var(--text-3)' }}>
+                  {awayTeam} {(pred.away_win_prob * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${pred.home_win_prob * 100}%`, background: ACCENT, transition: 'width 0.4s' }} />
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: pred.home_win_prob >= 0.5 ? 700 : 400, color: pred.home_win_prob >= 0.5 ? ACCENT : 'var(--text-3)' }}>
-                {homeTeam} {(pred.home_win_prob * 100).toFixed(0)}%
-              </span>
-              <span style={{ fontSize: '0.78rem', fontWeight: pred.away_win_prob > pred.home_win_prob ? 700 : 400, color: pred.away_win_prob > pred.home_win_prob ? ACCENT : 'var(--text-3)' }}>
-                {awayTeam} {(pred.away_win_prob * 100).toFixed(0)}%
-              </span>
-            </div>
-            <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-              <div style={{ width: `${pred.home_win_prob * 100}%`, background: ACCENT, transition: 'width 0.4s' }} />
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* SHAP Explanations */}
       {ensemble && shapFactors.length > 0 && (
@@ -294,6 +309,19 @@ function PredictionTab({ gameId, homeTeam, awayTeam }: { gameId: string; homeTea
             ))}
           </div>
         </>
+      )}
+
+      {predictionEntries.length > 0 && shapFactors.length === 0 && (
+        <div style={{
+          padding: '14px 16px',
+          background: 'var(--bg-panel)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-md)',
+        }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+            Model probabilities are available, but SHAP factors have not been stored for this game yet.
+          </p>
+        </div>
       )}
     </div>
   )
