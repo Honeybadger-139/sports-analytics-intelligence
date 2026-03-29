@@ -41,13 +41,11 @@ ALL_SEASONS = ["2023-24", "2024-25", "2025-26"]
 
 def _generate_for_season(season: str, force_refresh: bool, max_games: int) -> dict:
     """Generate / backfill predictions for a single season."""
-    from src.data.db import get_engine
+    from src.data.db import engine, SessionLocal
     from src.api.routes import _bootstrap_predictions_from_completed_games
     from src.data.prediction_store import sync_prediction_outcomes
-    from sqlalchemy.orm import Session
 
-    engine = get_engine()
-    with Session(engine) as db:
+    with SessionLocal() as db:
         logger.info(
             "🔮 Generating predictions | season=%s | force_refresh=%s | max_games=%d",
             season,
