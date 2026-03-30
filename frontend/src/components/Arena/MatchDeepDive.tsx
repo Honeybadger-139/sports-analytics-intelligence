@@ -75,6 +75,7 @@ function ShapBar({ value, maxAbs }: { value: number; maxAbs: number }) {
 }
 
 function GameRow({ match, isSelected, onClick }: { match: MatchRow; isSelected: boolean; onClick: () => void }) {
+  const { fmtDate } = useTimezone()
   const completed = match.winner_team_id != null
   return (
     <button
@@ -164,8 +165,6 @@ export default function MatchDeepDive() {
     }
     setSelectedId(incomingGameId ?? null)
   }, [incomingContext])
-
-  const { fmtDate } = useTimezone()
 
   // completedOnly=true: Deep Dive only makes sense for finished games
   // (predictions, SHAP, box scores are only available post-game)
