@@ -28,7 +28,7 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Predictions & model analysis',
     color: 'var(--accent-arena)',
     subItems: [
-      { label: "Today's Picks",   path: '/arena/predictions', description: "Model consensus for today's games" },
+      { label: "Upcoming Picks",   path: '/arena/predictions', description: "Model consensus for upcoming games" },
       { label: 'Match Deep Dive', path: '/arena/deep-dive',   description: 'SHAP explainability + feature snapshots' },
       { label: 'Model Performance',path:'/arena/performance', description: 'Accuracy, Brier score, confidence' },
     ],

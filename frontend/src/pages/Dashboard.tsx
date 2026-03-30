@@ -13,7 +13,7 @@ import {
 const ACCENT = '#D97706'
 
 const SOURCE_META: Record<DashboardSource, { label: string; color: string; section: string }> = {
-  'arena/todays-picks': { label: "Today's Picks", color: '#06C5F8', section: 'Arena' },
+  'arena/todays-picks': { label: "Upcoming Picks", color: '#06C5F8', section: 'Arena' },
   'arena/match-deep-dive': { label: 'Match Deep Dive', color: '#38BDF8', section: 'Arena' },
   'arena/model-performance': { label: 'Model Performance', color: '#0EA5E9', section: 'Arena' },
   'arena/player-stats': { label: 'Player Stats', color: '#22D3EE', section: 'Arena' },

@@ -14,8 +14,8 @@ const TABS = [
   {
     id: 'predictions',
     path: '/arena/predictions',
-    label: "Today's Picks",
-    desc: "Model ensemble consensus for today's NBA matchups with confidence scores",
+    label: "Upcoming Picks",
+    desc: "Model ensemble consensus for upcoming NBA matchups with confidence scores",
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
         <circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.3" />
