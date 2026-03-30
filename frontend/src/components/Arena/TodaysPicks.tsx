@@ -3,6 +3,7 @@ import { useTodaysPredictions } from '../../hooks/useApi'
 import type { ModelPrediction, TodayGamePrediction } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
+import { useTimezone } from '../../context/TimezoneContext'
 
 const ACCENT = '#0E8ED8'
 
@@ -22,14 +23,7 @@ const MODEL_COLORS: Record<string, string> = {
   logistic_regression: '#FFB100',
 }
 
-function fmtFullDate(iso: string | undefined): string {
-  if (!iso) return 'Upcoming slate'
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  } catch {
-    return iso
-  }
-}
+// Date formatting handled by TimezoneContext (see useTimezone below)
 
 function ProbBar({ homeProb, color = ACCENT }: { homeProb: number; color?: string }) {
   const pct = homeProb * 100
@@ -192,9 +186,24 @@ function GameCard({
 }
 
 export default function TodaysPicks() {
+  const { tz } = useTimezone()
   const { data, loading, error, refresh } = useTodaysPredictions()
 
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  // Long-format date helper respecting ET/IST toggle
+  function fmtFullDate(iso: string | undefined): string {
+    if (!iso) return 'Upcoming slate'
+    try {
+      const [y, m, d] = iso.split('-').map(Number)
+      const date = new Date(y, m - 1, d, 12, 0, 0)
+      if (tz === 'IST') date.setDate(date.getDate() + 1)
+      return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    } catch { return iso }
+  }
+
+  // "Today" label: use the current date in the selected timezone display
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const today = fmtFullDate(todayIso)
+
   const games  = data?.games ?? []
   const showingFallbackDate = Boolean(data?.is_fallback_date)
   const headerLabel = showingFallbackDate ? 'Next Slate' : 'Today'

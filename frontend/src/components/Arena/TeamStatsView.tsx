@@ -5,14 +5,10 @@ import type { TeamGameLogEntry } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
 import { getNbaTeamLogoUrl } from '../../utils/nbaTeams'
+import { useTimezone } from '../../context/TimezoneContext'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
-
-function fmtDate(iso: string): string {
-    try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
-    catch { return iso }
-}
 
 function pct(v: number | null): string {
     if (v == null) return '—'
@@ -91,6 +87,7 @@ type StatPadMetric = {
 }
 
 export default function TeamStatsView() {
+    const { fmtDate } = useTimezone()
     const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [selectedAbbr, setSelectedAbbr] = useState<string | null>(null)
     const [opponent, setOpponent] = useState('')

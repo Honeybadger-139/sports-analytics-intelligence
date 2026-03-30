@@ -5,24 +5,10 @@ import { useMatches, useTodaysPredictions } from '../../hooks/useApi'
 import type { MatchRow, TodayGamePrediction } from '../../types'
 import GameStatsModal from './GameStatsModal'
 import NbaTeamLogo from '../NbaTeamLogo'
+import { useTimezone } from '../../context/TimezoneContext'
 
 const ACCENT = '#D4551F'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
-
-function fmtDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  } catch { return iso }
-}
-
-function fmtLongDate(iso: string | undefined): string {
-  if (!iso) return 'Upcoming slate'
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  } catch {
-    return iso
-  }
-}
 
 // ── Today's prediction card ──────────────────────────────────────────────────
 
@@ -105,6 +91,7 @@ function MatchRow({ match, index, onSelect }: {
   index: number
   onSelect: (id: string) => void
 }) {
+  const { fmtDate } = useTimezone()
   const completed = match.winner_team_id != null
   const homeWon   = completed && match.home_score != null && match.away_score != null && match.home_score > match.away_score
 
@@ -340,6 +327,19 @@ function DateFilterBar({ filters, onChange }: {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MatchPreviews() {
+  const { tz } = useTimezone()
+
+  // Long-format date respecting ET/IST toggle (used in section headers)
+  function fmtLongDate(iso: string | undefined): string {
+    if (!iso) return 'Upcoming slate'
+    try {
+      const [y, m, d] = iso.split('-').map(Number)
+      const date = new Date(y, m - 1, d, 12, 0, 0)
+      if (tz === 'IST') date.setDate(date.getDate() + 1)
+      return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    } catch { return iso }
+  }
+
   const [filters, setFilters] = useState<DateFilters>({ season: '2025-26', dateFrom: '', dateTo: '' })
   const [limit, setLimit]     = useState(20)
   const [selectedGame, setSelectedGame] = useState<string | null>(null)

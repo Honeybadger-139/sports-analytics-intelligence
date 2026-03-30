@@ -3,14 +3,10 @@ import { motion } from 'framer-motion'
 import { usePlayers, usePlayerGameStats, useTeamsList } from '../../hooks/useApi'
 import type { PlayerGameLogEntry, PlayerListItem } from '../../types'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
+import { useTimezone } from '../../context/TimezoneContext'
 
 const ACCENT = '#0E8ED8'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
-
-function fmtDate(iso: string): string {
-    try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
-    catch { return iso }
-}
 
 function pct(v: number | null): string {
     if (v == null) return '—'
@@ -65,6 +61,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function PlayerStatsView() {
+    const { fmtDate } = useTimezone()
     const [selectedSeasons, setSelectedSeasons] = useState<string[]>(['2025-26'])
     const [search, setSearch] = useState('')
     const [searchTeam, setSearchTeam] = useState('')
