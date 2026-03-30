@@ -39,8 +39,7 @@ langchain-google-genai==1.0.8    # Gemini integration via LangChain interface
 langchain-community==0.2.16      # Community tools, SQL loaders, memory helpers
 
 # === TensorFlow Neural Networks (Phase 10 — Wide & Deep) ===
-tensorflow>=2.15.0               # Wide & Deep Model + Keras
-tensorboard>=2.16.0              # Training curve visualisation
+tensorflow==2.15.1               # Wide & Deep Model + Keras (Locked to avoid Protobuf 5+ API break)
 
 # === Statistics Module (Phase 6.4 — SCR-320) ===
 statsmodels>=0.14.0              # SPRT p-values, OLS, time-series tests
