@@ -29,14 +29,14 @@ seaborn==0.13.2
 jupyter==1.1.1
 
 # === RAG / Intelligence (Phase 4) ===
-google-generativeai>=0.7.0
-chromadb>=0.5.23
-langchain>=0.2.16
-langgraph>=0.2.28
+google-generativeai==0.8.4
+chromadb==0.5.23
+langchain==0.2.16
+langgraph==0.2.28
 
 # === LangChain Enhancements (Phase 6.1 — SCR-317) ===
-langchain-google-genai>=2.0.0    # Gemini integration via LangChain interface
-langchain-community>=0.2.0       # Community tools, SQL loaders, memory helpers
+langchain-google-genai==1.0.8    # Gemini integration via LangChain interface
+langchain-community==0.2.16      # Community tools, SQL loaders, memory helpers
 
 # === TensorFlow Neural Networks (Phase 10 — Wide & Deep) ===
 tensorflow>=2.15.0               # Wide & Deep Model + Keras
