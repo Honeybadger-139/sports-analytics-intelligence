@@ -65,12 +65,9 @@ ruptures>=1.1.0                  # Offline changepoint detection (Pelt, Binseg a
 apscheduler>=3.10.0
 
 # === Observability ===
-langfuse>=3.7.0
+langfuse==2.53.8
 prometheus-fastapi-instrumentator==7.0.0
 slowapi==0.1.9
-opentelemetry-sdk>=1.33.1
-opentelemetry-exporter-otlp-proto-grpc>=1.33.1
-opentelemetry-api>=1.33.1
 
 # === Utilities ===
 python-dotenv==1.0.1
