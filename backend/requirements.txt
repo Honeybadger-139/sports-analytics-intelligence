@@ -29,8 +29,8 @@ seaborn==0.13.2
 jupyter==1.1.1
 
 # === RAG / Intelligence (Phase 4) ===
-google-generativeai==0.8.4
-chromadb==0.5.23
+google-generativeai==0.7.2
+chromadb==0.5.20
 langchain==0.2.16
 langgraph==0.2.28
 
