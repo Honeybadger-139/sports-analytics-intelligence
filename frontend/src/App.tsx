@@ -18,6 +18,7 @@ import Ratings from './pages/Ratings'
 import ComingSoonHold from './components/ComingSoonHold'
 import { useSystemStatus } from './hooks/useApi'
 import { SportContextProvider, useSportContext } from './context/SportContext'
+import { TimezoneProvider } from './context/TimezoneContext'
 import { isLiveDataSelection } from './config/sports'
 
 const THEME_KEY = 'sai_v2_theme'
@@ -79,7 +80,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <SportContextProvider>
-          <AppShell />
+          <TimezoneProvider>
+            <AppShell />
+          </TimezoneProvider>
         </SportContextProvider>
       </BrowserRouter>
     </QueryClientProvider>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
 import { useMatches, useGamePrediction } from '../../hooks/useApi'
+import { useTimezone } from '../../context/TimezoneContext'
 import type { MatchRow, ModelPrediction, ShapFactor } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
@@ -48,10 +49,7 @@ function normalizeExplanation(explanation: unknown): { models: string[]; byModel
   return { models: Object.keys(byModel), byModel }
 }
 
-function fmtDate(iso: string): string {
-  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
-  catch { return iso }
-}
+// Date formatting is handled by TimezoneContext (see useTimezone below)
 
 function ShapBar({ value, maxAbs }: { value: number; maxAbs: number }) {
   const pct = maxAbs > 0 ? Math.abs(value) / maxAbs * 100 : 0
@@ -167,13 +165,18 @@ export default function MatchDeepDive() {
     setSelectedId(incomingGameId ?? null)
   }, [incomingContext])
 
+  const { fmtDate } = useTimezone()
+
+  // completedOnly=true: Deep Dive only makes sense for finished games
+  // (predictions, SHAP, box scores are only available post-game)
   const { data: matchData, loading: matchLoading } = useMatches(
     season,
     50,
     teamSearch,
     dateMode === 'exact' ? exactDate : undefined,
     dateMode === 'range' ? startDate : undefined,
-    dateMode === 'range' ? endDate : undefined
+    dateMode === 'range' ? endDate : undefined,
+    true  // completedOnly
   )
   const { data: pred, loading: predLoading, error: predError } = useGamePrediction(selectedId)
 

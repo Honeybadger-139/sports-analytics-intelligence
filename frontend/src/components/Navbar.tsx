@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import SportsMark from './SportsMark'
 import type { NavItem } from '../types'
 import { useSportContext } from '../context/SportContext'
+import { useTimezone } from '../context/TimezoneContext'
 import { isLiveDataSelection, type SportId } from '../config/sports'
 import styles from './Navbar.module.css'
 
@@ -101,6 +102,7 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
   const location  = useLocation()
   const [openId, setOpenId] = useState<string | null>(null)
   const navRef    = useRef<HTMLDivElement>(null)
+  const { tz, toggle: toggleTz } = useTimezone()
   const { selection, sportOptions, leagueOptions, seasonOptions, setSport, setLeague, setSeason } = useSportContext()
   const isLiveContext = isLiveDataSelection(selection)
 
@@ -203,6 +205,31 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
               <span className="dot" />
               {pillLabel}
             </div>
+            {/* Timezone toggle — all dates stored in US/Eastern (ET), NBA's official timezone */}
+            <button
+              onClick={toggleTz}
+              title={tz === 'ET'
+                ? 'Dates shown in US/Eastern (ET) — NBA official timezone. Click to switch to IST.'
+                : 'Dates shown in IST (+5:30, approx). Click to switch back to US/Eastern (ET).'}
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.04em',
+                padding: '3px 8px',
+                borderRadius: 6,
+                border: '1px solid',
+                borderColor: tz === 'IST' ? 'var(--accent)' : 'var(--border)',
+                background: tz === 'IST' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'transparent',
+                color: tz === 'IST' ? 'var(--accent)' : 'var(--text-3)',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                whiteSpace: 'nowrap',
+              }}
+              aria-label={`Switch timezone display to ${tz === 'ET' ? 'IST' : 'ET'}`}
+            >
+              {tz}
+            </button>
             <button className={styles['theme-btn']} onClick={onToggleTheme} aria-label="Toggle theme">
               {theme === 'dark' ? (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
