@@ -163,62 +163,60 @@ class MultiAgentOrchestrator:
         def supervisor_node(state: AgentGraphState) -> AgentGraphState:
             """
             Analyse the query and decide which specialist agents to invoke.
-
-            Uses keyword heuristics (fast, no LLM call) + optional LLM
-            for ambiguous queries.
+            PHASE 10 UPGRADE: True LLM Supervisor instead of heuristic keywords.
             """
-            query = state.get("query", "").lower()
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            from langchain_core.prompts import ChatPromptTemplate
+            from pydantic import BaseModel, Field
+            from src import config
+            
+            query = state.get("query", "")
+            
+            # Using Gemini as the Supervisor to demonstrate Agentic Routing
+            try:
+                llm = ChatGoogleGenerativeAI(model=config.GEMINI_MODEL, temperature=0.0)
+                
+                class RouteDecision(BaseModel):
+                    next_agent: str = Field(description="One of: 'stats', 'news', 'prediction', or 'synthesizer'")
+                    reasoning: str = Field(description="Why this routing decision was made")
+                
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", "You are the Supervisor Agent for an NBA Analytics Platform. "
+                               "Your job is to route the user's query to the correct sub-agent.\n"
+                               "- 'stats': For historical data, points, rebounds, standing, or numerical database queries.\n"
+                               "- 'news': For injury reports, recent articles, trades, or unplayed game schedules.\n"
+                               "- 'prediction': For win probabilities or what factors decide a game.\n"
+                               "- 'synthesizer': If the query is just a greeting or already fully answered.\n"
+                               "Based on the query, choose exactly one primary next_agent."),
+                    ("user", "Query: {query}")
+                ])
+                
+                chain = prompt | llm.with_structured_output(RouteDecision)
+                decision = chain.invoke({"query": query})
+                
+                next_node = decision.next_agent.lower()
+                reasoning = decision.reasoning
+            except Exception as e:
+                logger.warning(f"LLM Supervisor failed, falling back to heuristic: {e}")
+                next_node = "stats"
+                reasoning = "Fallback routing"
 
-            # Fast heuristic routing (no LLM cost)
-            stats_keywords = {
-                "stats", "statistics", "average", "record", "standing", "rank",
-                "win", "loss", "pts", "points", "assist", "rebound", "season",
-                "top", "best", "worst", "compare", "versus", "vs", "per game",
-                "scoring", "leading", "leader", "ppg", "apg", "rpg",
-            }
-            news_keywords = {
-                "injur", "injury", "hurt", "playing", "available", "lineup",
-                "news", "report", "update", "tomorrow", "tonight", "upcoming",
-                "trade", "sign", "rumor", "rumour", "back-to-back", "rest",
-            }
-            prediction_keywords = {
-                "predict", "prediction", "win probability", "who will win",
-                "will they win", "chance", "likely", "favourite", "favorite",
-                "odds", "bet", "forecast",
-            }
-
-            route_stats = any(kw in query for kw in stats_keywords)
-            route_news = any(kw in query for kw in news_keywords)
-            route_prediction = any(kw in query for kw in prediction_keywords)
-
-            # If nothing matched, default to stats (most common query type)
-            if not route_stats and not route_news and not route_prediction:
-                route_stats = True
-
-            agents = []
-            if route_stats:
-                agents.append("stats")
-            if route_news:
-                agents.append("news")
-            if route_prediction:
-                agents.append("prediction")
-
-            reasoning = f"Routing to: {', '.join(agents) or 'stats (default)'}"
-            logger.info("Supervisor decision: %s | query=%s", reasoning, query[:60])
+            logger.info("Supervisor decision: %s (%s)", next_node, reasoning)
 
             return {
-                "route_to_stats": route_stats,
-                "route_to_news": route_news,
-                "route_to_prediction": route_prediction,
+                "route_to_stats": next_node == "stats",
+                "route_to_news": next_node == "news",
+                "route_to_prediction": next_node == "prediction",
                 "supervisor_reasoning": reasoning,
                 "agents_used": [],
             }
 
-        def stats_agent_node(state: AgentGraphState) -> AgentGraphState:
+        def data_analyst_node(state: AgentGraphState) -> AgentGraphState:
             """
-            Stats specialist: uses SQLQueryTool + TeamStatsTool.
-
-            Handles: standings, player stats, team analytics, historical records.
+            Data Analyst Sub-Agent (formerly StatsAgent).
+            
+            Executes read-only SQL queries against PostgreSQL to generate
+            dataframes and statistics strings.
             """
             if not state.get("route_to_stats"):
                 return {}
@@ -229,23 +227,23 @@ class MultiAgentOrchestrator:
             agents_used = list(state.get("agents_used") or [])
 
             try:
-                # Try SQL query first (covers most stats questions)
+                # The Data Analyst Agent relies on the SQL tools to safely query the DB
+                logger.info("[Data Analyst Agent] Running execute_read_only_sql equivalent...")
                 sql_tool = tools.get("sql_query_tool")
                 if sql_tool:
                     result = sql_tool.run(query)
 
-                # If SQL gives a short/unhelpful answer, augment with team stats
+                # Augment with exact Team Stats API tool
                 if len(result) < 50 or "couldn't" in result.lower():
                     team_tool = tools.get("team_stats_tool")
                     if team_tool:
-                        # Extract team name from query (simple heuristic)
-                        team_result = team_tool.run(query[:50])  # pass whole query
+                        team_result = team_tool.run(query[:50])
                         if team_result and "No stats" not in team_result:
                             result = f"{result}\n{team_result}".strip()
 
-                agents_used.append("stats")
+                agents_used.append("data_analyst")
             except Exception as exc:
-                logger.warning("StatsAgent failed: %s", exc)
+                logger.warning("Data Analyst Agent failed: %s", exc)
                 result = "Stats data temporarily unavailable."
 
             return {"stats_result": result, "agents_used": agents_used}
@@ -318,35 +316,47 @@ class MultiAgentOrchestrator:
 
         def synthesiser_node(state: AgentGraphState) -> AgentGraphState:
             """
-            Merge specialist outputs into a single coherent reply.
-
-            The synthesiser combines results, removes redundancy,
-            and formats for the chat interface.
+            Synthesizer Sub-Agent.
+            
+            Uses an LLM to take the raw outputs of the Data Analyst, News Researcher, 
+            and Prediction Agent, and format them into a single, cohesive human-readable response.
             """
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            from langchain_core.prompts import ChatPromptTemplate
+            from src import config
+            
             parts = []
             agents_used = state.get("agents_used", [])
             confidence = 0.5
 
             if state.get("stats_result"):
-                parts.append(state["stats_result"])
+                parts.append(f"DATA ANALYST RESULTS: {state['stats_result']}")
                 confidence = max(confidence, 0.75)
 
             if state.get("news_result"):
-                parts.append(state["news_result"])
+                parts.append(f"NEWS RESEARCHER RESULTS: {state['news_result']}")
                 confidence = max(confidence, 0.70)
 
             if state.get("prediction_result"):
-                parts.append(state["prediction_result"])
+                parts.append(f"ML PREDICTION RESULTS: {state['prediction_result']}")
                 confidence = max(confidence, 0.65)
 
             if not parts:
                 final_reply = "I couldn't find relevant information for that query. Try asking about team stats, recent news, or game predictions."
                 confidence = 0.1
-            elif len(parts) == 1:
-                final_reply = parts[0]
             else:
-                # Multi-agent synthesis: join with clear section breaks
-                final_reply = "\n\n---\n\n".join(parts)
+                try:
+                    llm = ChatGoogleGenerativeAI(model=config.GEMINI_MODEL, temperature=0.2)
+                    prompt = ChatPromptTemplate.from_messages([
+                        ("system", "You are the Synthesizer Sub-Agent. Consolidate the following raw sub-agent reports into a single, cohesive, engaging answer for the user. Do not leak internal agent names (like 'Data Analyst Agent said'), just present the final facts directly."),
+                        ("user", "User Question: {query}\n\nAgent Reports:\n{reports}")
+                    ])
+                    chain = prompt | llm
+                    response = chain.invoke({"query": state.get("query"), "reports": "\n\n".join(parts)})
+                    final_reply = response.content
+                except Exception as e:
+                    logger.warning(f"LLM Synthesizer failed, falling back to concatenation: {e}")
+                    final_reply = "\n\n---\n\n".join(parts)
 
             return {
                 "final_reply": final_reply,
@@ -357,21 +367,31 @@ class MultiAgentOrchestrator:
         # ── Build graph ───────────────────────────────────────────────────────
         g = StateGraph(AgentGraphState)
         g.add_node("supervisor", supervisor_node)
-        g.add_node("stats_agent", stats_agent_node)
+        g.add_node("stats_agent", data_analyst_node)
         g.add_node("news_agent", news_agent_node)
         g.add_node("prediction_agent", prediction_agent_node)
         g.add_node("synthesiser", synthesiser_node)
 
         g.set_entry_point("supervisor")
 
-        # All specialists run after supervisor (sequential to avoid DB contention)
-        g.add_edge("supervisor", "stats_agent")
-        g.add_edge("stats_agent", "news_agent")
-        g.add_edge("news_agent", "prediction_agent")
+        # The Supervisor maps out which agent to call next dynamically
+        def router(state):
+            # If the user just said "hi" or it's not a direct data question, just synthesize
+            if not state.get("route_to_stats") and not state.get("route_to_news") and not state.get("route_to_prediction"):
+                return "synthesiser"
+            if state.get("route_to_stats"): return "stats_agent"
+            if state.get("route_to_news"): return "news_agent"
+            return "prediction_agent"
+
+        g.add_conditional_edges("supervisor", router)
+        
+        # In a generic multi-agent setup, they all flow to the synthesizer to finalize the response
+        g.add_edge("stats_agent", "synthesiser")
+        g.add_edge("news_agent", "synthesiser")
         g.add_edge("prediction_agent", "synthesiser")
         g.add_edge("synthesiser", END)
 
-        logger.info("Multi-agent graph compiled (supervisor + 3 specialists).")
+        logger.info("Multi-agent graph compiled (Supervisor + Data Analyst + Researcher + Predictor).")
         return g.compile()
 
     # ── Public API ────────────────────────────────────────────────────────────

@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  tf-serving:
+    build: 
+      context: ./infra/tf-serving
+    ports:
+      - "8501:8501" # REST API
+      - "8500:8500" # gRPC
+    environment:
+      - MODEL_NAME=nba_wide_deep
+    volumes:
+      # Optional: Mount local models directory to hot-reload models without rebuilding the Docker image
+      - ./models/nba_wide_deep:/models/nba_wide_deep
+    networks:
+      - gamethread_network
+
+networks:
+  gamethread_network:
+    external: true

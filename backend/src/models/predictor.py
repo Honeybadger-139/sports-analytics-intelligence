@@ -410,7 +410,55 @@ class Predictor:
         logger.info("   Total models loaded: %d | calibrators: %d", len(self.models), len(self.calibrators))
     
     def _get_prob(self, model_name: str, model, features: pd.DataFrame) -> float:
-        """Get probability for one model, applying calibration if available."""
+        """Get probability for one model, routing to external Vertex AI/TF Serving if configured."""
+        
+        # ── DECOUPLED INFERENCE (Phase 10: Vertex AI / TF Serving) ──
+        # If an external endpoint is configured, we make a REST call instead of local inference.
+        # This allows the web server (FastAPI) to scale independently from the ML GPUs.
+        tf_serving_url = os.getenv("TF_SERVING_URL")
+        vertex_endpoint_id = os.getenv("VERTEX_ENDPOINT_ID")
+        
+        if model_name == "nba_wide_deep" and (tf_serving_url or vertex_endpoint_id):
+            try:
+                # 1. Prepare the payload exactly as the Wide & Deep model expects
+                payload = {
+                    "instances": [{
+                        "dense_features": features.values[0].tolist(),
+                        "home_team_id": [int(features.get("home_team_id_feat", 0))],
+                        "away_team_id": [int(features.get("away_team_id_feat", 0))]
+                    }]
+                }
+                
+                # 2. Route to GCP Vertex AI
+                if vertex_endpoint_id:
+                    import google.auth
+                    from google.auth.transport.requests import Request
+                    import requests
+                    
+                    credentials, project = google.auth.default()
+                    credentials.refresh(Request())
+                    url = f"https://{_vertex_location()}-aiplatform.googleapis.com/v1/projects/{project}/locations/{_vertex_location()}/endpoints/{vertex_endpoint_id}:predict"
+                    headers = {"Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json"}
+                    
+                    response = requests.post(url, headers=headers, json=payload, timeout=2.0)
+                    response.raise_for_status()
+                    predictions = response.json().get("predictions", [])
+                    if predictions:
+                        return float(predictions[0][0])
+                
+                # 3. Route to Local TF Serving (Fallback for local dev)
+                elif tf_serving_url:
+                    import requests
+                    url = f"{tf_serving_url}/v1/models/{model_name}:predict"
+                    response = requests.post(url, json=payload, timeout=1.0)
+                    response.raise_for_status()
+                    predictions = response.json().get("predictions", [])
+                    if predictions:
+                        return float(predictions[0][0])
+            except Exception as e:
+                logger.error("[predictor] Decoupled inference failed, falling back to local memory: %s", e)
+        
+        # ── LOCAL MEMORY INFERENCE (Legacy Fallback) ──
         from src.models.calibrator import apply_calibration
 
         cal = self.calibrators.get(model_name)
@@ -418,7 +466,17 @@ class Predictor:
         if cal is not None:
             probs = apply_calibration(cal, method, model, features)
             return float(probs[0])
-        return float(model.predict_proba(features)[:, 1][0])
+            
+        # Standard Sklearn / XGBoost infer
+        if hasattr(model, "predict_proba"):
+            probs = model.predict_proba(features)
+            # Handle tf models natively if they got loaded in memory
+            if len(probs.shape) == 1:
+                return float(probs[0])
+            return float(probs[:, 1][0])
+        elif hasattr(model, "predict"): # keras fallback
+            return float(model.predict(features)[0][0])
+        return 0.5
 
     def predict_game(self, features: pd.DataFrame) -> Dict:
         """

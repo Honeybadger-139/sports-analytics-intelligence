@@ -6,7 +6,7 @@ pydantic-settings==2.7.1
 
 # === Database ===
 sqlalchemy==2.0.36
-psycopg2-binary==2.9.10
+psycopg2-binary>=2.9.0
 pgvector>=0.3.6
 alembic==1.14.1
 
@@ -38,8 +38,8 @@ langgraph==0.2.28
 langchain-google-genai>=2.0.0    # Gemini integration via LangChain interface
 langchain-community>=0.2.0       # Community tools, SQL loaders, memory helpers
 
-# === PyTorch Neural Networks (Phase 6.2 — SCR-318) ===
-torch>=2.2.0                     # MLP model + entity embeddings + LSTM (Module 6.5)
+# === TensorFlow Neural Networks (Phase 10 — Wide & Deep) ===
+tensorflow>=2.15.0               # Wide & Deep Model + Keras
 tensorboard>=2.16.0              # Training curve visualisation
 
 # === Statistics Module (Phase 6.4 — SCR-320) ===
