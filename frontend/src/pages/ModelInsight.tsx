@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useMatches, useGamePrediction } from '../hooks/useApi'
 import { useSportContext } from '../context/SportContext'
@@ -55,8 +55,15 @@ function FactorBar({ value, maxAbs }: { value: number; maxAbs: number }) {
   )
 }
 
+const CHATBOT_TABS = [
+  { label: 'Data Inquiry',  path: '/chatbot' },
+  { label: 'Model Insight', path: '/chatbot/model-insight' },
+  { label: 'Draft Help',    path: '/chatbot/draft-help' },
+]
+
 export default function ModelInsight() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { selection } = useSportContext()
 
   const [season, setSeason] = useState(SEASONS.includes(selection.season) ? selection.season : '2025-26')
@@ -111,6 +118,28 @@ export default function ModelInsight() {
   return (
     <div className="page-shell">
       <div style={{ maxWidth: 'var(--content-w)', margin: '0 auto', padding: '28px' }}>
+        {/* ── Chatbot sub-page tab strip ── */}
+        <div style={{ display: 'flex', gap: 2, marginBottom: 20, background: 'var(--bg-panel)', borderRadius: 8, padding: 3, width: 'fit-content' }}>
+          {CHATBOT_TABS.map(tab => {
+            const active = location.pathname === tab.path
+            return (
+              <button
+                key={tab.path}
+                onClick={() => navigate(tab.path)}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: active ? `${ACCENT}20` : 'transparent',
+                  color: active ? ACCENT : 'var(--text-2)',
+                  fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
           <div>
             <p style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: ACCENT, marginBottom: 4 }}>

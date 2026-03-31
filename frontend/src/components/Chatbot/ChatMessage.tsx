@@ -45,6 +45,10 @@ function formatValue(value: unknown): string {
   return String(value)
 }
 
+function formatColumnHeader(col: string): string {
+  return col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 export default function ChatMessage({ message }: Props) {
   const isUser  = message.role === 'user'
   const isError = message.role === 'error'
@@ -102,7 +106,7 @@ export default function ChatMessage({ message }: Props) {
               <thead>
                 <tr>
                   {message.table?.columns.map((col) => (
-                    <th key={col}>{col}</th>
+                    <th key={col}>{formatColumnHeader(col)}</th>
                   ))}
                 </tr>
               </thead>

@@ -15,7 +15,7 @@ const MODEL_LABELS: Record<string, string> = {
   xgboost: 'XGBoost',
   lightgbm: 'LightGBM',
   lgbm: 'LightGBM',
-  logistic_regression: 'Logistic',
+  logistic_regression: 'Logistic Regression',
 }
 
 function isShapFactor(value: unknown): value is ShapFactor {

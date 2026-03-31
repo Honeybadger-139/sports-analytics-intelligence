@@ -13,7 +13,7 @@ const MODEL_LABELS: Record<string, string> = {
   xgboost:             'XGBoost',
   lightgbm:            'LightGBM',
   lgbm:                'LightGBM',
-  logistic_regression: 'Logistic',
+  logistic_regression: 'Logistic Regression',
 }
 const MODEL_COLORS: Record<string, string> = {
   ensemble:            '#06C5F8',
@@ -178,9 +178,6 @@ function GameCard({
         })}
       </div>
 
-      <div style={{ padding: '8px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-        <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>{game.game_id}</span>
-      </div>
     </motion.div>
   )
 }

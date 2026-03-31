@@ -40,15 +40,17 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Data exploration & monitoring',
     color: 'var(--accent-lab)',
     subItems: [
-      { label: 'Data Quality',  path: '/lab/quality',  description: 'Row counts, checks and team metrics' },
-      { label: 'Pipeline Runs', path: '/lab/pipeline', description: 'Recent ingestion and feature runs' },
+      { label: 'Data Quality',      path: '/lab/quality',   description: 'Row counts, checks and team metrics' },
+      { label: 'Pipeline Runs',     path: '/lab/pipeline',  description: 'Recent ingestion and feature runs' },
+      { label: 'MLOps Monitor',     path: '/lab/mlops',     description: 'Model health, drift alerts and observability', badge: 'SOON' },
+      { label: 'Raw Data Explorer', path: '/lab/explorer',  description: 'Browse raw Postgres tables and schemas', badge: 'SOON' },
     ],
   },
   {
     id: 'dashboard',
     label: 'Dashboard',
     path: '/dashboard',
-    description: 'Created Arena dashboards and chart views',
+    description: 'Saved Arena dashboards and chart views',
     color: 'var(--accent-dashboard)',
     subItems: [],
   },
@@ -82,7 +84,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Analytics',
     path: '/forecast',
     description: 'Advanced stats & forecasting',
-    color: 'var(--accent-lab)',
+    color: 'var(--accent-analytics)',
     badge: 'NEW',
     subItems: [
       { label: 'Forecast',      path: '/forecast', description: '14-day Prophet + ARIMA win-rate forecast' },
@@ -333,7 +335,18 @@ export default function Navbar({ systemStatus, theme, onToggleTheme }: NavbarPro
                     onClick={() => { navigate(sub.path); close() }}
                     style={{ '--card-border-hover': openItem.color } as React.CSSProperties}
                   >
-                    <span className={styles['mega-sub-item-label']}>{sub.label}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className={styles['mega-sub-item-label']}>{sub.label}</span>
+                      {sub.badge && (
+                        <span style={{
+                          fontSize: '0.55rem', fontWeight: 700, padding: '1px 5px',
+                          borderRadius: '999px', background: 'rgba(247,178,74,0.14)',
+                          color: 'var(--warning)', letterSpacing: '0.06em', lineHeight: 1.6,
+                        }}>
+                          {sub.badge}
+                        </span>
+                      )}
+                    </span>
                     <span className={styles['mega-sub-item-desc']}>{sub.description}</span>
                   </button>
                 ))}

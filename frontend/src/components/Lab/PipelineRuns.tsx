@@ -3,14 +3,15 @@ import { motion } from 'framer-motion'
 import { useQualityOverview } from '../../hooks/useApi'
 import type { PipelineRun } from '../../types'
 
-const ACCENT = '#7C3AED'
+// CSS variables adapt in light mode: --accent-lab → #6D28D9, --accent-scrib → #0F766E, etc.
+const ACCENT = 'var(--accent-lab)'
 const SEASONS = ['2025-26', '2024-25', '2023-24']
 
 function StatusPill({ status }: { status: string }) {
   const isSuccess = status === 'success'
   const isRunning = status === 'running'
   const color = isSuccess ? 'var(--success)' : isRunning ? 'var(--warning)' : 'var(--error)'
-  const bg    = isSuccess ? 'rgba(0,214,143,0.10)' : isRunning ? 'rgba(255,177,0,0.10)' : 'rgba(255,76,106,0.10)'
+  const bg    = isSuccess ? 'var(--success-dim)' : isRunning ? 'var(--warning-dim)' : 'var(--error-dim)'
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -24,20 +25,31 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-const RAG_GREEN = '#00D68F'
+const RAG_GREEN = 'var(--accent-scrib)'   // #34D399 dark → #0F766E light (good contrast both modes)
+
+const MODULE_LABELS: Record<string, string> = {
+  ingestion:     'Ingestion',
+  feature_store: 'Feature Store',
+  rag_scheduler: 'RAG Scheduler',
+  rag_refresh:   'RAG Refresh',
+  rag:           'RAG',
+}
+function fmtModule(m: string): string {
+  return MODULE_LABELS[m] ?? m.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
 
 function ModuleBadge({ module }: { module: string }) {
   const isIngestion = module === 'ingestion'
   const isRag = module.startsWith('rag')
-  const bg    = isIngestion ? 'rgba(139,92,246,0.12)' : isRag ? 'rgba(0,214,143,0.10)' : 'rgba(6,197,248,0.10)'
-  const color = isIngestion ? ACCENT : isRag ? RAG_GREEN : '#06C5F8'
+  const bg    = isIngestion ? 'var(--accent-lab-dim)' : isRag ? 'var(--accent-scrib-dim)' : 'var(--accent-arena-dim)'
+  const color = isIngestion ? ACCENT : isRag ? RAG_GREEN : 'var(--accent-arena)'
   return (
     <span style={{
       padding: '2px 8px', borderRadius: 4,
       background: bg, color,
       fontSize: '0.72rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
     }}>
-      {module}
+      {fmtModule(module)}
     </span>
   )
 }
@@ -64,7 +76,7 @@ function SummaryBar({ runs }: { runs: PipelineRun[] }) {
     { label: 'Successful',   value: String(success),  color: 'var(--success)' },
     { label: 'Failed',       value: String(failed),   color: failed > 0 ? 'var(--error)' : 'var(--text-2)' },
     { label: 'Ingestion',    value: String(ingestionRuns.length), color: ACCENT },
-    { label: 'Feature Store', value: String(featureRuns.length), color: '#06C5F8' },
+    { label: 'Feature Store', value: String(featureRuns.length), color: 'var(--accent-arena)' },
     { label: 'RAG Refresh',  value: String(ragRuns.length),      color: RAG_GREEN },
   ]
 

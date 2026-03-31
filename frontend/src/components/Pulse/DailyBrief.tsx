@@ -189,9 +189,6 @@ function BriefCard({ item, index }: { item: BriefItem; index: number }) {
             </button>
           )}
         </div>
-        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-          <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>game_id: {item.game_id}</span>
-        </div>
       </motion.div>
 
       <AnimatePresence>
@@ -260,9 +257,6 @@ function BriefCard({ item, index }: { item: BriefItem; index: number }) {
                 <p style={{ fontSize: '0.92rem', color: 'var(--text-1)', lineHeight: 1.75, margin: 0 }}>
                   {item.summary}
                 </p>
-              </div>
-              <div style={{ padding: '10px 22px 16px', color: 'var(--text-3)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
-                game_id: {item.game_id}
               </div>
             </motion.div>
           </motion.div>

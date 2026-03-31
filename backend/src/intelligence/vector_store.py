@@ -118,17 +118,55 @@ class _PgVectorStore:
         finally:
             conn.close()
 
+    # Expected embedding dimension matches the rag_documents table schema: vector(768).
+    # Gemini text-embedding-* models produce 768-dim vectors.
+    # The _hash_embedding fallback in embeddings.py produces 96-dim vectors.
+    # Inserting a wrong-dimension vector into vector(768) causes a silent pgvector
+    # type error and/or corrupted cosine similarity scores (-0.1 to -0.3 range).
+    EXPECTED_EMBEDDING_DIM: int = 768
+
     def upsert_with_stats(self, records: List[Dict]) -> Dict[str, int]:
         if not records:
             return {"processed": 0, "created": 0, "updated": 0}
 
         import numpy as np  # type: ignore
 
+        # Validate embedding dimensions before touching the DB.
+        # Any record with the wrong number of dimensions is dropped with a loud
+        # error log so the problem is immediately visible in Cloud Run logs.
+        valid_records: List[Dict] = []
+        skipped = 0
+        for rec in records:
+            emb = rec.get("embedding")
+            if emb is not None and len(emb) != self.EXPECTED_EMBEDDING_DIM:
+                logger.error(
+                    "[vector_store] Dropping doc '%s': embedding has %d dims, expected %d. "
+                    "Check whether GEMINI_API_KEY is set and Gemini embedding is active — "
+                    "the hash fallback produces %d-dim vectors which are incompatible with "
+                    "the vector(768) column schema.",
+                    rec.get("doc_id", "unknown"),
+                    len(emb),
+                    self.EXPECTED_EMBEDDING_DIM,
+                    len(emb),
+                )
+                skipped += 1
+                continue
+            valid_records.append(rec)
+
+        if skipped:
+            logger.warning(
+                "[vector_store] %d/%d records skipped due to embedding dimension mismatch.",
+                skipped, len(records),
+            )
+
+        if not valid_records:
+            return {"processed": 0, "created": 0, "updated": 0, "skipped": skipped}
+
         conn = self._connect()
         try:
             cur = conn.cursor()
             # Find which doc_ids already exist
-            ids = [r["doc_id"] for r in records]
+            ids = [r["doc_id"] for r in valid_records]
             cur.execute(
                 "SELECT doc_id FROM rag_documents WHERE doc_id = ANY(%s)",
                 (ids,)
@@ -136,7 +174,7 @@ class _PgVectorStore:
             existing_ids = {row[0] for row in cur.fetchall()}
 
             created = updated = 0
-            for rec in records:
+            for rec in valid_records:
                 emb = rec.get("embedding")
                 emb_val = np.array(emb) if emb else None
                 if rec["doc_id"] in existing_ids:
@@ -170,7 +208,12 @@ class _PgVectorStore:
                     created += 1
 
             conn.commit()
-            return {"processed": len(records), "created": created, "updated": updated}
+            return {
+                "processed": len(valid_records),
+                "created": created,
+                "updated": updated,
+                "skipped": skipped,
+            }
         finally:
             conn.close()
 

@@ -26,8 +26,8 @@ const TABS = [
   {
     id: 'deep-dive',
     path: '/arena/deep-dive',
-    label: 'Deep Dive',
-    desc: 'Explore match predictions, player stats, and team analytics in depth',
+    label: 'Match Deep Dive',
+    desc: 'SHAP explainability, feature snapshots, and deep match analysis',
     icon: (
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
         <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.3" />

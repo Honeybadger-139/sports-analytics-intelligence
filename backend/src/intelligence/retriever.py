@@ -4,11 +4,14 @@ Retriever for NBA context documents with freshness controls.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
 from src.intelligence.embeddings import EmbeddingClient
 from src.intelligence.vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_dt(value: str | None) -> datetime:
@@ -51,17 +54,37 @@ class ContextRetriever:
 
         freshness_cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=max_age_hours)
         filtered: List[Dict] = []
+        freshness_cut = 0
+        team_cut = 0
         for row in candidates:
             published_at = _parse_dt(row.get("published_at"))
             if published_at < freshness_cutoff:
+                freshness_cut += 1
                 continue
             row_tags = row.get("team_tags") or []
             if team_filter and row_tags:
                 if not any(team in row_tags for team in team_filter):
+                    team_cut += 1
                     continue
             filtered.append(row)
             if len(filtered) >= top_k:
                 break
+
+        # Emit a structured log whenever filters materially reduce the candidate set.
+        # This is the primary diagnostic signal for "0 sources" in Cloud Run logs.
+        # Look for: "freshness_cut > 0 with docs_used == 0" to confirm staleness root-cause.
+        if freshness_cut > 0 or team_cut > 0:
+            logger.info(
+                "[retriever] query=%r | candidates=%d | freshness_cut=%d (window=%dh) "
+                "| team_cut=%d | passed=%d | max_similarity=%.4f",
+                query_text[:80],
+                len(candidates),
+                freshness_cut,
+                max_age_hours,
+                team_cut,
+                len(filtered),
+                max_similarity if max_similarity is not None else -1.0,
+            )
 
         return filtered, {
             "docs_considered": considered,

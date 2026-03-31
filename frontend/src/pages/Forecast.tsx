@@ -4,13 +4,16 @@ import { useTeamForecast, useLeagueMomentum } from '../hooks/useApi'
 import { useSportContext } from '../context/SportContext'
 import type { ForecastPoint, LeagueMomentumEntry } from '../types'
 
-const ACCENT = '#2BC9FF'
-const ACCENT_DIM = 'rgba(43, 201, 255, 0.12)'
+// Use CSS variables so colors adapt correctly in both dark and light themes.
+// In dark mode: cyan, bright green, bright red, amber.
+// In light mode: --accent-arena → #0369A1, --accent-green → #047857, etc.
+const ACCENT = 'var(--accent-arena)'
+const ACCENT_DIM = 'var(--accent-arena-dim)'
 
 const TREND: Record<string, { color: string; bg: string; icon: string; label: string }> = {
-  hot:     { color: '#34D399', bg: 'rgba(52,211,153,0.12)',  icon: '↑', label: 'Hot' },
-  cold:    { color: '#FB7185', bg: 'rgba(251,113,133,0.12)', icon: '↓', label: 'Cold' },
-  neutral: { color: '#F7B24A', bg: 'rgba(247,178,74,0.12)',  icon: '→', label: 'Neutral' },
+  hot:     { color: 'var(--accent-green)', bg: 'var(--accent-scrib-dim)', icon: '↑', label: 'Hot' },
+  cold:    { color: 'var(--accent-red)',   bg: 'var(--accent-red-dim)',   icon: '↓', label: 'Cold' },
+  neutral: { color: 'var(--accent-chat)',  bg: 'var(--accent-chat-dim)',  icon: '→', label: 'Neutral' },
 }
 
 const NBA_TEAMS = [
@@ -23,6 +26,15 @@ const NBA_TEAMS = [
   'Portland Trail Blazers','Sacramento Kings','San Antonio Spurs','Toronto Raptors',
   'Utah Jazz','Washington Wizards',
 ]
+
+const MODEL_DISPLAY: Record<string, string> = {
+  'prophet+arima_ensemble': 'Prophet + ARIMA Ensemble',
+  'prophet':                'Prophet',
+  'arima':                  'ARIMA',
+}
+function fmtModel(m: string): string {
+  return MODEL_DISPLAY[m] ?? m.replace(/[_+]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
 
 function pct(n: number | null | undefined) {
   if (n == null) return '--'
@@ -85,7 +97,7 @@ function ForecastChart({ points }: { points: ForecastPoint[] }) {
         </g>
       ))}
       {ciPoly && <polygon points={ciPoly} fill={`${ACCENT}20`} />}
-      {arimaLine && <path d={arimaLine} fill="none" stroke="#F7B24A" strokeWidth="1.5" strokeDasharray="4 3" opacity={0.65} />}
+      {arimaLine && <path d={arimaLine} fill="none" stroke="var(--accent-chat)" strokeWidth="1.5" strokeDasharray="4 3" opacity={0.65} />}
       {propLine && <path d={propLine} fill="none" stroke={ACCENT} strokeWidth="2" />}
       {xLabels.map(l => (
         <text key={l.label} x={l.x} y={H - 6} textAnchor="middle" fontSize="9" fill="var(--text-tertiary)">{l.label}</text>
@@ -93,7 +105,7 @@ function ForecastChart({ points }: { points: ForecastPoint[] }) {
       <g transform={`translate(${PAD.left + 4},${PAD.top + 2})`}>
         <line x1="0" y1="5" x2="12" y2="5" stroke={ACCENT} strokeWidth="2" />
         <text x="15" y="9" fontSize="8" fill="var(--text-secondary)">Prophet</text>
-        <line x1="55" y1="5" x2="67" y2="5" stroke="#F7B24A" strokeWidth="1.5" strokeDasharray="3 2" />
+        <line x1="55" y1="5" x2="67" y2="5" stroke="var(--accent-chat)" strokeWidth="1.5" strokeDasharray="3 2" />
         <text x="70" y="9" fontSize="8" fill="var(--text-secondary)">ARIMA</text>
         <rect x="108" y="1" width="10" height="7" fill={`${ACCENT}28`} rx="1" />
         <text x="121" y="9" fontSize="8" fill="var(--text-secondary)">95% CI</text>
@@ -215,7 +227,7 @@ function MomentumRow({ entry, onSelect }: { entry: LeagueMomentumEntry; onSelect
         </div>
         <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>{(entry.momentum_score * 100).toFixed(0)}/100</span>
       </div>
-      <span style={{ fontSize: 11, color: entry.streak_type === 'win' ? '#34D399' : entry.streak_type === 'loss' ? '#FB7185' : 'var(--text-tertiary)', fontWeight: 600 }}>
+      <span style={{ fontSize: 11, color: entry.streak_type === 'win' ? 'var(--accent-green)' : entry.streak_type === 'loss' ? 'var(--accent-red)' : 'var(--text-tertiary)', fontWeight: 600 }}>
         {entry.streak_type === 'none' ? '--' : `${entry.streak_length}${entry.streak_type === 'win' ? 'W' : 'L'}`}
       </span>
       <span style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(entry.recent_win_pct)}</span>
@@ -354,7 +366,7 @@ export default function Forecast() {
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{forecast.team}</div>
                     <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      {forecast.n_games_used} games · {forecast.model}
+                      {forecast.n_games_used} games · {fmtModel(forecast.model)}
                     </div>
                   </div>
                   {trend && (

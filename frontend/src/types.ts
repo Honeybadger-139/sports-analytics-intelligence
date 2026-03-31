@@ -42,6 +42,7 @@ export interface NavSubItem {
   label: string
   path: string
   description: string
+  badge?: string
 }
 
 export interface NavItem {

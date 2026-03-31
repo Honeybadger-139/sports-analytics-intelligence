@@ -4,15 +4,16 @@ import { useTeamRatings, useHomeCourtEffect } from '../hooks/useApi'
 import { useSportContext } from '../context/SportContext'
 import type { TeamRatingEntry } from '../types'
 
-const ACCENT = '#A78BFA'
-const ACCENT_DIM = 'rgba(167, 139, 250, 0.12)'
+// CSS variables adapt in light mode: --accent-lab → #6D28D9, --accent-green → #047857, etc.
+const ACCENT = 'var(--accent-lab)'
+const ACCENT_DIM = 'var(--accent-lab-dim)'
 
 const TIER: Record<string, { color: string; bg: string }> = {
-  elite:      { color: '#34D399', bg: 'rgba(52,211,153,0.15)' },
-  contender:  { color: '#2BC9FF', bg: 'rgba(43,201,255,0.15)' },
-  average:    { color: '#F7B24A', bg: 'rgba(247,178,74,0.15)' },
-  rebuilding: { color: '#FB923C', bg: 'rgba(251,146,60,0.15)' },
-  lottery:    { color: '#FB7185', bg: 'rgba(251,113,133,0.15)' },
+  elite:      { color: 'var(--accent-green)',     bg: 'var(--accent-scrib-dim)' },
+  contender:  { color: 'var(--accent-arena)',     bg: 'var(--accent-arena-dim)' },
+  average:    { color: 'var(--accent-chat)',      bg: 'var(--accent-chat-dim)' },
+  rebuilding: { color: 'var(--accent-dashboard)', bg: 'var(--accent-dashboard-dim)' },
+  lottery:    { color: 'var(--accent-red)',       bg: 'var(--accent-red-dim)' },
 }
 
 const TIERS = ['all', 'elite', 'contender', 'average', 'rebuilding', 'lottery'] as const
@@ -44,10 +45,26 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 function CausalPanel() {
   const { data, loading } = useHomeCourtEffect()
   if (loading) return null
-  if (!data) return null
+  if (!data) return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '10px 16px', marginBottom: 16,
+      background: 'var(--bg-panel)', borderRadius: 9,
+      border: '1px solid var(--bg-elevated)', opacity: 0.65,
+    }}>
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <path d="M1.5 10.5L4.5 6L7 8L11 2.5" stroke={ACCENT} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Home Court Effect (DiD)</span>
+      <span style={{
+        fontSize: '0.6rem', fontWeight: 700, padding: '1px 6px', borderRadius: '999px',
+        background: 'rgba(247,178,74,0.14)', color: 'var(--warning)', letterSpacing: '0.06em',
+      }}>COMING SOON</span>
+    </div>
+  )
 
   const sign = data.did_estimate >= 0 ? '+' : ''
-  const sigColor = data.is_significant ? '#34D399' : '#F7B24A'
+  const sigColor = data.is_significant ? 'var(--accent-green)' : 'var(--accent-chat)'
 
   return (
     <div style={{
@@ -67,8 +84,8 @@ function CausalPanel() {
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginLeft: 'auto' }}>
         {[
-          { l: 'DiD Estimate', v: `${sign}${(data.did_estimate * 100).toFixed(1)}pp`, c: data.did_estimate >= 0 ? '#34D399' : '#FB7185' },
-          { l: 'p-value', v: data.p_value.toFixed(3), c: data.p_value < 0.05 ? '#34D399' : '#F7B24A' },
+          { l: 'DiD Estimate', v: `${sign}${(data.did_estimate * 100).toFixed(1)}pp`, c: data.did_estimate >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' },
+          { l: 'p-value', v: data.p_value.toFixed(3), c: data.p_value < 0.05 ? 'var(--accent-green)' : 'var(--accent-chat)' },
           { l: 'Home Win % (fans)', v: pct(data.home_win_pct_with_fans) },
           { l: 'Home Win % (no fans)', v: pct(data.home_win_pct_without_fans) },
         ].map(s => (
@@ -89,11 +106,11 @@ function StrengthBar({ strength, max }: { strength: number; max: number }) {
   const pos = strength >= 0
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ fontSize: 11, color: pos ? '#34D399' : '#FB7185', fontVariantNumeric: 'tabular-nums', minWidth: 48, textAlign: 'right', flexShrink: 0 }}>
+      <span style={{ fontSize: 11, color: pos ? 'var(--accent-green)' : 'var(--accent-red)', fontVariantNumeric: 'tabular-nums', minWidth: 48, textAlign: 'right', flexShrink: 0 }}>
         {pos ? '+' : ''}{strength.toFixed(3)}
       </span>
       <div style={{ flex: 1, height: 5, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', minWidth: 60 }}>
-        <div style={{ height: '100%', width: `${norm * 100}%`, background: pos ? '#34D399' : '#FB7185', borderRadius: 3, transition: 'width 0.5s ease' }} />
+        <div style={{ height: '100%', width: `${norm * 100}%`, background: pos ? 'var(--accent-green)' : 'var(--accent-red)', borderRadius: 3, transition: 'width 0.5s ease' }} />
       </div>
     </div>
   )
@@ -140,10 +157,10 @@ export default function Ratings() {
       {/* ── Summary stat row ── */}
       {data?.summary && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <StatCard label="Strongest" value={String(data.summary.strongest_team ?? '--')} accent="#34D399" />
-          <StatCard label="Weakest" value={String(data.summary.weakest_team ?? '--')} accent="#FB7185" />
-          <StatCard label="Spread (σ)" value={fmt(data.summary.std)} />
-          <StatCard label="Log-likelihood" value={fmt(data.summary.training_log_likelihood, 1)} />
+          <StatCard label="Strongest" value={String(data.summary.strongest_team ?? '--')} accent="var(--accent-green)" />
+          <StatCard label="Weakest" value={String(data.summary.weakest_team ?? '--')} accent="var(--accent-red)" />
+          <StatCard label="Rating Spread" value={fmt(data.summary.std)} />
+          <StatCard label="Model Fit (LL)" value={fmt(data.summary.training_log_likelihood, 1)} />
         </div>
       )}
 
@@ -218,7 +235,7 @@ export default function Ratings() {
                 >
                   <span style={{
                     fontSize: r.rank <= 3 ? 13 : 11, fontWeight: r.rank <= 3 ? 700 : 400,
-                    color: r.rank === 1 ? '#F7B24A' : r.rank === 2 ? '#A78BFA' : r.rank === 3 ? '#FB923C' : 'var(--text-tertiary)',
+                    color: r.rank === 1 ? 'var(--accent-chat)' : r.rank === 2 ? 'var(--accent-lab)' : r.rank === 3 ? 'var(--accent-dashboard)' : 'var(--text-tertiary)',
                     fontVariantNumeric: 'tabular-nums',
                   }}>{r.rank}</span>
 
@@ -234,7 +251,7 @@ export default function Ratings() {
 
                   <span style={{
                     fontSize: 12, fontWeight: 600, textAlign: 'right',
-                    color: r.win_vs_average_team >= 0.6 ? '#34D399' : r.win_vs_average_team <= 0.4 ? '#FB7185' : 'var(--text-secondary)',
+                    color: r.win_vs_average_team >= 0.6 ? 'var(--accent-green)' : r.win_vs_average_team <= 0.4 ? 'var(--accent-red)' : 'var(--text-secondary)',
                     fontVariantNumeric: 'tabular-nums',
                   }}>
                     {pct(r.win_vs_average_team)}

@@ -238,13 +238,50 @@ class IntelligenceService:
 
         return f"{matchup}: cited context is currently limited. {rest_note} {risk_note} {similarity_note} {feed_note}"
 
+    def _get_newest_doc_age_hours(self) -> float:
+        """
+        Return the age (in hours) of the most recently updated document in the store.
+        Returns float('inf') if the table is empty or the query fails, which signals
+        that a full re-index should be attempted.
+        """
+        try:
+            row = self.db.execute(
+                text(
+                    "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(updated_at))) / 3600.0 "
+                    "FROM rag_documents"
+                )
+            ).fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+        except Exception as exc:
+            logger.warning("[intelligence] Could not query newest doc age: %s", exc)
+        return float("inf")
+
     def _refresh_index_if_needed(self) -> None:
         if self._index_refreshed:
             return
         self._index_refreshed = True
-        if self.vector_store.count() > 0:
-            self._feed_health = self._load_feed_health_from_audit()
-            return
+
+        store_count = self.vector_store.count()
+        if store_count > 0:
+            # Only skip re-indexing if documents are genuinely fresh.
+            # If the newest document is older than half the freshness window,
+            # the retriever's freshness filter will cut everything anyway —
+            # so we fall through and fetch new documents even though count > 0.
+            newest_age_hours = self._get_newest_doc_age_hours()
+            freshness_threshold = config.RAG_MAX_AGE_HOURS / 2.0
+            if newest_age_hours < freshness_threshold:
+                logger.debug(
+                    "[intelligence] Store has %d docs, newest is %.1fh old — skipping re-index",
+                    store_count, newest_age_hours,
+                )
+                self._feed_health = self._load_feed_health_from_audit()
+                return
+            logger.info(
+                "[intelligence] Store has %d docs but newest is %.1fh old "
+                "(threshold %.1fh) — forcing re-index to replace stale documents",
+                store_count, newest_age_hours, freshness_threshold,
+            )
 
         sources = config.INTELLIGENCE_SOURCES + config.INJURY_SOURCES
         docs, health = fetch_context_documents_with_health(

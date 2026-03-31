@@ -549,42 +549,70 @@ class Predictor:
         """
         target_date = target_date or calendar_date.today()
 
+        # LATERAL subqueries give us two-level feature resolution for upcoming games:
+        #   Level 1 — exact match on game_id + team_id (populated after feature engineering runs)
+        #   Level 2 — team's most recent completed-game row (ORDER BY game_date DESC)
+        # Without this fallback, upcoming games have no rows in match_features yet,
+        # every LEFT JOIN column is NULL, fillna(0) produces an all-zero feature vector,
+        # and every matchup receives an identical prediction.
         query = text("""
-            SELECT 
+            SELECT
                 m.game_id,
                 m.game_date,
-                ht.abbreviation as home_team,
-                ht.full_name as home_team_name,
-                at.abbreviation as away_team,
-                at.full_name as away_team_name,
-                -- Home team features
-                hf.win_pct_last_5, hf.win_pct_last_10,
+                ht.abbreviation  AS home_team,
+                ht.full_name     AS home_team_name,
+                at.abbreviation  AS away_team,
+                at.full_name     AS away_team_name,
+                -- Home team features (game-specific first, fallback to latest completed game)
+                hf.win_pct_last_5,        hf.win_pct_last_10,
                 hf.avg_point_diff_last_5, hf.avg_point_diff_last_10,
-                1 as is_home, hf.days_rest,
-                CASE WHEN hf.is_back_to_back THEN 1 ELSE 0 END as is_back_to_back,
+                1 AS is_home,
+                hf.days_rest,
+                CASE WHEN hf.is_back_to_back THEN 1 ELSE 0 END AS is_back_to_back,
                 hf.avg_off_rating_last_5, hf.avg_def_rating_last_5,
-                hf.avg_pace_last_5, hf.avg_efg_last_5,
-                hf.h2h_win_pct, hf.h2h_avg_margin,
-                CASE WHEN hf.h2h_win_pct IS NOT NULL THEN 1 ELSE 0 END as h2h_data_available,
+                hf.avg_pace_last_5,       hf.avg_efg_last_5,
+                hf.h2h_win_pct,           hf.h2h_avg_margin,
+                CASE WHEN hf.h2h_win_pct IS NOT NULL THEN 1 ELSE 0 END AS h2h_data_available,
                 hf.current_streak,
-                -- Away team features
-                af.win_pct_last_5 as opp_win_pct_last_5,
-                af.win_pct_last_10 as opp_win_pct_last_10,
-                af.avg_point_diff_last_5 as opp_avg_point_diff_last_5,
-                af.avg_point_diff_last_10 as opp_avg_point_diff_last_10,
-                af.days_rest as opp_days_rest,
-                CASE WHEN af.is_back_to_back THEN 1 ELSE 0 END as opp_is_back_to_back,
-                af.avg_off_rating_last_5 as opp_avg_off_rating_last_5,
-                af.avg_def_rating_last_5 as opp_avg_def_rating_last_5,
-                af.avg_pace_last_5 as opp_avg_pace_last_5,
-                af.avg_efg_last_5 as opp_avg_efg_last_5
+                -- Away team features (game-specific first, fallback to latest completed game)
+                af.win_pct_last_5         AS opp_win_pct_last_5,
+                af.win_pct_last_10        AS opp_win_pct_last_10,
+                af.avg_point_diff_last_5  AS opp_avg_point_diff_last_5,
+                af.avg_point_diff_last_10 AS opp_avg_point_diff_last_10,
+                af.days_rest              AS opp_days_rest,
+                CASE WHEN af.is_back_to_back THEN 1 ELSE 0 END AS opp_is_back_to_back,
+                af.avg_off_rating_last_5  AS opp_avg_off_rating_last_5,
+                af.avg_def_rating_last_5  AS opp_avg_def_rating_last_5,
+                af.avg_pace_last_5        AS opp_avg_pace_last_5,
+                af.avg_efg_last_5         AS opp_avg_efg_last_5
             FROM matches m
             JOIN teams ht ON m.home_team_id = ht.team_id
             JOIN teams at ON m.away_team_id = at.team_id
-            LEFT JOIN match_features hf ON m.game_id = hf.game_id AND m.home_team_id = hf.team_id
-            LEFT JOIN match_features af ON m.game_id = af.game_id AND m.away_team_id = af.team_id
+            -- LATERAL: prefer exact game-id match, fall back to team's most recent completed game.
+            -- This ensures upcoming games always carry a meaningful (non-zero) feature vector
+            -- even before the feature-engineering pipeline has written game-specific rows.
+            LEFT JOIN LATERAL (
+                SELECT mf.*
+                FROM match_features mf
+                JOIN matches mg ON mf.game_id = mg.game_id
+                WHERE mf.team_id = m.home_team_id
+                ORDER BY
+                    CASE WHEN mf.game_id = m.game_id THEN 0 ELSE 1 END,
+                    mg.game_date DESC
+                LIMIT 1
+            ) hf ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT mf.*
+                FROM match_features mf
+                JOIN matches mg ON mf.game_id = mg.game_id
+                WHERE mf.team_id = m.away_team_id
+                ORDER BY
+                    CASE WHEN mf.game_id = m.game_id THEN 0 ELSE 1 END,
+                    mg.game_date DESC
+                LIMIT 1
+            ) af ON TRUE
             WHERE m.game_date = :target_date
-                AND m.is_completed = FALSE
+              AND m.is_completed = FALSE
             ORDER BY m.game_date
         """)
         
