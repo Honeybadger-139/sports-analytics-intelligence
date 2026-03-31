@@ -417,13 +417,42 @@ def _load_persisted_predictions(db: Session, game_id: str) -> Dict[str, Dict]:
 
 
 def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
+    """Find the best target date for /predictions/today.
+
+    Priority order:
+      1. Earliest upcoming date (>= today) that has pre-computed predictions
+         AND is_completed=FALSE matches. This is the "ready to show" slate.
+      2. Earliest upcoming date AFTER today (strictly > today) with any
+         is_completed=FALSE matches, even if predictions haven't been run yet.
+         We skip today in this fallback because if today had no predictions
+         after Pass 1, showing a blank slate is worse than showing tomorrow.
+      3. today (requested_date) as the last resort.
+    """
     try:
+        # Priority 1: next date with pre-computed predictions
+        next_with_preds = db.execute(
+            text(
+                """
+                SELECT MIN(m.game_date)
+                FROM matches m
+                JOIN predictions p ON p.game_id = m.game_id
+                WHERE m.game_date >= :requested_date
+                  AND m.is_completed = FALSE
+                """
+            ),
+            {"requested_date": requested_date},
+        ).scalar()
+        if next_with_preds is not None:
+            d = next_with_preds.date() if isinstance(next_with_preds, datetime) else next_with_preds
+            return d
+
+        # Priority 2: next date with ANY upcoming games (skip today — no preds)
         next_game_date = db.execute(
             text(
                 """
                 SELECT MIN(game_date)
                 FROM matches
-                WHERE game_date >= :requested_date
+                WHERE game_date > :requested_date
                   AND is_completed = FALSE
                 """
             ),
