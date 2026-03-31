@@ -58,6 +58,12 @@ function useRefreshableQuery<T>(options: {
     enabled: options.enabled,
     staleTime: options.staleTime,
     refetchInterval: options.refetchInterval,
+    // Never retry on 4xx — the server is telling us the data isn't available;
+    // retrying won't help and causes request floods in the network tab.
+    retry: (failureCount, error) => {
+      if (error instanceof Error && /^HTTP 4\d\d/.test(error.message)) return false
+      return failureCount < 2
+    },
   })
 
   return {

@@ -43,23 +43,32 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 // ── Causal effect mini-panel ──────────────────────────────────────────────────
 
 function CausalPanel() {
-  const { data, loading } = useHomeCourtEffect()
+  const { data, loading, error } = useHomeCourtEffect()
   if (loading) return null
-  if (!data) return (
+
+  // 4xx means insufficient data (e.g. 422 = no COVID-bubble season in DB).
+  // Show placeholder immediately — do not retry, do not leave blank.
+  const insufficient = error != null && /HTTP 4\d\d/.test(error)
+  if (!data || insufficient) return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '10px 16px', marginBottom: 16,
       background: 'var(--bg-panel)', borderRadius: 9,
-      border: '1px solid var(--bg-elevated)', opacity: 0.65,
+      border: '1px solid var(--border)', opacity: 0.65,
     }}>
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
         <path d="M1.5 10.5L4.5 6L7 8L11 2.5" stroke={ACCENT} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Home Court Effect (DiD)</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)' }}>Home Court Effect (DiD)</span>
       <span style={{
         fontSize: '0.6rem', fontWeight: 700, padding: '1px 6px', borderRadius: '999px',
         background: 'rgba(247,178,74,0.14)', color: 'var(--warning)', letterSpacing: '0.06em',
-      }}>COMING SOON</span>
+      }}>{insufficient ? 'INSUFFICIENT DATA' : 'COMING SOON'}</span>
+      {insufficient && (
+        <span style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginLeft: 4 }}>
+          Requires COVID-bubble season data (2019-20)
+        </span>
+      )}
     </div>
   )
 
