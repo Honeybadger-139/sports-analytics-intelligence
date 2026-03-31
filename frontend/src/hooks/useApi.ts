@@ -216,9 +216,11 @@ export function useMatches(
   dateFrom?: string,
   dateTo?: string,
   completedOnly = false,
+  upcomingOnly = false,
+  enabled = true,
 ) {
   const query = useQuery({
-    queryKey: ['matches', season, limit, teamSearch ?? '', date ?? '', dateFrom ?? '', dateTo ?? '', completedOnly],
+    queryKey: ['matches', season, limit, teamSearch ?? '', date ?? '', dateFrom ?? '', dateTo ?? '', completedOnly, upcomingOnly],
     queryFn: ({ signal }) => {
       let url = `/matches?season=${encodeURIComponent(season)}&limit=${limit}`
       if (teamSearch) url += `&team_search=${encodeURIComponent(teamSearch)}`
@@ -226,9 +228,11 @@ export function useMatches(
       if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
       if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
       if (completedOnly) url += '&completed_only=true'
+      if (upcomingOnly) url += '&completed=false'
       return fetchJSON<MatchesResponse>(url, signal)
     },
     staleTime: 60_000,
+    enabled,
   })
 
   return { data: query.data ?? null, loading: query.isLoading }

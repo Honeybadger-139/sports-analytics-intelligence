@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useTodaysPredictions } from '../../hooks/useApi'
+import { useTodaysPredictions, useMatches } from '../../hooks/useApi'
 import type { ModelPrediction, TodayGamePrediction } from '../../types'
 import NbaTeamLogo from '../NbaTeamLogo'
 import { openGrafanaCreateDashboard } from '../../utils/grafana'
@@ -183,7 +183,7 @@ function GameCard({
 }
 
 export default function TodaysPicks() {
-  const { tz } = useTimezone()
+  const { tz, fmtDate } = useTimezone()
   const { data, loading, error, refresh } = useTodaysPredictions()
 
   // Long-format date helper respecting ET/IST toggle
@@ -202,9 +202,18 @@ export default function TodaysPicks() {
   const today = fmtFullDate(todayIso)
 
   const games  = data?.games ?? []
+  const noGames = !loading && !error && games.length === 0
   const showingFallbackDate = Boolean(data?.is_fallback_date)
   const headerLabel = showingFallbackDate ? 'Next Slate' : 'Today'
   const headerDate = showingFallbackDate ? fmtFullDate(data?.date) : today
+
+  // Fetch next upcoming game date only when today has no games
+  const { data: upcomingData } = useMatches(
+    '2025-26', 5,
+    undefined, undefined, undefined, undefined,
+    false, true, noGames,  // upcomingOnly=true, enabled only when there are no games today
+  )
+  const nextGameDate = upcomingData?.matches?.[0]?.game_date ?? null
 
   function saveGame(_game: TodayGamePrediction) {
     openGrafanaCreateDashboard()
@@ -266,12 +275,48 @@ export default function TodaysPicks() {
         ))}
       </div>
 
-      {/* No games */}
-      {!loading && !error && games.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 0' }}>
-          <p style={{ fontSize: '2rem', marginBottom: 10 }}>🏀</p>
-          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 }}>No upcoming scheduled games found</p>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>Use Match Deep Dive to analyse past games while the next slate is still being ingested.</p>
+      {/* No games empty state */}
+      {noGames && (
+        <div style={{
+          background: 'var(--bg-panel)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-md)',
+          padding: '48px 32px',
+          textAlign: 'center',
+          maxWidth: 480,
+          margin: '0 auto',
+        }}>
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden style={{ marginBottom: 16, opacity: 0.35 }}>
+            <circle cx="20" cy="20" r="18" stroke="var(--text-2)" strokeWidth="1.5" />
+            <path d="M20 2 C20 2 28 12 28 20 C28 28 20 38 20 38" stroke="var(--text-2)" strokeWidth="1.5" />
+            <path d="M20 2 C20 2 12 12 12 20 C12 28 20 38 20 38" stroke="var(--text-2)" strokeWidth="1.5" />
+            <path d="M2 20 H38" stroke="var(--text-2)" strokeWidth="1.5" />
+            <path d="M4 13 H36" stroke="var(--text-2)" strokeWidth="1.5" />
+            <path d="M4 27 H36" stroke="var(--text-2)" strokeWidth="1.5" />
+          </svg>
+          <p style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-1)', marginBottom: 8 }}>
+            No games scheduled for today
+          </p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: nextGameDate ? 20 : 0, lineHeight: 1.6 }}>
+            Today's slate is empty. Check back later or use Match Deep Dive to explore past results.
+          </p>
+          {nextGameDate && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '8px 16px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-sm)',
+              fontSize: '0.82rem', color: 'var(--text-2)',
+            }}>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden>
+                <rect x="1" y="2" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M1 5h11" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M4 1v2M9 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              Next games on <strong style={{ color: 'var(--text-1)' }}>{fmtDate(nextGameDate)}</strong>
+            </div>
+          )}
         </div>
       )}
 
