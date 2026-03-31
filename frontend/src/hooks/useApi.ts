@@ -234,7 +234,7 @@ export function useMatches(
       if (dateFrom) url += `&date_from=${encodeURIComponent(dateFrom)}`
       if (dateTo) url += `&date_to=${encodeURIComponent(dateTo)}`
       if (completedOnly) url += '&completed_only=true'
-      if (upcomingOnly) url += '&completed=false'
+      if (upcomingOnly) url += '&upcoming_only=true'
       return fetchJSON<MatchesResponse>(url, signal)
     },
     staleTime: 60_000,

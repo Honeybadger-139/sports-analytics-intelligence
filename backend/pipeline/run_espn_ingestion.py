@@ -605,7 +605,79 @@ def ingest_incremental(fetcher: Any, engine: Engine) -> dict[str, int]:
     # Reuse the same upsert SQL as ingest_season (DRY via a helper)
     total = _ingest_events(fetcher, engine, events, current_season, context="incremental")
     log_event("incremental_ingest_complete", **total)
+
+    # Also store the next 7 days of scheduled games so the frontend can
+    # display upcoming game dates without waiting for them to be played.
+    schedule = ingest_schedule(fetcher, engine, days_ahead=7)
+    log_event("schedule_ingested", scheduled=schedule.get("scheduled", 0))
+    total["scheduled"] = schedule.get("scheduled", 0)
+
     return total
+
+
+def ingest_schedule(fetcher: Any, engine: Engine, days_ahead: int = 7) -> dict[str, int]:
+    """Store upcoming scheduled games for the next N days with is_completed=FALSE.
+
+    WHY:
+        The frontend needs to display "Next games on <date>" when there are
+        no games today. Since _ingest_events skips non-completed games, the
+        matches table has no upcoming entries. This function fills that gap
+        by storing just the match row (no box scores) for scheduled games.
+
+    Uses ON CONFLICT DO NOTHING so a completed game already in the DB is
+    never overwritten by a scheduled row.
+    """
+    today = date.today()
+    current_season = SEASONS[-1]["label"]
+
+    schedule_upsert = text("""
+        INSERT INTO matches (
+            game_id, game_date, season, home_team_id, away_team_id,
+            is_completed
+        )
+        VALUES (
+            :game_id, :game_date, :season, :home_team_id, :away_team_id,
+            FALSE
+        )
+        ON CONFLICT (game_id) DO NOTHING
+    """)
+
+    scheduled_count = 0
+    for offset in range(1, days_ahead + 1):
+        check_date = today + timedelta(days=offset)
+        try:
+            day_events = fetcher.fetch_scoreboard(check_date)
+            for event in day_events:
+                game_row = transform_game(event)
+                if game_row is None:
+                    continue
+                if game_row.get("is_completed"):
+                    continue  # completed games are handled by _ingest_events
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(schedule_upsert, {
+                            "game_id":       game_row["game_id"],
+                            "game_date":     game_row["game_date"],
+                            "season":        current_season,
+                            "home_team_id":  game_row["home_team_id"],
+                            "away_team_id":  game_row["away_team_id"],
+                        })
+                    scheduled_count += 1
+                except Exception as exc:
+                    log_event(
+                        "schedule_upsert_failed",
+                        game_id=game_row.get("game_id"),
+                        error=str(exc),
+                    )
+        except Exception as exc:
+            log_event(
+                "schedule_fetch_failed",
+                level="WARNING",
+                date=check_date.isoformat(),
+                error=str(exc),
+            )
+
+    return {"scheduled": scheduled_count}
 
 
 def _ingest_events(

@@ -1192,6 +1192,10 @@ async def get_matches_by_date(
         default=False,
         description="When true, return only completed games (final results).",
     ),
+    upcoming_only: bool = Query(
+        default=False,
+        description="When true, return only upcoming/scheduled games (game_date >= today, is_completed=FALSE) ordered earliest-first.",
+    ),
     date: Optional[str] = Query(default=None, description="Exact date YYYY-MM-DD"),
     date_from: Optional[str] = Query(default=None, description="Start date YYYY-MM-DD"),
     date_to: Optional[str] = Query(default=None, description="End date YYYY-MM-DD"),
@@ -1224,19 +1228,24 @@ async def get_matches_by_date(
             at.abbreviation ILIKE :ts OR at.full_name ILIKE :ts OR at.city ILIKE :ts
         )"""
         params["ts"] = f"%{team_search}%"
-    if completed_only:
-        query += " AND (m.is_completed = TRUE OR m.winner_team_id IS NOT NULL)"
-    if date:
-        query += " AND m.game_date = :date"
-        params["date"] = date
-    if date_from:
-        query += " AND m.game_date >= :date_from"
-        params["date_from"] = date_from
-    if date_to:
-        query += " AND m.game_date <= :date_to"
-        params["date_to"] = date_to
-
-    query += " ORDER BY m.game_date DESC LIMIT :limit"
+    if upcoming_only:
+        # Return scheduled games only: future dates, not yet completed.
+        # ORDER ASC so matches[0] is always the NEAREST upcoming game.
+        query += " AND m.game_date >= CURRENT_DATE AND m.is_completed = FALSE"
+        query += " ORDER BY m.game_date ASC LIMIT :limit"
+    else:
+        if completed_only:
+            query += " AND (m.is_completed = TRUE OR m.winner_team_id IS NOT NULL)"
+        if date:
+            query += " AND m.game_date = :date"
+            params["date"] = date
+        if date_from:
+            query += " AND m.game_date >= :date_from"
+            params["date_from"] = date_from
+        if date_to:
+            query += " AND m.game_date <= :date_to"
+            params["date_to"] = date_to
+        query += " ORDER BY m.game_date DESC LIMIT :limit"
 
     result = db.execute(text(query), params)
     matches = [dict(row._mapping) for row in result]
