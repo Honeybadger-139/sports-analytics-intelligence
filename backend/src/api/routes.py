@@ -9,7 +9,7 @@ and historical data access.
 import logging
 import json
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Literal, Optional
 
@@ -421,7 +421,9 @@ def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
 
     Priority order:
       1. Earliest upcoming date (>= today) that has pre-computed predictions
-         AND is_completed=FALSE matches. This is the "ready to show" slate.
+         AND is_completed=FALSE matches — but only within a 10-day window.
+         Predictions beyond 10 days are treated as orphaned/stale (e.g. from
+         a past manual run) and ignored so we never skip the real next game.
       2. Earliest upcoming date AFTER today (strictly > today) with any
          is_completed=FALSE matches, even if predictions haven't been run yet.
          We skip today in this fallback because if today had no predictions
@@ -429,7 +431,7 @@ def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
       3. today (requested_date) as the last resort.
     """
     try:
-        # Priority 1: next date with pre-computed predictions
+        # Priority 1: next date with pre-computed predictions (10-day lookahead cap)
         next_with_preds = db.execute(
             text(
                 """
@@ -437,10 +439,14 @@ def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
                 FROM matches m
                 JOIN predictions p ON p.game_id = m.game_id
                 WHERE m.game_date >= :requested_date
+                  AND m.game_date <= :max_date
                   AND m.is_completed = FALSE
                 """
             ),
-            {"requested_date": requested_date},
+            {
+                "requested_date": requested_date,
+                "max_date": requested_date + timedelta(days=10),
+            },
         ).scalar()
         if next_with_preds is not None:
             d = next_with_preds.date() if isinstance(next_with_preds, datetime) else next_with_preds

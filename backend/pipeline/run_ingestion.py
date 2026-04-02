@@ -215,7 +215,7 @@ def _run() -> int:
             upcoming_summary = fetch_and_predict_upcoming(
                 engine,
                 season=app_config.CURRENT_SEASON,
-                days_ahead=1,
+                days_ahead=7,  # match ingest_schedule window — predictions for the full week ahead
             )
             log_event("upcoming_schedule_fetched", run_id=run_id, **upcoming_summary)
         except Exception as sched_exc:
