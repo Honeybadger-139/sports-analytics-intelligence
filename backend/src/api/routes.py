@@ -445,7 +445,7 @@ def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
             ),
             {
                 "requested_date": requested_date,
-                "max_date": requested_date + timedelta(days=10),
+                "max_date": requested_date + timedelta(days=9),
             },
         ).scalar()
         if next_with_preds is not None:

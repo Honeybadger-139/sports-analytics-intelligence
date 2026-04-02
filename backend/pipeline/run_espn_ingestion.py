@@ -642,6 +642,8 @@ def ingest_schedule(fetcher: Any, engine: Engine, days_ahead: int = 7) -> dict[s
         ON CONFLICT (game_id) DO NOTHING
     """)
 
+    from src.data.espn_transformer import transform_game  # local import — module not loaded at top-level in ingestion container
+
     scheduled_count = 0
     for offset in range(1, days_ahead + 1):
         check_date = today + timedelta(days=offset)
