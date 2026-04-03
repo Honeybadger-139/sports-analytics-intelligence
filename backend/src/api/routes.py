@@ -419,65 +419,66 @@ def _load_persisted_predictions(db: Session, game_id: str) -> Dict[str, Dict]:
 def _resolve_prediction_target_date(db: Session, requested_date: date) -> date:
     """Find the best target date for /predictions/today.
 
-    Priority order:
-      1. Earliest upcoming date (>= today) that has pre-computed predictions
-         AND is_completed=FALSE matches — but only within a 10-day window.
-         Predictions beyond 10 days are treated as orphaned/stale (e.g. from
-         a past manual run) and ignored so we never skip the real next game.
-      2. Earliest upcoming date AFTER today (strictly > today) with any
-         is_completed=FALSE matches, even if predictions haven't been run yet.
-         We skip today in this fallback because if today had no predictions
-         after Pass 1, showing a blank slate is worse than showing tomorrow.
-      3. today (requested_date) as the last resort.
+    Strategy — "nearest game first":
+      1. Find the nearest upcoming game date (>= today, is_completed=FALSE).
+         This anchors us to the real next game day (e.g. April 3) so stale
+         predictions for far-future dates (e.g. April 12) are never returned.
+      2. Within [today … nearest_game_date], check if any date already has
+         pre-computed predictions.  If so, return that date (avoids wasting
+         CPU on live prediction when pre-computed data exists).
+      3. Otherwise return the nearest game date itself.  Pass 2 in the
+         /predictions/today endpoint will run live predictions from the
+         API's ML models.
+      4. Fall back to requested_date if the matches table is empty.
     """
+    def _to_date(val):
+        if val is None:
+            return None
+        if isinstance(val, datetime):
+            return val.date()
+        if isinstance(val, date):
+            return val
+        try:
+            return pd.to_datetime(val).date()
+        except Exception:
+            return None
+
     try:
-        # Priority 1: next date with pre-computed predictions (10-day lookahead cap)
-        next_with_preds = db.execute(
-            text(
-                """
+        # Step 1: nearest upcoming game (>= today)
+        nearest_game = _to_date(db.execute(
+            text("""
+                SELECT MIN(game_date)
+                FROM matches
+                WHERE game_date >= :today
+                  AND is_completed = FALSE
+            """),
+            {"today": requested_date},
+        ).scalar())
+
+        if nearest_game is None:
+            return requested_date
+
+        # Step 2: within [today … nearest_game], prefer a date that already
+        #         has pre-computed predictions (avoids live computation).
+        nearest_with_preds = _to_date(db.execute(
+            text("""
                 SELECT MIN(m.game_date)
                 FROM matches m
                 JOIN predictions p ON p.game_id = m.game_id
-                WHERE m.game_date >= :requested_date
-                  AND m.game_date <= :max_date
+                WHERE m.game_date >= :today
+                  AND m.game_date <= :cap
                   AND m.is_completed = FALSE
-                """
-            ),
-            {
-                "requested_date": requested_date,
-                "max_date": requested_date + timedelta(days=9),
-            },
-        ).scalar()
-        if next_with_preds is not None:
-            d = next_with_preds.date() if isinstance(next_with_preds, datetime) else next_with_preds
-            return d
+            """),
+            {"today": requested_date, "cap": nearest_game},
+        ).scalar())
 
-        # Priority 2: next date with ANY upcoming games (skip today — no preds)
-        next_game_date = db.execute(
-            text(
-                """
-                SELECT MIN(game_date)
-                FROM matches
-                WHERE game_date > :requested_date
-                  AND is_completed = FALSE
-                """
-            ),
-            {"requested_date": requested_date},
-        ).scalar()
+        return nearest_with_preds or nearest_game
+
     except Exception as exc:
-        logger.warning("Could not resolve next prediction slate from %s: %s", requested_date.isoformat(), exc)
-        return requested_date
-
-    if next_game_date is None:
-        return requested_date
-    if isinstance(next_game_date, datetime):
-        return next_game_date.date()
-    if isinstance(next_game_date, date):
-        return next_game_date
-
-    try:
-        return pd.to_datetime(next_game_date).date()
-    except Exception:
+        logger.warning(
+            "Could not resolve next prediction slate from %s: %s",
+            requested_date.isoformat(), exc,
+        )
         return requested_date
 
 
