@@ -70,6 +70,9 @@ langfuse==2.53.8
 prometheus-fastapi-instrumentator==7.0.0
 slowapi==0.1.9
 
+# === GCP Services ===
+google-cloud-storage==2.18.2    # Download ML model artifacts from GCS bucket
+
 # === Utilities ===
 python-dotenv==1.0.1
 pyyaml==6.0.2
