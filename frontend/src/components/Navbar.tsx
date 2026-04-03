@@ -42,8 +42,6 @@ const NAV_ITEMS: NavItem[] = [
     subItems: [
       { label: 'Data Quality',      path: '/lab/quality',   description: 'Row counts, checks and team metrics' },
       { label: 'Pipeline Runs',     path: '/lab/pipeline',  description: 'Recent ingestion and feature runs' },
-      { label: 'MLOps Monitor',     path: '/lab/mlops',     description: 'Model health, drift alerts and observability', badge: 'SOON' },
-      { label: 'Raw Data Explorer', path: '/lab/explorer',  description: 'Browse raw Postgres tables and schemas', badge: 'SOON' },
     ],
   },
   {

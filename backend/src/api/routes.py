@@ -2005,6 +2005,7 @@ async def get_team_game_stats(
         ).fetchall()
     except Exception as exc:
         logger.warning("Team game stats rich query failed for team=%s season=%s: %s", abbr, season, exc)
+        db.rollback()  # clear the poisoned transaction before retrying
         game_rows = db.execute(
             text("""
                 SELECT
