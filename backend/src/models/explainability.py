@@ -97,16 +97,25 @@ def explain_prediction(model, features: pd.DataFrame, model_name: str = "xgboost
     try:
         # Choose appropriate SHAP explainer based on model type
         if model_name == "logistic_regression":
-            # Use LinearExplainer for linear models
+            # Use LinearExplainer for linear models.
+            #
+            # 🎓 IMPORTANT: LinearExplainer computes SHAP values as
+            # deviations from a background mean. If the background data
+            # is the SAME single row being explained, mean == instance,
+            # so all SHAP values come out as zero.  We fix this by using
+            # a zero-vector baseline (representing "no information") so
+            # SHAP values reflect each feature's actual contribution.
             if hasattr(model, "named_steps"):
                 # Pipeline: need to transform first
                 scaler = model.named_steps["scaler"]
                 lr_model = model.named_steps["model"]
                 X_scaled = scaler.transform(features)
-                explainer = shap.LinearExplainer(lr_model, X_scaled)
+                background = np.zeros_like(X_scaled)
+                explainer = shap.LinearExplainer(lr_model, background)
                 shap_values = explainer.shap_values(X_scaled)
             else:
-                explainer = shap.LinearExplainer(model, features)
+                background = np.zeros_like(features.values)
+                explainer = shap.LinearExplainer(model, background)
                 shap_values = explainer.shap_values(features)
         else:
             # Use TreeExplainer for tree-based models (XGBoost, LightGBM)

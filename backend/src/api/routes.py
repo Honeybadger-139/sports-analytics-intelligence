@@ -385,7 +385,9 @@ def _load_persisted_shap_factors(db: Session, game_id: str) -> Dict[str, list]:
         if not isinstance(factors, list):
             continue
         valid_factors = [factor for factor in factors if _is_valid_shap_factor(factor)]
-        if valid_factors:
+        # Skip models where every SHAP value is zero — these were computed
+        # with a buggy LinearExplainer background and need to be regenerated.
+        if valid_factors and any(f.get("shap_value", 0) != 0 for f in valid_factors):
             payload[row.model_name] = valid_factors
     return payload
 
@@ -1374,21 +1376,30 @@ async def predict_game(game_id: str, db: Session = Depends(get_db)):
     if not predictions:
         predictions = _heuristic_prediction_payload(row_dict)
     shap_factors_by_model = _load_persisted_shap_factors(db, game_id)
-    if not shap_factors_by_model and predictor is not None and features is not None:
-        try:
-            shap_factors_by_model = predictor.explain_game(features, top_n=5)
-            predictions_to_persist = live_predictions or predictions
-            if predictions_to_persist:
-                persist_game_predictions(
-                    db,
-                    game_id=game_id,
-                    predictions=predictions_to_persist,
-                    shap_factors_by_model=shap_factors_by_model,
-                )
-                shap_factors_by_model = _load_persisted_shap_factors(db, game_id) or shap_factors_by_model
-        except Exception as exc:
-            logger.warning("Could not generate SHAP factors for game_id=%s: %s", game_id, exc)
-            shap_factors_by_model = {}
+
+    # Regenerate SHAP for any models that are missing explanations (e.g.
+    # logistic_regression had all-zero values from a prior bug and was filtered
+    # out above).  Merge freshly computed factors into persisted ones.
+    if predictor is not None and features is not None:
+        expected_models = set(predictions.keys()) - {"ensemble", "baseline_heuristic"}
+        missing_models = expected_models - set(shap_factors_by_model.keys())
+        if missing_models or not shap_factors_by_model:
+            try:
+                fresh_shap = predictor.explain_game(features, top_n=5)
+                # Only fill in models that were missing; keep existing valid SHAP.
+                for model_name, factors in fresh_shap.items():
+                    if model_name not in shap_factors_by_model:
+                        shap_factors_by_model[model_name] = factors
+                predictions_to_persist = live_predictions or predictions
+                if predictions_to_persist:
+                    persist_game_predictions(
+                        db,
+                        game_id=game_id,
+                        predictions=predictions_to_persist,
+                        shap_factors_by_model=shap_factors_by_model,
+                    )
+            except Exception as exc:
+                logger.warning("Could not generate SHAP factors for game_id=%s: %s", game_id, exc)
 
     return {
         "game_id": game_id,
