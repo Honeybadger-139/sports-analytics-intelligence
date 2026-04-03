@@ -119,7 +119,7 @@ def test_run_full_ingestion_records_audit_violations(monkeypatch):
     monkeypatch.setattr(ingestion, "check_health", lambda _engine: True)
     monkeypatch.setattr(ingestion, "ingest_teams", lambda _engine: 30)
     monkeypatch.setattr(ingestion, "ingest_season_games", lambda _engine, season: 10)
-    monkeypatch.setattr(ingestion, "ingest_players", lambda _engine, season: 300)
+    monkeypatch.setattr(ingestion, "ingest_players", lambda _engine, season, all_seasons=False: 300)
     monkeypatch.setattr(ingestion, "ingest_player_game_logs", lambda _engine, season: 50)
     monkeypatch.setattr(ingestion, "ingest_player_season_stats", lambda _engine, season: 200)
     monkeypatch.setattr(
